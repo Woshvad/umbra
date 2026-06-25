@@ -16,7 +16,7 @@ import Umbra.Setup
 import Umbra.Asset
 import Umbra.Auction
   ( Side(..), Allocation(..)
-  , Order, Round(..), RoundStatus(..), ClearResult
+  , Order, Round(..), RoundStatus(..), TradeConfirmation
   , CloseRound(..), Clear(..)
   )
 import Umbra.Roles (Venue, SubmitOrder(..))
@@ -223,3 +223,103 @@ seedCanonicalAndClose = seedAndClose 20.0
 -- test_atomicity to prove the Split/ensure throws and the whole Clear rolls back.
 seedUnderfundedSellerAndClose : Script SeedResult
 seedUnderfundedSellerAndClose = seedAndClose 5.0
+
+-- The verified §4 allocation (A buys 10, B sells 8, C sells 2 — C residual 3).
+canonicalAllocs : Party -> Party -> Party -> [Allocation]
+canonicalAllocs bankA bankB bankC =
+  [ Allocation with desk = bankA; side = Buy;  filledQty = 10
+  , Allocation with desk = bankB; side = Sell; filledQty = 8
+  , Allocation with desk = bankC; side = Sell; filledQty = 2
+  ]
+
+-- SETL-01/SETL-02 — after a successful Round.Clear on the §4 fixture the ledger
+-- shows the EXACT spec §4 post-balances (A:10/4000, B:12/1800, C:13/1200) and
+-- both BONDX and USDCx are conserved end-to-end (totals unchanged vs the seed:
+-- 35.0 BONDX, 7000.0 USDCx). A per-desk TradeConfirmation exists. These are the
+-- two things HackCanton judges check (spec §10) — assert them exactly.
+test_settled_balances : Script ()
+test_settled_balances = do
+  SeedResult{..} <- seedCanonicalAndClose
+  let Parties{..} = parties
+  -- Settle: drive the REAL Clear with the verified §4 allocation @100.0 and the
+  -- Option-B ContractIds. operator authority alone (operator-custody DvP).
+  _ <- submit operator do
+    exerciseCmd roundCid Clear with
+      clearingPrice  = 100.0
+      allocations    = canonicalAllocs bankA bankB bankC
+      orderCids
+      buyerUsdcCid
+      sellerBondCids
+  -- Sum each owner's Assets per symbol from the operator's view of the ACS.
+  assets <- query @Asset operator
+  let bal owner sym = sum [ a.quantity | (_, a) <- assets, a.owner == owner, a.symbol == sym ]
+  -- The EXACT spec §4 post-settlement balances (non-negotiable correctness ref).
+  bal bankA "BONDX" === 10.0
+  bal bankA "USDCx" === 4000.0
+  bal bankB "BONDX" === 12.0
+  bal bankB "USDCx" === 1800.0
+  bal bankC "BONDX" === 13.0
+  bal bankC "USDCx" === 1200.0
+  -- Conservation: global totals unchanged vs the §4 seed (no value created/destroyed).
+  let totalBondx = sum [ a.quantity | (_, a) <- assets, a.symbol == "BONDX" ]
+      totalUsdc  = sum [ a.quantity | (_, a) <- assets, a.symbol == "USDCx" ]
+  totalBondx === 35.0     -- 20 (B) + 15 (C) seeded; A had 0 BONDX
+  totalUsdc  === 7000.0   -- 5000 (A) + 1000 (B) + 1000 (C)
+  -- A per-desk TradeConfirmation receipt exists (one per participating desk).
+  confs <- query @TradeConfirmation operator
+  assertMsg "expected a TradeConfirmation per desk" (length confs == 3)
+
+-- SETL-03 — atomicity: a seller short the BONDX makes a settlement leg fail, so
+-- Round.Clear is rejected (submitMustFail) and NO balance changes — the whole
+-- transaction rolls back (all-or-nothing DvP). The proposed allocation is the
+-- internally-valid §4 one; the failure is the missing asset, not a bad proposal.
+test_atomicity : Script ()
+test_atomicity = do
+  SeedResult{..} <- seedUnderfundedSellerAndClose
+  let Parties{..} = parties
+  -- Snapshot every Asset (owner, symbol, quantity) BEFORE the failing Clear.
+  before <- query @Asset operator
+  let snap xs = sort [ (show a.owner, a.symbol, a.quantity) | (_, a) <- xs ]
+  -- B holds only 5.0 BONDX but must deliver 8 → the Split throws → rollback.
+  submitMustFail operator do
+    exerciseCmd roundCid Clear with
+      clearingPrice  = 100.0
+      allocations    = canonicalAllocs bankA bankB bankC
+      orderCids
+      buyerUsdcCid
+      sellerBondCids
+  -- All-or-nothing: the post-failure ACS is IDENTICAL to the pre-Clear snapshot.
+  after <- query @Asset operator
+  snap after === snap before
+
+-- SETL-04/CLEAR-05 — the on-ledger recompute-and-assert backstop rejects any
+-- wrong/unfair proposal on a FUNDED round (so rejection is by re-verification,
+-- NOT by missing assets): both an over-stated allocation (A buys 12) and a wrong
+-- clearing price (99.0 with correct fills) must fail.
+test_clear_rejects_bad_allocation : Script ()
+test_clear_rejects_bad_allocation = do
+  SeedResult{..} <- seedCanonicalAndClose
+  let Parties{..} = parties
+  -- Bad fills: A buys 12 (exceeds its order qty 10 and the traded volume 10),
+  -- C sells 4 — violates max-matched volume + per-order limits. REJECTED.
+  let badAllocs =
+        [ Allocation with desk = bankA; side = Buy;  filledQty = 12
+        , Allocation with desk = bankB; side = Sell; filledQty = 8
+        , Allocation with desk = bankC; side = Sell; filledQty = 4
+        ]
+  submitMustFail operator do
+    exerciseCmd roundCid Clear with
+      clearingPrice  = 100.0
+      allocations    = badAllocs
+      orderCids
+      buyerUsdcCid
+      sellerBondCids
+  -- Wrong price: correct §4 fills but clearingPrice = 99.0 (not the recomputed
+  -- p* = 100.0). REJECTED by the price half of the recompute-and-assert.
+  submitMustFail operator do
+    exerciseCmd roundCid Clear with
+      clearingPrice  = 99.0
+      allocations    = canonicalAllocs bankA bankB bankC
+      orderCids
+      buyerUsdcCid
+      sellerBondCids

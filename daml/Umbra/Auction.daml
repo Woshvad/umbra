@@ -69,6 +69,18 @@ template Order
     signatory operator, desk     -- both; unforgeable, and private to these two
     ensure quantity > 0 && limit > 0.0
 
+    -- Operator-only retirement of a settled order. `archive` (the built-in)
+    -- needs the authority of ALL signatories (operator AND desk); inside
+    -- Round.Clear only operator authority is present, so a bare `archive`
+    -- would fail "missing authorization from <desk>". A CONSUMING choice
+    -- controlled by operator alone archives the contract with just the
+    -- controller's authority (operator is already a signatory) — the correct
+    -- operator-custody retirement primitive (spec §10 step 3).
+    choice Retire : ()
+      controller operator
+      do
+        pure ()
+
 -- §7.6 — each desk's private fill receipt; observed by the SINGULAR desk only.
 template TradeConfirmation
   with
@@ -214,9 +226,12 @@ template Round
         -- Fold the cash credits across sellers, threading the buyer's USDCx remainder.
         _finalBuyerCash <- foldlA creditCash buyerUsdcCid sellerBondCids
 
-        -- 3. Mark the Orders settled — archive each (spec §10 step 3); the per-desk
-        --    TradeConfirmation is the durable fill receipt.
-        forA_ orderCids archive
+        -- 3. Mark the Orders settled — Retire each (spec §10 step 3); the per-desk
+        --    TradeConfirmation is the durable fill receipt. Use the operator-only
+        --    consuming `Retire` choice rather than `archive`, which would require
+        --    each desk's authority (Order signatory = operator, desk) that the
+        --    operator-authority-only Clear does not carry.
+        forA_ orderCids (`exercise` Retire)
 
         -- 4. Per-desk TradeConfirmation (spec §10 step 4) — observer = that desk
         --    only (the privacy field is frozen in the template). One per

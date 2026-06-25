@@ -94,3 +94,52 @@ runCanonicalRound = do
   -- DEFERRED to Phase 2: open a Round, CloseRound, then Round.Clear and assert
   -- clearingPrice == 100.0 with fills A=10 / B=8 / C=2 (C residual 3 unfilled).
   -- Clear is a loud Phase-1 placeholder (assertMsg False) — do NOT call it here.
+
+-- CLEAR-01 — the screenshot-ready OPEN-round seed for the Phase-3 money shot.
+-- Mirrors runCanonicalRound (submits the three §4 orders each under its own desk
+-- authority) but ALSO opens a `Round{status = Open}` and creates a
+-- `RoundStats{sealedOrderCount = 3}` so the 3-up Privacy view renders live data
+-- WITHOUT a solver service:
+--   * each desk's per-party `query @Order` returns ONLY its own sealed order;
+--   * every desk's `query @RoundStats` reads the shared count = 3 (observer = desks).
+-- The round is left OPEN on purpose — the live Open→Closed→Cleared→Settled
+-- lifecycle and the solver's RoundStats auto-increment are Phase 4 (CLEAR-01 /
+-- D-deferred). Here the count is SEEDED to 3, never computed.
+seedOpenRound : Script ()
+seedOpenRound = do
+  Parties{..} <- initialize
+  -- (1) Open the Round (operator signatory; desks observe). openedAt from getTime.
+  now <- getTime
+  submit operator do
+    createCmd Round with
+      operator
+      roundId       = "R1"
+      symbol        = "BONDX"
+      desks         = [bankA, bankB, bankC]
+      openedAt      = now
+      windowSeconds = 60
+      status        = Open
+  -- (2) Find the seeded Venue (one created by initialize) and submit the §4 orders
+  --     each under its OWN desk authority (Int quantities, Decimal limits).
+  venues <- query @Venue operator
+  let (venueCid, _) = case venues of
+        (v :: _) -> v
+        []       -> error "seedOpenRound: no Venue found after initialize"
+  submit bankA do
+    exerciseCmd venueCid SubmitOrder with
+      desk = bankA; roundId = "R1"; side = Buy;  quantity = 10; limit = 101.0
+  submit bankB do
+    exerciseCmd venueCid SubmitOrder with
+      desk = bankB; roundId = "R1"; side = Sell; quantity = 8;  limit = 99.0
+  submit bankC do
+    exerciseCmd venueCid SubmitOrder with
+      desk = bankC; roundId = "R1"; side = Sell; quantity = 5;  limit = 100.0
+  -- (3) Seed RoundStats{count = 3} (operator-signed; observer = desks) — the ONLY
+  --     pre-clear shared info any desk may read.
+  submit operator do
+    createCmd RoundStats with
+      operator
+      roundId          = "R1"
+      desks            = [bankA, bankB, bankC]
+      sealedOrderCount = 3
+  pure ()

@@ -1,0 +1,121 @@
+-- Umbra — the deterministic §8 clearing algorithm as PURE Daml functions.
+-- Source: spec §8 (verbatim) + 02-CONTEXT tie-break trap + DA.List signatures
+--   (sort/sortOn/dedup verified from SDK 2.10.4 source).
+--
+-- This module is the SINGLE source of clearing math for the whole build:
+--   * Tests.daml's `test_clears_at_100` calls it (the continuous §4 canary).
+--   * Plan 02's `Round.Clear` recomputes §8 with it and asserts the proposal
+--     matches (the on-ledger security backstop — a wrong/malicious proposal is
+--     rejected on-ledger).
+--   * Phase 4 mirrors it 1:1 in TypeScript (CLEAR-05 parity).
+--
+-- It is therefore kept PURE — no Update/Script, no `query`/`queryContractId`
+-- (those are Script-only and would not type-check here anyway), no settlement.
+-- Math only, a pure function of plain data (`OrderView`), mirrorable in TS.
+--
+-- Pitfall guards (02-RESEARCH Pitfalls 2 & 4):
+--   * every Decimal literal carries a decimal point (`0.0`, `100.0`).
+--   * unit quantities stay `Int` end-to-end (no Decimal mixing in the math).
+--   * `maxMatched` uses `foldl max 0` (NOT `maximumBy`) for empty-list safety on
+--     a no-cross round (where there are no candidate prices / no crossing orders).
+module Umbra.Clearing where
+
+import DA.List (sort, sortOn, dedup)
+import Umbra.Auction (Side(..), Allocation(..))
+
+-- A flattened view of one order, decoupled from the `Order` template so the
+-- math is a pure function of plain data — easy to test and to mirror in TS (P4).
+data OrderView = OrderView with
+    desk     : Party
+    side     : Side
+    quantity : Int
+    limit    : Decimal
+  deriving (Eq, Show)
+
+isBuy : OrderView -> Bool
+isBuy o = o.side == Buy
+
+isSell : OrderView -> Bool
+isSell o = o.side == Sell
+
+-- §8 step 2 — Σ qty of buys willing to pay >= p.
+demandAt : [OrderView] -> Decimal -> Int
+demandAt orders p =
+  sum [ o.quantity | o <- orders, isBuy o, o.limit >= p ]
+
+-- §8 step 2 — Σ qty of sells willing to receive <= p.
+supplyAt : [OrderView] -> Decimal -> Int
+supplyAt orders p =
+  sum [ o.quantity | o <- orders, isSell o, o.limit <= p ]
+
+-- §8 step 2 — matched volume at p.
+matchedAt : [OrderView] -> Decimal -> Int
+matchedAt orders p = min (demandAt orders p) (supplyAt orders p)
+
+-- §8 step 1 — distinct, sorted candidate prices from all limits.
+candidatePrices : [OrderView] -> [Decimal]
+candidatePrices orders = sort (dedup [ o.limit | o <- orders ])
+
+-- §8 step 3 — choose p* with the TWO-LEVEL tie-break, applied IN ORDER.
+--
+-- CRITICAL TRAP (02-CONTEXT phase_critical_constraint 1): tie-break (a)
+-- "minimize |demand - supply|" is computed ONLY over the candidates that
+-- ACHIEVE the max matched volume. Applying it across ALL prices clears the §4
+-- fixture at 99 (imbalance 2 < 3) instead of 100. The fix is structural: filter
+-- to `topPrices` (the max-matched subset) FIRST, then rank by (imbalance, price).
+--
+-- The (imbalance, price) tuple exploits lexicographic Ord on tuples: an ascending
+-- `sortOn` puts the smallest imbalance first, ties broken by the lower price —
+-- exactly tie-break (a) then (b), applied only within the max-matched subset.
+choosePStar : [OrderView] -> Decimal
+choosePStar orders =
+  let prices     = candidatePrices orders
+      matches    = [ (p, matchedAt orders p) | p <- prices ]
+      -- `foldl max 0` (NOT `maximumBy`) — total on the empty list, seeds the
+      -- no-cross round at 0 matched (02-RESEARCH Pitfall 4).
+      maxMatched = foldl max 0 [ m | (_, m) <- matches ]
+      -- The trap-guard: keep only the prices that achieve max matched volume.
+      topPrices  = [ p | (p, m) <- matches, m == maxMatched ]
+      -- Tie-break (a) minimize |demand - supply| THEN (b) lower price — applied
+      -- ONLY over topPrices.
+      ranked     = sortOn (\p -> (abs (demandAt orders p - supplyAt orders p), p)) topPrices
+  in case ranked of
+       (p :: _) -> p
+       []       -> 0.0   -- no candidates => no cross; caller guards.
+
+-- §8 step 4 (long-side rationing) — ration `traded` units across an
+-- already-price-ordered list, most-aggressive-first, integer fills, never
+-- exceeding each order's quantity nor `traded`.
+--
+-- Leftover-to-largest rule: when a pro-rata split among EQUAL-limit ties would
+-- produce a fractional unit, the leftover unit(s) go to the largest order. The
+-- §4 fixture has no equal-limit tie, so this greedy price-priority pass alone
+-- gives the exact answer (B=8, C=2); the rule is documented here so the future
+-- TypeScript impl (P4) matches bit-for-bit (02-RESEARCH A3).
+-- (Daml-LF forbids recursive LOCAL bindings — recursion must be top-level, so
+-- `rationByPriority` is itself the recursive function rather than a local `go`.)
+rationByPriority : [OrderView] -> Int -> [(OrderView, Int)]
+rationByPriority [] _ = []
+rationByPriority (o :: rest) remaining =
+  let f = min o.quantity remaining
+  in (o, f) :: rationByPriority rest (remaining - f)
+
+-- §8 steps 4-5 — clear the batch: pick p*, compute traded volume, ration both
+-- sides by price priority, and emit an Allocation for EVERY participating
+-- eligible order (including 0-fill / partially-filled ones like C, whose
+-- residual is `order.quantity - filledQty`) so Plan 02's `Round.Clear` can mark
+-- each Order's status.
+computeClearing : [OrderView] -> (Decimal, [Allocation])
+computeClearing orders =
+  let pStar  = choosePStar orders
+      traded = matchedAt orders pStar
+      -- eligible buys sorted DESCENDING by limit (most-aggressive buy first);
+      -- eligible sells sorted ASCENDING by limit (most-aggressive sell first).
+      buys   = sortOn (\o -> negate o.limit) [ o | o <- orders, isBuy o,  o.limit >= pStar ]
+      sells  = sortOn (.limit)               [ o | o <- orders, isSell o, o.limit <= pStar ]
+      buyFills  = rationByPriority buys  traded
+      sellFills = rationByPriority sells traded
+      allocs =
+        [ Allocation with desk = o.desk; side = Buy;  filledQty = f | (o, f) <- buyFills  ] ++
+        [ Allocation with desk = o.desk; side = Sell; filledQty = f | (o, f) <- sellFills ]
+  in (pStar, allocs)

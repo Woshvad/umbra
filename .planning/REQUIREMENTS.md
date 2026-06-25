@@ -19,8 +19,8 @@ Requirements for the hackathon MVP. Each maps to a roadmap phase.
 ### Order Submission & Clearing (CLEAR)
 
 - [x] **CLEAR-01**: A registered desk can submit exactly one sealed order per round (side Buy/Sell, integer qty > 0, decimal limit > 0) via `Venue.SubmitOrder`; the created `Order` is signed by operator + desk; the ticket disables after submit
-- [ ] **CLEAR-02**: The deterministic clearing algorithm (§8) computes the uniform price p\* that maximizes matched volume, with the two-level tie-break — minimize |demand − supply| **only among max-matched candidates**, then choose the lower price — rounded to 2 decimals
-- [ ] **CLEAR-03**: Allocation fills the short side fully and rations the long side by price priority then pro-rata, with integer rounding that never exceeds matched volume (deterministic leftover-to-largest rule, identical in TS and Daml)
+- [x] **CLEAR-02**: The deterministic clearing algorithm (§8) computes the uniform price p\* that maximizes matched volume, with the two-level tie-break — minimize |demand − supply| **only among max-matched candidates**, then choose the lower price — rounded to 2 decimals
+- [x] **CLEAR-03**: Allocation fills the short side fully and rations the long side by price priority then pro-rata, with integer rounding that never exceeds matched volume (deterministic leftover-to-largest rule, identical in TS and Daml)
 - [x] **CLEAR-04**: The canonical §4 fixture clears at exactly **$100.00** with fills A=10 / B=8 / C=2 (C residual 3) — asserted in `test_clears_at_100`
 - [x] **CLEAR-05**: The clearing algorithm is implemented in TypeScript (solver) and re-verified inside the Daml `Round.Clear` choice; both produce identical results
 
@@ -45,7 +45,7 @@ Requirements for the hackathon MVP. Each maps to a roadmap phase.
 - [ ] **SOLV-02**: On close, the service reads the sealed orders, computes/verifies the clearing, and exercises `Round.Clear`
 - [ ] **SOLV-03**: The service exposes an HTTP API on :4000 — `POST /round`, `GET /round/:id`, `POST /round/:id/close`, `GET /round/:id/solve-preview`, `POST /round/:id/settle` — so the frontend can drive the demo without ledger-admin rights
 - [ ] **SOLV-04**: The Anthropic key and Operator credentials are never exposed to the browser; the browser talks only to the solver service and to the JSON API as individual desk parties
-- [ ] **SOLV-05**: TypeScript unit tests cover the clearing algorithm on ≥5 scenarios (exact same-limit ties, all-or-nothing imbalance, no-cross, and the §4 case)
+- [x] **SOLV-05**: TypeScript unit tests cover the clearing algorithm on ≥5 scenarios (exact same-limit ties, all-or-nothing imbalance, no-cross, and the §4 case)
 
 ### AI Solver Agent (AGENT)
 
@@ -106,8 +106,8 @@ Which phases cover which requirements. Populated during roadmap creation.
 | LEDG-03 | Phase 1 | Complete (01-03) |
 | LEDG-04 | Phase 1 | Complete (01-01) |
 | CLEAR-01 | Phase 3 | Complete |
-| CLEAR-02 | Phase 4 | Pending |
-| CLEAR-03 | Phase 4 | Pending |
+| CLEAR-02 | Phase 4 | Complete (04-01) |
+| CLEAR-03 | Phase 4 | Complete (04-01) |
 | CLEAR-04 | Phase 2 | Complete |
 | CLEAR-05 | Phase 2 | Complete |
 | SETL-01 | Phase 2 | Complete |
@@ -123,7 +123,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | SOLV-02 | Phase 4 | Pending |
 | SOLV-03 | Phase 4 | Pending |
 | SOLV-04 | Phase 4 | Pending |
-| SOLV-05 | Phase 4 | Pending |
+| SOLV-05 | Phase 4 | Complete (04-01) |
 | AGENT-01 | Phase 5 | Pending |
 | AGENT-02 | Phase 5 | Pending |
 | AGENT-03 | Phase 5 | Pending |

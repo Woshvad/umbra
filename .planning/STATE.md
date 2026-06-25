@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: paused
-stopped_at: Completed 02-03-PLAN.md (3 on-ledger settlement tests green + operator-only Order.Retire fix; Phase 2 complete 3/3, daml test exit 0)
-last_updated: "2026-06-25T22:55:53.728Z"
-last_activity: 2026-06-25 -- money shot live-verified (per-party wire isolation + 3-up render)
+status: executing
+stopped_at: Completed 04-01-PLAN.md (solver/ scaffolded; §8 ported to auction.ts bit-identical to Clearing.daml; §4 fixture clears at 100.00; 6 vitest scenarios green; bindings import smoke passes)
+last_updated: "2026-06-26T00:10:00.000Z"
+last_activity: 2026-06-26 -- Completed 04-01 (solver §8 port + scaffold)
 progress:
   total_phases: 7
   completed_phases: 3
-  total_plans: 9
-  completed_plans: 9
-  percent: 43
+  total_plans: 13
+  completed_plans: 10
+  percent: 48
 ---
 
 # Project State
@@ -21,16 +21,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-25)
 
 **Core value:** The privacy money shot — three desks submit sealed orders blind to each other, an AI solver clears them at one uniform price ($100.00 on the §4 fixture), and the whole batch settles atomically in a single Canton transaction.
-**Current focus:** Phase 03 — Privacy Proof (Vertical Slice)
+**Current focus:** Phase 4 — Solver Service
 
 ## Current Position
 
-Phase: 03 (Privacy Proof (Vertical Slice)) — COMPLETE & VERIFIED
-Plans: 3 of 3 done; VERIFICATION status: passed (8/8 requirements)
-Status: **Phases 1–3 done. Vertical slice (privacy → clear → atomic settle → live 3-up money shot) works end-to-end.** Paused per user request; next = Phase 4 (Solver Service).
-Last activity: 2026-06-25 -- money shot live-verified (per-party wire isolation + 3-up render)
+Phase: 4 (Solver Service) — EXECUTING
+Plan: 2 of 4
+Plans: 1 of 4 done (04-01)
+Status: Executing Phase 4
+Last activity: 2026-06-26 -- Completed 04-01 (solver §8 port + scaffold)
 
-Milestone progress: 3/7 phases [████░░░] 43%
+Milestone progress: 3/7 phases [████░░░] 48%
 
 ## Performance Metrics
 
@@ -58,6 +59,7 @@ Milestone progress: 3/7 phases [████░░░] 43%
 | Phase 03 P01 | 3min | 2 tasks | 2 files |
 | Phase 03 P02 | 9min | 4 tasks | 16 files |
 | Phase 3 P3 | 8 | 2 tasks | 15 files |
+| Phase 04 P01 | 12 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -83,6 +85,8 @@ Recent decisions affecting current work:
 - [Phase ?]: [03-01 / CLEAR-01]: seedOpenRound leaves Round status=Open and SEEDS RoundStats{count=3}; live lifecycle + solver auto-increment deferred to Phase 4. Frontend money-shot live state, solver-free.
 - [Phase ?]: Generated bindings package is @daml.js/umbra-0.1.0 (import from /lib/Umbra/*)
 - [Phase ?]: Zero-dep node:crypto HS256 JWT minting (no jsonwebtoken); operator token to scripts/.operator-token, never web/src (T-03-06)
+- [04-01]: solver/ is Node ESM (type:module, tsconfig moduleResolution:Bundler + esModuleInterop); generated @daml.js/umbra-0.1.0 CJS bindings + @daml/ledger import cleanly under Node via direct named imports (no fallback) — RESEARCH Open Question 1 / Pitfall 6 resolved.
+- [04-01]: auction.ts ports Clearing.daml 1:1 (pure, no imports); for a no-cross round choosePStar returns a candidate price with matched 0 (NOT 0.0) — the 0.0 branch fires only on an empty order book. No-cross invariant is matched===0, enforced by tests + on-ledger Round.Clear backstop.
 
 ### Pending Todos
 
@@ -107,6 +111,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-25T17:26:39.720Z
-Stopped at: Completed 02-03-PLAN.md (3 on-ledger settlement tests green + operator-only Order.Retire fix; Phase 2 complete 3/3, daml test exit 0)
+Last session: 2026-06-26T00:10:00.000Z
+Stopped at: Completed 04-01-PLAN.md (solver/ scaffolded; §8 ported to auction.ts bit-identical to Clearing.daml; §4 fixture clears at 100.00; 6 vitest scenarios green; bindings import smoke passes)
 Resume file: None

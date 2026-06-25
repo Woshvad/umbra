@@ -1,0 +1,27 @@
+# --- Secrets (NEVER commit) ---
+.env
+.env.local
+.env.*.local
+
+# --- Daml build artifacts ---
+.daml/
+*.dar
+
+# --- Ephemeral runtime state ---
+# parties.json holds per-boot Canton party IDs (hint::<fingerprint>), which are
+# NOT stable across `daml start` restarts — regenerate it, never commit it.
+parties.json
+
+# --- Node / JS ---
+node_modules/
+dist/
+.dist/
+*.tsbuildinfo
+
+# --- SDK download temp / OS noise ---
+*.tar.gz
+.DS_Store
+Thumbs.db
+
+# NOTE: spec.md and "Umbra design/" are intentionally NOT ignored — they are
+# binding source inputs and must stay git-tracked for every later phase.

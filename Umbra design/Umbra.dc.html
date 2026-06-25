@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;}
+html,body{margin:0;background:#F4F1EA;}
+input{font-family:inherit;}
+::selection{background:#D6FB3C;color:#0A0A0A;}
+@keyframes umbraWipe{from{clip-path:inset(0 100% 0 0);}to{clip-path:inset(0 0 0 0);}}
+@keyframes umbraSlam{0%{transform:scale(.92);}55%{transform:scale(1.05);}100%{transform:scale(1);}}
+@keyframes umbraStamp{0%{transform:rotate(-13deg) scale(1.7);opacity:0;}55%{transform:rotate(-4deg) scale(.94);opacity:1;}100%{transform:rotate(-4deg) scale(1);}}
+@keyframes umbraDraw{from{stroke-dashoffset:640;}to{stroke-dashoffset:0;}}
+@keyframes umbraFade{from{opacity:0;}to{opacity:1;}}
+@keyframes umbraRise{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
+@keyframes umbraCaret{0%,49%{opacity:1;}50%,100%{opacity:0;}}
+@keyframes umbraPulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+@keyframes umbraLeg{from{stroke-dashoffset:var(--len);}to{stroke-dashoffset:0;}}
+</style>
+</helmet>
+<div style="min-height:100vh;background:#F4F1EA;color:#0A0A0A;font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased;">
+
+  <!-- ============ TOP BAR ============ -->
+  <header style="display:flex;align-items:flex-end;justify-content:space-between;padding:22px 48px 14px;border-bottom:1px solid #0A0A0A;">
+    <div style="display:flex;align-items:baseline;gap:18px;">
+      <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:30px;letter-spacing:-.02em;line-height:1;">UMBRA</div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.16em;color:#0A0A0A;opacity:.55;text-transform:uppercase;padding-bottom:2px;">Sealed-Bid Batch Auction</div>
+    </div>
+    <div style="display:flex;align-items:stretch;border:1px solid #0A0A0A;">
+      <sc-for list="{{ deskSwitch }}" as="d" hint-placeholder-count="3">
+        <button onClick="{{ d.onClick }}" style="border:none;border-right:1px solid #0A0A0A;cursor:pointer;padding:9px 16px;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;letter-spacing:.1em;background:{{ d.bg }};color:{{ d.fg }};">{{ d.code }}</button>
+      </sc-for>
+    </div>
+    <div style="display:flex;align-items:center;gap:16px;">
+      <div style="text-align:right;">
+        <div style="font-family:'Inter';font-size:9px;letter-spacing:.14em;text-transform:uppercase;opacity:.5;">Status</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;letter-spacing:.04em;color:{{ phaseColor }};">{{ phaseLabel }}</div>
+      </div>
+      <button onClick="{{ onReset }}" style="border:1px solid #0A0A0A;background:transparent;cursor:pointer;padding:8px 11px;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;color:#0A0A0A;" style-hover="background:#0A0A0A;color:#F4F1EA;">RESET</button>
+    </div>
+  </header>
+
+  <!-- ============ NAV ============ -->
+  <nav style="display:flex;gap:0;padding:0 48px;border-bottom:1px solid #0A0A0A;">
+    <sc-for list="{{ navItems }}" as="n" hint-placeholder-count="5">
+      <button onClick="{{ n.onClick }}" style="border:none;background:transparent;cursor:pointer;padding:14px 28px 12px 0;margin-right:36px;border-top:3px solid {{ n.rule }};margin-top:-1px;display:flex;align-items:baseline;gap:9px;">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;color:{{ n.fg }};opacity:.6;">{{ n.num }}</span>
+        <span style="font-family:'Inter';font-size:13px;font-weight:600;letter-spacing:.04em;color:{{ n.fg }};">{{ n.label }}</span>
+      </button>
+    </sc-for>
+  </nav>
+
+  <!-- ============ 01 PRIVACY ============ -->
+  <sc-if value="{{ isPrivacy }}" hint-placeholder-val="{{ true }}">
+  <main style="position:relative;padding:0 48px 64px;overflow:hidden;">
+    <!-- rotated SEALED rail -->
+    <div style="position:absolute;left:8px;top:120px;transform:rotate(-90deg);transform-origin:left top;font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.5em;color:#0A0A0A;opacity:.32;white-space:nowrap;">SEALED · SEALED · SEALED · SEALED · SEALED</div>
+
+    <div style="padding-left:42px;">
+      <!-- section marker -->
+      <div style="display:flex;align-items:baseline;gap:14px;padding-top:30px;">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;">01</span>
+        <span style="font-family:'Inter';font-size:11px;letter-spacing:.16em;text-transform:uppercase;opacity:.55;">Privacy / The Book</span>
+      </div>
+      <div style="height:1px;background:#0A0A0A;margin:12px 0 0;"></div>
+
+      <!-- headline -->
+      <h1 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:78px;line-height:.94;letter-spacing:-.025em;margin:34px 0 0 -3px;max-width:1080px;">EVERYONE'S BLIND.<br><span style="margin-left:120px;">THAT'S THE POINT.</span></h1>
+
+      <!-- venue spine -->
+      <div style="display:flex;align-items:center;justify-content:center;gap:30px;margin:48px auto 8px;width:100%;">
+        <div style="flex:1;height:1px;background:#0A0A0A;opacity:.25;"></div>
+        <div style="text-align:center;">
+          <div style="font-family:'Inter';font-size:10px;letter-spacing:.22em;text-transform:uppercase;opacity:.55;margin-bottom:4px;">Venue sees only a count</div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:108px;line-height:.85;letter-spacing:-.04em;font-variant-numeric:tabular-nums;">{{ sealedCount }}</div>
+          <div style="font-family:'Inter';font-size:12px;letter-spacing:.28em;text-transform:uppercase;font-weight:600;">Sealed Orders</div>
+        </div>
+        <div style="flex:1;height:1px;background:#0A0A0A;opacity:.25;"></div>
+      </div>
+
+      <!-- 3-up columns -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;border-top:1px solid #0A0A0A;margin-top:24px;">
+        <sc-for list="{{ deskList }}" as="c" hint-placeholder-count="3">
+          <div style="padding:24px 24px 26px;border-right:{{ c.colBorder }};position:relative;background:{{ c.colBg }};">
+            <div style="display:flex;align-items:baseline;justify-content:space-between;">
+              <div>
+                <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:700;letter-spacing:.06em;">{{ c.code }}</div>
+                <div style="font-family:'Inter';font-size:10px;letter-spacing:.14em;text-transform:uppercase;opacity:.55;margin-top:3px;">{{ c.role }}</div>
+              </div>
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.12em;padding:3px 7px;border:1px solid {{ c.tagBorder }};color:{{ c.tagColor }};">{{ c.tag }}</div>
+            </div>
+
+            <!-- order rows -->
+            <div style="margin-top:22px;display:flex;flex-direction:column;gap:14px;">
+              <!-- SIDE -->
+              <div style="display:flex;align-items:center;justify-content:space-between;">
+                <span style="font-family:'Inter';font-size:10px;letter-spacing:.14em;text-transform:uppercase;opacity:.5;">Side</span>
+                <sc-if value="{{ c.isActive }}" hint-placeholder-val="{{ true }}"><span style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:700;color:{{ c.sideColor }};letter-spacing:.06em;">{{ c.side }}</span></sc-if>
+                <sc-if value="{{ c.redacted }}" hint-placeholder-val="{{ true }}"><span style="display:inline-block;width:62px;height:15px;background:#0A0A0A;background-image:repeating-linear-gradient(90deg,#0A0A0A 0 5px,#262626 5px 7px);"></span></sc-if>
+              </div>
+              <!-- QTY -->
+              <div style="display:flex;align-items:center;justify-content:space-between;">
+                <span style="font-family:'Inter';font-size:10px;letter-spacing:.14em;text-transform:uppercase;opacity:.5;">Quantity</span>
+                <sc-if value="{{ c.isActive }}" hint-placeholder-val="{{ true }}"><span style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;font-variant-numeric:tabular-nums;">{{ c.qty }} <span style="font-size:10px;opacity:.5;">BONDX</span></span></sc-if>
+                <sc-if value="{{ c.redacted }}" hint-placeholder-val="{{ true }}"><span style="display:inline-block;width:48px;height:15px;background:#0A0A0A;background-image:repeating-linear-gradient(90deg,#0A0A0A 0 5px,#262626 5px 7px);"></span></sc-if>
+              </div>
+              <!-- LIMIT -->
+              <div style="display:flex;align-items:center;justify-content:space-between;">
+                <span style="font-family:'Inter';font-size:10px;letter-spacing:.14em;text-transform:uppercase;opacity:.5;">Limit</span>
+                <sc-if value="{{ c.isActive }}" hint-placeholder-val="{{ true }}"><span style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;font-variant-numeric:tabular-nums;">{{ c.limitOp }} {{ c.limit }} <span style="font-size:10px;opacity:.5;">USDCx</span></span></sc-if>
+                <sc-if value="{{ c.redacted }}" hint-placeholder-val="{{ true }}"><span style="display:inline-block;width:70px;height:15px;background:#0A0A0A;background-image:repeating-linear-gradient(90deg,#0A0A0A 0 5px,#262626 5px 7px);"></span></sc-if>
+              </div>
+            </div>
+
+            <div style="height:1px;background:#0A0A0A;opacity:.18;margin:20px 0 14px;"></div>
+            <div style="display:flex;justify-content:space-between;font-family:'IBM Plex Mono',monospace;font-size:11px;font-variant-numeric:tabular-nums;opacity:.7;">
+              <span>HOLD {{ c.bondx }} BONDX</span>
+              <span>{{ c.usdcx }} USDCx</span>
+            </div>
+
+            <sc-if value="{{ c.redacted }}" hint-placeholder-val="{{ true }}">
+              <div style="margin-top:16px;font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.16em;color:#E2231A;display:flex;align-items:center;gap:6px;"><span style="width:6px;height:6px;background:#E2231A;display:inline-block;"></span>REDACTED — NOT VISIBLE TO YOU</div>
+            </sc-if>
+            <sc-if value="{{ c.isActive }}" hint-placeholder-val="{{ true }}">
+              <div style="margin-top:16px;font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.16em;opacity:.6;">YOUR ORDER — VISIBLE ONLY TO YOU</div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+      <p style="font-family:'Inter';font-size:13px;line-height:1.6;max-width:560px;margin:28px 0 0;opacity:.7;">Three desks submit into one batch. Each sees its own ticket in full and nothing of its rivals — only that an order <em>exists</em>. The venue itself sees a count, never contents.</p>
+    </div>
+  </main>
+  </sc-if>
+
+  <!-- ============ 02 DESK ============ -->
+  <sc-if value="{{ isDesk }}" hint-placeholder-val="{{ true }}">
+  <main style="padding:30px 48px 64px;">
+    <div style="display:flex;align-items:baseline;gap:14px;">
+      <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;">02</span>
+      <span style="font-family:'Inter';font-size:11px;letter-spacing:.16em;text-transform:uppercase;opacity:.55;">Desk · {{ activeFirm }}</span>
+    </div>
+    <div style="height:1px;background:#0A0A0A;margin:12px 0 0;"></div>
+    <h1 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:54px;line-height:.96;letter-spacing:-.02em;margin:26px 0 36px;">ORDERS IN THE DARK</h1>
+
+    <div style="display:grid;grid-template-columns:minmax(0,420px) 1fr;gap:0;border-top:1px solid #0A0A0A;">
+      <!-- ORDER TICKET -->
+      <section style="position:relative;padding:28px 36px 30px 0;border-right:1px solid #0A0A0A;">
+        <div style="font-family:'Inter';font-size:10px;letter-spacing:.16em;text-transform:uppercase;opacity:.55;margin-bottom:22px;">Order Ticket</div>
+
+        <!-- side toggle -->
+        <div style="font-family:'Inter';font-size:10px;letter-spacing:.14em;text-transform:uppercase;opacity:.5;margin-bottom:8px;">Side</div>
+        <div style="display:flex;border:1px solid #0A0A0A;margin-bottom:26px;">
+          <button onClick="{{ onBuy }}" style="flex:1;border:none;border-right:1px solid #0A0A0A;cursor:pointer;padding:13px;font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;letter-spacing:.08em;background:{{ buyBg }};color:{{ buyFg }};">BUY</button>
+          <button onClick="{{ onSell }}" style="flex:1;border:none;cursor:pointer;padding:13px;font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;letter-spacing:.08em;background:{{ sellBg }};color:{{ sellFg }};">SELL</button>
+        </div>
+
+        <!-- qty -->
+        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px;">
+          <span style="font-family:'Inter';font-size:10px;letter-spacing:.14em;text-transform:uppercase;opacity:.5;">Quantity</span>
+          <span style="font-family:'Inter';font-size:10px;letter-spacing:.1em;text-transform:uppercase;opacity:.4;">BONDX</span>
+        </div>
+        <input type="text" value="{{ draftQty }}" onChange="{{ onQty }}" disabled="{{ ticketLocked }}" style="width:100%;border:none;border-bottom:2px solid #0A0A0A;background:transparent;font-family:'IBM Plex Mono',monospace;font-size:44px;font-weight:600;font-variant-numeric:tabular-nums;padding:2px 0 8px;margin-bottom:26px;outline:none;color:#0A0A0A;">
+
+        <!-- limit -->
+        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px;">
+          <span style="font-family:'Inter';font-size:10px;letter-spacing:.14em;text-transform:uppercase;opacity:.5;">Limit Price {{ limitOpLong }}</span>
+          <span style="font-family:'Inter';font-size:10px;letter-spacing:.1em;text-transform:uppercase;opacity:.4;">USDCx / unit</span>
+        </div>
+        <input type="text" value="{{ draftLimit }}" onChange="{{ onLimit }}" disabled="{{ ticketLocked }}" style="width:100%;border:none;border-bottom:2px solid #0A0A0A;background:transparent;font-family:'IBM Plex Mono',monospace;font-size:44px;font-weight:600;font-variant-numeric:tabular-nums;padding:2px 0 8px;margin-bottom:30px;outline:none;color:#0A0A0A;">
+
+        <!-- submit / status -->
+        <sc-if value="{{ ticketOpen }}" hint-placeholder-val="{{ true }}">
+          <button onClick="{{ onSeal }}" style="width:100%;border:none;background:#0A0A0A;color:#F4F1EA;cursor:pointer;padding:18px;font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:700;letter-spacing:.18em;">SEAL ORDER</button>
+        </sc-if>
+        <sc-if value="{{ ticketSealed }}" hint-placeholder-val="{{ true }}">
+          <div style="border:1px solid #0A0A0A;padding:16px 18px;display:flex;align-items:center;justify-content:space-between;">
+            <div style="display:flex;align-items:center;gap:11px;">
+              <span style="width:34px;height:16px;background:#0A0A0A;background-image:repeating-linear-gradient(90deg,#0A0A0A 0 5px,#262626 5px 7px);display:inline-block;"></span>
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;letter-spacing:.1em;">SEALED</span>
+            </div>
+            <button onClick="{{ onReopen }}" style="border:1px solid #0A0A0A;background:transparent;cursor:pointer;padding:7px 12px;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;" style-hover="background:#0A0A0A;color:#F4F1EA;">RE-OPEN</button>
+          </div>
+        </sc-if>
+
+        <!-- seal wipe overlay -->
+        <sc-if value="{{ wiping }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;inset:60px 36px 0 0;background:#0A0A0A;background-image:repeating-linear-gradient(90deg,#0A0A0A 0 6px,#1c1c1c 6px 9px);clip-path:inset(0 100% 0 0);animation:umbraWipe .3s ease forwards;"></div>
+        </sc-if>
+      </section>
+
+      <!-- RIGHT: holdings + fill -->
+      <section style="padding:28px 0 0 40px;">
+        <div style="font-family:'Inter';font-size:10px;letter-spacing:.16em;text-transform:uppercase;opacity:.55;margin-bottom:20px;">Holdings</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;border-top:1px solid #0A0A0A;border-bottom:1px solid #0A0A0A;">
+          <div style="padding:20px 24px 22px 0;border-right:1px solid #0A0A0A;">
+            <div style="font-family:'Inter';font-size:10px;letter-spacing:.14em;text-transform:uppercase;opacity:.5;">BONDX</div>
+            <div style="font-family:'IBM Plex Mono',monospace;font-size:40px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:6px;">{{ holdBondx }}</div>
+            <sc-if value="{{ hasFill }}" hint-placeholder-val="{{ false }}"><div style="font-family:'IBM Plex Mono',monospace;font-size:12px;margin-top:4px;color:{{ fillQtyColor }};">→ {{ afterBondx }} after settle</div></sc-if>
+          </div>
+          <div style="padding:20px 0 22px 24px;">
+            <div style="font-family:'Inter';font-size:10px;letter-spacing:.14em;text-transform:uppercase;opacity:.5;">USDCx</div>
+            <div style="font-family:'IBM Plex Mono',monospace;font-size:40px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:6px;">{{ holdUsdcx }}</div>
+            <sc-if value="{{ hasFill }}" hint-placeholder-val="{{ false }}"><div style="font-family:'IBM Plex Mono',monospace;font-size:12px;margin-top:4px;opacity:.6;">→ {{ afterUsdcx }} after settle</div></sc-if>
+          </div>
+        </div>
+
+        <!-- private fill -->
+        <sc-if value="{{ hasFill }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-top:28px;border:1px solid #0A0A0A;animation:umbraRise .4s ease;">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:#0A0A0A;color:#F4F1EA;">
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;letter-spacing:.14em;">YOUR FILL</span>
+              <span style="font-family:'Inter';font-size:9px;letter-spacing:.14em;text-transform:uppercase;opacity:.7;">Visible only to you</span>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;">
+              <div style="padding:20px;border-right:1px solid #0A0A0A;">
+                <div style="font-family:'Inter';font-size:10px;letter-spacing:.12em;text-transform:uppercase;opacity:.5;">Filled</div>
+                <div style="font-family:'IBM Plex Mono',monospace;font-size:30px;font-weight:600;color:{{ fillQtyColor }};margin-top:6px;font-variant-numeric:tabular-nums;">{{ fillQty }}</div>
+                <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;opacity:.55;margin-top:2px;">{{ fillNote }}</div>
+              </div>
+              <div style="padding:20px;border-right:1px solid #0A0A0A;">
+                <div style="font-family:'Inter';font-size:10px;letter-spacing:.12em;text-transform:uppercase;opacity:.5;">Clearing Price</div>
+                <div style="font-family:'IBM Plex Mono',monospace;font-size:30px;font-weight:600;margin-top:6px;font-variant-numeric:tabular-nums;">{{ clearPrice }}</div>
+                <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;opacity:.55;margin-top:2px;">USDCx / unit</div>
+              </div>
+              <div style="padding:20px;">
+                <div style="font-family:'Inter';font-size:10px;letter-spacing:.12em;text-transform:uppercase;opacity:.5;">Cash Moved</div>
+                <div style="font-family:'IBM Plex Mono',monospace;font-size:30px;font-weight:600;margin-top:6px;font-variant-numeric:tabular-nums;">{{ fillCash }}</div>
+                <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;opacity:.55;margin-top:2px;">USDCx</div>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ noFillYet }}" hint-placeholder-val="{{ true }}">
+          <p style="font-family:'Inter';font-size:13px;line-height:1.6;max-width:440px;margin:26px 0 0;opacity:.65;">Seal your order, then run the auction in <strong>03 Theatre</strong>. Your fill — quantity, price and cash — appears here only after the batch clears, and only you can see it.</p>
+        </sc-if>
+      </section>
+    </div>
+  </main>
+  </sc-if>
+
+  <!-- ============ 03 THEATRE (dark) ============ -->
+  <sc-if value="{{ isTheatre }}" hint-placeholder-val="{{ true }}">
+  <main style="padding:30px 48px 48px;">
+    <div style="display:flex;align-items:baseline;gap:14px;">
+      <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;">03</span>
+      <span style="font-family:'Inter';font-size:11px;letter-spacing:.16em;text-transform:uppercase;opacity:.55;">Auction Theatre</span>
+    </div>
+    <div style="height:1px;background:#0A0A0A;margin:12px 0 22px;"></div>
+
+    <div style="background:#0A0A0A;color:#F4F1EA;padding:48px 56px 56px;position:relative;overflow:hidden;min-height:560px;">
+      <!-- RUNNING -->
+      <sc-if value="{{ theatreRun }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;align-items:center;gap:72px;">
+          <div style="position:relative;width:280px;height:280px;flex-shrink:0;">
+            <svg viewBox="0 0 280 280" style="width:280px;height:280px;transform:rotate(-90deg);">
+              <circle cx="140" cy="140" r="120" fill="none" stroke="#F4F1EA" stroke-opacity="0.14" stroke-width="2"></circle>
+              <circle cx="140" cy="140" r="120" fill="none" stroke="{{ ringColor }}" stroke-width="2" stroke-dasharray="753.98" stroke-dashoffset="{{ ringDash }}" style="transition:stroke-dashoffset 1s linear, stroke .3s ease;"></circle>
+            </svg>
+            <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:84px;font-weight:600;line-height:1;font-variant-numeric:tabular-nums;color:{{ ringColor }};">{{ secondsPad }}</div>
+              <div style="font-family:'Inter';font-size:10px;letter-spacing:.22em;text-transform:uppercase;opacity:.6;margin-top:6px;">Seconds to close</div>
+            </div>
+          </div>
+          <div style="flex:1;">
+            <div style="font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:.16em;opacity:.6;">{{ theatreState }}</div>
+            <h2 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:56px;line-height:.98;letter-spacing:-.02em;margin:14px 0 18px;">ONE PRICE.<br>NO LEAKS.</h2>
+            <div style="display:flex;align-items:baseline;gap:14px;margin-bottom:30px;">
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:44px;font-weight:700;font-variant-numeric:tabular-nums;">{{ sealedCount }}</span>
+              <span style="font-family:'Inter';font-size:12px;letter-spacing:.2em;text-transform:uppercase;opacity:.7;">Sealed orders in the book</span>
+            </div>
+            <div style="display:flex;gap:14px;">
+              <sc-if value="{{ phaseOpen }}" hint-placeholder-val="{{ true }}">
+                <button onClick="{{ onStart }}" style="border:none;background:#F4F1EA;color:#0A0A0A;cursor:pointer;padding:16px 30px;font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;letter-spacing:.16em;">START 60s WINDOW</button>
+              </sc-if>
+              <sc-if value="{{ phaseRunning }}" hint-placeholder-val="{{ false }}">
+                <button onClick="{{ onCloseSolve }}" style="border:none;background:#E2231A;color:#F4F1EA;cursor:pointer;padding:16px 30px;font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;letter-spacing:.16em;">CLOSE &amp; SOLVE</button>
+              </sc-if>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- SOLVING / CLEARED: crossing + reveal -->
+      <sc-if value="{{ theatreSolved }}" hint-placeholder-val="{{ false }}">
+        <div style="display:grid;grid-template-columns:minmax(0,520px) 1fr;gap:56px;align-items:center;">
+          <!-- crossing chart -->
+          <div>
+            <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.16em;opacity:.6;margin-bottom:16px;">SUPPLY × DEMAND</div>
+            <svg viewBox="0 0 480 360" style="width:100%;max-width:480px;">
+              <!-- axes -->
+              <line x1="48" y1="20" x2="48" y2="320" stroke="#F4F1EA" stroke-opacity=".5" stroke-width="1"></line>
+              <line x1="48" y1="320" x2="460" y2="320" stroke="#F4F1EA" stroke-opacity=".5" stroke-width="1"></line>
+              <!-- matched region -->
+              <rect x="48" y="160" width="248" height="160" fill="#D6FB3C" fill-opacity="0.16"></rect>
+              <!-- supply (ascending) -->
+              <polyline points="48,260 196,260 196,160 358,160 358,90" fill="none" stroke="#F4F1EA" stroke-width="2.5" stroke-dasharray="640" style="animation:umbraDraw 1s ease forwards;"></polyline>
+              <!-- demand (descending) -->
+              <polyline points="48,110 296,110 296,320" fill="none" stroke="#F4F1EA" stroke-opacity=".55" stroke-width="2.5" stroke-dasharray="6 6"></polyline>
+              <!-- p* rule -->
+              <line x1="48" y1="160" x2="296" y2="160" stroke="#E2231A" stroke-width="1.5"></line>
+              <line x1="296" y1="160" x2="296" y2="320" stroke="#E2231A" stroke-width="1" stroke-dasharray="3 4"></line>
+              <circle cx="296" cy="160" r="5" fill="#E2231A"></circle>
+              <text x="306" y="152" fill="#E2231A" font-family="IBM Plex Mono" font-size="15" font-weight="600">100.00</text>
+              <text x="270" y="338" fill="#F4F1EA" fill-opacity=".7" font-family="IBM Plex Mono" font-size="11">q=10</text>
+              <text x="14" y="164" fill="#F4F1EA" fill-opacity=".7" font-family="IBM Plex Mono" font-size="11">p*</text>
+              <text x="150" y="232" fill="#0A0A0A" font-family="IBM Plex Mono" font-size="10" font-weight="600" opacity="0"></text>
+              <text x="56" y="338" fill="#F4F1EA" fill-opacity=".5" font-family="IBM Plex Mono" font-size="10">QTY →</text>
+              <text x="54" y="32" fill="#F4F1EA" fill-opacity=".5" font-family="IBM Plex Mono" font-size="10">↑ PRICE</text>
+            </svg>
+            <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.08em;margin-top:10px;"><span style="color:#D6FB3C;">▮</span> MATCHED {{ clearMatched }} @ {{ clearPrice }}</div>
+          </div>
+
+          <!-- reveal -->
+          <div>
+            <sc-if value="{{ theatreCleared }}" hint-placeholder-val="{{ false }}">
+              <div style="animation:umbraSlam .42s cubic-bezier(.2,.8,.25,1);">
+                <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:30px;letter-spacing:.04em;margin-bottom:4px;">CLEARS AT</div>
+                <div style="display:inline-block;background:#D6FB3C;color:#0A0A0A;padding:10px 26px 14px;position:relative;">
+                  <div style="font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:120px;line-height:.9;letter-spacing:-.03em;font-variant-numeric:tabular-nums;">{{ clearPrice }}</div>
+                  <div style="position:absolute;right:-1px;top:-1px;bottom:-1px;width:5px;background:#E2231A;transform:skewX(-12deg);"></div>
+                </div>
+                <div style="display:flex;gap:40px;margin-top:26px;">
+                  <div>
+                    <div style="font-family:'Inter';font-size:10px;letter-spacing:.16em;text-transform:uppercase;opacity:.6;">Matched Volume</div>
+                    <div style="font-family:'IBM Plex Mono',monospace;font-size:34px;font-weight:600;font-variant-numeric:tabular-nums;">{{ clearMatched }} <span style="font-size:13px;opacity:.6;">units</span></div>
+                  </div>
+                  <div>
+                    <div style="font-family:'Inter';font-size:10px;letter-spacing:.16em;text-transform:uppercase;opacity:.6;">Uniform Price</div>
+                    <div style="font-family:'IBM Plex Mono',monospace;font-size:34px;font-weight:600;font-variant-numeric:tabular-nums;">1 <span style="font-size:13px;opacity:.6;">for all</span></div>
+                  </div>
+                </div>
+                <button onClick="{{ onGoSettle }}" style="margin-top:30px;border:none;background:#F4F1EA;color:#0A0A0A;cursor:pointer;padding:15px 28px;font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;letter-spacing:.14em;">VIEW SETTLEMENT →</button>
+              </div>
+            </sc-if>
+            <sc-if value="{{ theatreSolving }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex;align-items:center;gap:14px;">
+                <span style="width:12px;height:12px;background:#FF6A1A;display:inline-block;animation:umbraPulse 1s infinite;"></span>
+                <span style="font-family:'IBM Plex Mono',monospace;font-size:18px;letter-spacing:.12em;">SOLVER-AGENT-00 COMPUTING…</span>
+              </div>
+            </sc-if>
+          </div>
+        </div>
+      </sc-if>
+    </div>
+  </main>
+  </sc-if>
+
+  <!-- ============ 04 AGENT ============ -->
+  <sc-if value="{{ isAgent }}" hint-placeholder-val="{{ true }}">
+  <main style="padding:30px 48px 64px;">
+    <div style="display:flex;align-items:baseline;gap:14px;">
+      <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;">04</span>
+      <span style="font-family:'Inter';font-size:11px;letter-spacing:.16em;text-transform:uppercase;opacity:.55;">Solver Agent</span>
+    </div>
+    <div style="height:1px;background:#0A0A0A;margin:12px 0 0;"></div>
+    <h1 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:54px;line-height:.96;letter-spacing:-.02em;margin:26px 0 34px;">THE AGENT CLEARS THE BOOK</h1>
+
+    <sc-if value="{{ agentReady }}" hint-placeholder-val="{{ false }}">
+    <div style="display:grid;grid-template-columns:minmax(0,560px) 1fr;gap:56px;border-top:1px solid #0A0A0A;">
+      <!-- proposal -->
+      <section style="padding:26px 40px 0 0;border-right:1px solid #0A0A0A;">
+        <div style="display:flex;align-items:center;gap:11px;margin-bottom:24px;">
+          <span style="width:11px;height:11px;border-radius:50%;background:#FF6A1A;display:inline-block;"></span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:600;letter-spacing:.08em;">SOLVER-AGENT-00</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.12em;border:1px solid #0A0A0A;padding:3px 7px;margin-left:auto;">SELECTED</span>
+        </div>
+
+        <div style="border-top:1px solid #0A0A0A;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 0;border-bottom:1px solid rgba(10,10,10,.16);">
+            <span style="font-family:'Inter';font-size:11px;letter-spacing:.12em;text-transform:uppercase;opacity:.6;">Clearing Price</span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;">{{ clearPrice }}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 0;border-bottom:1px solid rgba(10,10,10,.16);">
+            <span style="font-family:'Inter';font-size:11px;letter-spacing:.12em;text-transform:uppercase;opacity:.6;">Matched Volume</span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;">{{ clearMatched }} units</span>
+          </div>
+          <sc-for list="{{ fillRows }}" as="f" hint-placeholder-count="3">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px solid rgba(10,10,10,.16);">
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:.06em;">{{ f.code }}</span>
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:600;color:{{ f.color }};font-variant-numeric:tabular-nums;">{{ f.qty }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </section>
+
+      <!-- rationale + competitors -->
+      <section style="padding:26px 0 0;">
+        <div style="font-family:'Inter';font-size:10px;letter-spacing:.16em;text-transform:uppercase;opacity:.55;margin-bottom:14px;">Rationale</div>
+        <div style="background:#0A0A0A;color:#F4F1EA;padding:22px 24px;min-height:120px;">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:15px;line-height:1.7;">{{ typed }}</span><span style="display:inline-block;width:9px;height:18px;background:#FF6A1A;vertical-align:-3px;margin-left:2px;animation:umbraCaret .9s steps(1) infinite;"></span>
+        </div>
+
+        <div style="font-family:'Inter';font-size:10px;letter-spacing:.16em;text-transform:uppercase;opacity:.55;margin:32px 0 12px;">Competing Agents · ranked by matched volume</div>
+        <div style="border-top:1px solid #0A0A0A;">
+          <sc-for list="{{ agents }}" as="a" hint-placeholder-count="3">
+            <div style="display:grid;grid-template-columns:14px 1fr auto auto;gap:14px;align-items:center;padding:14px 0;border-bottom:1px solid rgba(10,10,10,.16);background:{{ a.bg }};">
+              <span style="width:9px;height:9px;border-radius:50%;background:{{ a.dot }};display:inline-block;"></span>
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:.06em;">{{ a.id }}</span>
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-variant-numeric:tabular-nums;opacity:.7;">{{ a.price }}</span>
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;font-variant-numeric:tabular-nums;">{{ a.vol }} u</span>
+            </div>
+          </sc-for>
+        </div>
+      </section>
+    </div>
+    </sc-if>
+    <sc-if value="{{ agentWaiting }}" hint-placeholder-val="{{ true }}">
+      <p style="font-family:'Inter';font-size:14px;line-height:1.6;max-width:480px;opacity:.65;">No proposal yet. Run the batch in <strong>03 Theatre</strong> — once the window closes, SOLVER-AGENT-00 computes the uniform clearing price and narrates its reasoning here.</p>
+    </sc-if>
+  </main>
+  </sc-if>
+
+  <!-- ============ 05 SETTLEMENT ============ -->
+  <sc-if value="{{ isSettlement }}" hint-placeholder-val="{{ true }}">
+  <main style="position:relative;padding:30px 48px 72px;overflow:hidden;">
+    <div style="display:flex;align-items:baseline;gap:14px;">
+      <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;">05</span>
+      <span style="font-family:'Inter';font-size:11px;letter-spacing:.16em;text-transform:uppercase;opacity:.55;">Settlement Ledger</span>
+    </div>
+    <div style="height:1px;background:#0A0A0A;margin:12px 0 0;"></div>
+    <h1 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:54px;line-height:.96;letter-spacing:-.02em;margin:26px 0 34px;">ONE TRANSACTION. ALL OR NOTHING.</h1>
+
+    <sc-if value="{{ settleReady }}" hint-placeholder-val="{{ false }}">
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:56px;align-items:start;">
+      <!-- DvP legs -->
+      <section style="position:relative;">
+        <div style="font-family:'Inter';font-size:10px;letter-spacing:.16em;text-transform:uppercase;opacity:.55;margin-bottom:18px;">Delivery vs Payment · {{ legCount }} legs</div>
+        <div style="border-top:1px solid #0A0A0A;position:relative;">
+          <sc-for list="{{ legs }}" as="l" hint-placeholder-count="2">
+            <div style="padding:24px 0;border-bottom:1px solid rgba(10,10,10,.18);">
+              <!-- asset arrow -->
+              <div style="display:grid;grid-template-columns:120px 1fr 120px;align-items:center;gap:18px;">
+                <span style="font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:600;text-align:right;">{{ l.seller }}</span>
+                <div style="position:relative;height:22px;">
+                  <div style="position:absolute;top:50%;left:0;right:0;height:2px;background:#0A0A0A;"></div>
+                  <div style="position:absolute;top:50%;right:0;width:0;height:0;border-top:6px solid transparent;border-bottom:6px solid transparent;border-left:9px solid #0A0A0A;transform:translateY(-50%);"></div>
+                  <div style="position:absolute;top:-8px;left:50%;transform:translateX(-50%);background:#F4F1EA;padding:0 10px;font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;">{{ l.qty }} BONDX →</div>
+                </div>
+                <span style="font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:600;">{{ l.buyer }}</span>
+              </div>
+              <!-- cash arrow -->
+              <div style="display:grid;grid-template-columns:120px 1fr 120px;align-items:center;gap:18px;margin-top:14px;">
+                <span></span>
+                <div style="position:relative;height:22px;">
+                  <div style="position:absolute;top:50%;left:0;right:0;height:2px;background:#E2231A;"></div>
+                  <div style="position:absolute;top:50%;left:0;width:0;height:0;border-top:6px solid transparent;border-bottom:6px solid transparent;border-right:9px solid #E2231A;transform:translateY(-50%);"></div>
+                  <div style="position:absolute;top:-8px;left:50%;transform:translateX(-50%);background:#F4F1EA;padding:0 10px;font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;color:#E2231A;">← {{ l.cash }} USDCx</div>
+                </div>
+                <span></span>
+              </div>
+            </div>
+          </sc-for>
+
+          <!-- atomic stamp -->
+          <sc-if value="{{ stampIn }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-4deg);pointer-events:none;animation:umbraStamp .22s cubic-bezier(.2,.7,.3,1);">
+              <div style="border:3px solid #E2231A;color:#E2231A;padding:12px 26px;font-family:'IBM Plex Mono',monospace;font-weight:700;letter-spacing:.1em;font-size:22px;background:rgba(244,241,234,.82);">1 TRANSACTION · ATOMIC</div>
+            </div>
+          </sc-if>
+        </div>
+
+        <div style="margin-top:26px;display:flex;gap:14px;align-items:center;">
+          <sc-if value="{{ canSettle }}" hint-placeholder-val="{{ true }}">
+            <button onClick="{{ onSettle }}" style="border:none;background:#0A0A0A;color:#F4F1EA;cursor:pointer;padding:17px 32px;font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;letter-spacing:.16em;">SETTLE ATOMICALLY</button>
+          </sc-if>
+          <sc-if value="{{ didSettle }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;letter-spacing:.1em;color:#E2231A;"><span style="width:8px;height:8px;background:#E2231A;display:inline-block;"></span>SETTLED — both legs, one tx</div>
+          </sc-if>
+        </div>
+      </section>
+
+      <!-- balances -->
+      <section>
+        <div style="font-family:'Inter';font-size:10px;letter-spacing:.16em;text-transform:uppercase;opacity:.55;margin-bottom:18px;">Balances · before → after</div>
+        <div style="border-top:1px solid #0A0A0A;">
+          <div style="display:grid;grid-template-columns:1fr auto auto;gap:10px;padding:8px 0;border-bottom:1px solid #0A0A0A;font-family:'Inter';font-size:9px;letter-spacing:.12em;text-transform:uppercase;opacity:.5;">
+            <span>Desk</span><span style="text-align:right;">BONDX</span><span style="text-align:right;">USDCx</span>
+          </div>
+          <sc-for list="{{ balanceRows }}" as="b" hint-placeholder-count="3">
+            <div style="padding:14px 0;border-bottom:1px solid rgba(10,10,10,.16);">
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;letter-spacing:.06em;margin-bottom:7px;">{{ b.code }}</div>
+              <div style="display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:baseline;">
+                <span style="font-family:'Inter';font-size:9px;letter-spacing:.1em;text-transform:uppercase;opacity:.45;">Now</span>
+                <span style="font-family:'IBM Plex Mono',monospace;font-size:18px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums;">{{ b.bondx }}</span>
+                <span style="font-family:'IBM Plex Mono',monospace;font-size:18px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums;">{{ b.usdcx }}</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </section>
+    </div>
+    </sc-if>
+    <sc-if value="{{ settleWaiting }}" hint-placeholder-val="{{ true }}">
+      <p style="font-family:'Inter';font-size:14px;line-height:1.6;max-width:480px;opacity:.65;">Nothing to settle yet. Clear the batch in <strong>03 Theatre</strong> — the matched trades then appear here as delivery-vs-payment legs that settle together in a single atomic transaction.</p>
+    </sc-if>
+  </main>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = {
+    screen: 'privacy',
+    activeDesk: 'bluerock',
+    phase: 'open',          // open | running | solving | cleared | settling | settled
+    seconds: 60,
+    wiping: false,
+    typed: '',
+    settleProgress: 0,
+    stampIn: false,
+    orders: {
+      bluerock: { firm:'BlueRock Capital', code:'BLUEROCK', role:'Buyer', side:'BUY', qty:10, limit:101, bondx:0, usdcx:5000 },
+      meridian: { firm:'Meridian Asset Management', code:'MERIDIAN', role:'Seller', side:'SELL', qty:8, limit:99, bondx:20, usdcx:1000 },
+      halward:  { firm:'Halward Securities', code:'HALWARD', role:'Seller', side:'SELL', qty:5, limit:100, bondx:15, usdcx:1000 },
+    },
+    sealed: { bluerock:true, meridian:true, halward:true },
+    result: null,
+  };
+
+  order = ['bluerock','meridian','halward'];
+
+  componentWillUnmount(){ clearInterval(this._clock); clearInterval(this._type); }
+
+  // ---------- helpers ----------
+  money(n){ return Math.round(n).toLocaleString('en-US'); }
+  price(n){ return Number(n).toFixed(2); }
+  reduced(){ try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch(e){ return false; } }
+
+  setScreen = (s) => () => this.setState({ screen: s });
+  pickDesk = (k) => () => this.setState({ activeDesk: k });
+
+  setSide = (side) => () => {
+    const k = this.state.activeDesk;
+    if (this.state.sealed[k]) return;
+    this.setState(s => ({ orders: { ...s.orders, [k]: { ...s.orders[k], side } } }));
+  };
+  setField = (field, raw) => {
+    const k = this.state.activeDesk;
+    if (this.state.sealed[k]) return;
+    let v = field === 'limit' ? parseFloat(raw) : parseInt(raw, 10);
+    if (isNaN(v)) v = 0;
+    this.setState(s => ({ orders: { ...s.orders, [k]: { ...s.orders[k], [field]: v } } }));
+  };
+
+  reopen = () => {
+    const k = this.state.activeDesk;
+    this.setState(s => ({ sealed: { ...s.sealed, [k]: false } }));
+  };
+  seal = () => {
+    const k = this.state.activeDesk;
+    this.setState({ wiping: true });
+    setTimeout(() => this.setState(s => ({ sealed: { ...s.sealed, [k]: true }, wiping: false })), this.reduced() ? 0 : 300);
+  };
+
+  startClock = () => {
+    if (this.state.phase !== 'open') return;
+    this.setState({ phase: 'running', seconds: 60 });
+    clearInterval(this._clock);
+    this._clock = setInterval(() => {
+      this.setState(s => {
+        const sec = s.seconds - 1;
+        if (sec <= 0) { clearInterval(this._clock); setTimeout(this.closeSolve, 200); return { seconds: 0 }; }
+        return { seconds: sec };
+      });
+    }, 1000);
+  };
+
+  closeSolve = () => {
+    clearInterval(this._clock);
+    if (this.state.phase === 'cleared' || this.state.phase === 'settled') return;
+    this.setState({ phase: 'solving' });
+    setTimeout(() => {
+      const result = this.solve();
+      this.setState({ phase: 'cleared', result });
+      this.startType(result.rationale);
+    }, this.reduced() ? 0 : 1500);
+  };
+
+  solve() {
+    const o = this.state.orders;
+    const list = this.order.map(k => ({ k, ...o[k] }));
+    const buys = list.filter(x => x.side === 'BUY');
+    const sells = list.filter(x => x.side === 'SELL');
+    const cand = [...new Set(list.map(x => x.limit))].sort((a,b) => a-b);
+    let best = { price: cand[0] ?? 0, vol: -1 };
+    cand.forEach(p => {
+      const d = buys.filter(x => x.limit >= p).reduce((s,x) => s + x.qty, 0);
+      const sp = sells.filter(x => x.limit <= p).reduce((s,x) => s + x.qty, 0);
+      const v = Math.min(d, sp);
+      if (v > best.vol) best = { price: p, vol: v };
+    });
+    const price = best.price, matched = best.vol;
+
+    const sQ = sells.filter(x => x.limit <= price).sort((a,b) => a.limit - b.limit).map(x => ({ ...x, fill: 0 }));
+    const bQ = buys.filter(x => x.limit >= price).sort((a,b) => b.limit - a.limit).map(x => ({ ...x, fill: 0 }));
+    let need = matched; for (const s of sQ){ if (need<=0) break; const f=Math.min(s.qty,need); s.fill=f; need-=f; }
+    let bneed = matched; for (const b of bQ){ if (bneed<=0) break; const f=Math.min(b.qty,bneed); b.fill=f; bneed-=f; }
+
+    // legs
+    const sl = sQ.filter(s=>s.fill>0).map(s=>({ ...s, r:s.fill }));
+    const bl = bQ.filter(b=>b.fill>0).map(b=>({ ...b, r:b.fill }));
+    const legs = []; let i=0,j=0;
+    while (i<bl.length && j<sl.length){
+      const q = Math.min(bl[i].r, sl[j].r);
+      legs.push({ buyer: bl[i].code, buyerK: bl[i].k, seller: sl[j].code, sellerK: sl[j].k, qty: q, cash: q*price });
+      bl[i].r -= q; sl[j].r -= q;
+      if (bl[i].r===0) i++; if (sl[j].r===0) j++;
+    }
+
+    const fills = {}, after = {};
+    list.forEach(x => { fills[x.k] = { qty:0, cash:0, total:x.qty }; });
+    sQ.forEach(s => { if (s.fill>0) fills[s.k] = { qty: -s.fill, cash: s.fill*price, total: s.qty }; });
+    bQ.forEach(b => { if (b.fill>0) fills[b.k] = { qty: b.fill, cash: -b.fill*price, total: b.qty }; });
+    list.forEach(x => { const f = fills[x.k]; after[x.k] = { bondx: x.bondx + f.qty, usdcx: x.usdcx + f.cash }; });
+
+    const firstSeller = sl.length ? sl[0].firm.split(' ')[0] : 'The lowest-limit seller';
+    const rationale = `Cleared at ${this.price(price)} — maximises matched volume (${matched} units). ${firstSeller} filled first on price priority.`;
+
+    return { price, matched, legs, fills, after, rationale };
+  }
+
+  startType(text){
+    clearInterval(this._type);
+    if (this.reduced()) { this.setState({ typed: text }); return; }
+    let i = 0;
+    this.setState({ typed: '' });
+    this._type = setInterval(() => {
+      i++;
+      this.setState({ typed: text.slice(0, i) });
+      if (i >= text.length) clearInterval(this._type);
+    }, 26);
+  }
+
+  settle = () => {
+    if (this.state.phase === 'settled' || this.state.phase === 'settling') return;
+    this.setState({ phase: 'settling' });
+    const dur = this.reduced() ? 0 : 800;
+    const start = performance.now();
+    const step = (now) => {
+      const t = Math.min(1, dur ? (now - start) / dur : 1);
+      this.setState({ settleProgress: t });
+      if (t < 1) this._raf = requestAnimationFrame(step);
+    };
+    this._raf = requestAnimationFrame(step);
+    setTimeout(() => this.setState({ phase: 'settled', stampIn: true, settleProgress: 1 }), dur + 60);
+  };
+
+  reset = () => {
+    clearInterval(this._clock); clearInterval(this._type); cancelAnimationFrame(this._raf);
+    this.setState({
+      phase:'open', seconds:60, wiping:false, typed:'', settleProgress:0, stampIn:false, result:null,
+      sealed:{ bluerock:true, meridian:true, halward:true },
+    });
+  };
+
+  goSettle = () => this.setState({ screen: 'settlement' });
+
+  // ---------- render ----------
+  renderVals() {
+    const S = this.state;
+    const o = S.orders;
+    const ak = S.activeDesk;
+    const a = o[ak];
+    const sealedCount = String(Object.values(S.sealed).filter(Boolean).length).padStart(2,'0');
+    const cleared = S.phase === 'cleared' || S.phase === 'settling' || S.phase === 'settled';
+    const r = S.result;
+
+    const sideColor = (side) => side === 'BUY' ? '#2B3AF2' : '#FF3D9A';
+
+    // desk switch
+    const deskSwitch = this.order.map(k => ({
+      key:k, code:o[k].code, onClick: this.pickDesk(k),
+      bg: k===ak ? '#0A0A0A' : 'transparent', fg: k===ak ? '#F4F1EA' : '#0A0A0A',
+    }));
+
+    // nav
+    const screens = [['privacy','PRIVACY'],['desk','DESK'],['theatre','THEATRE'],['agent','AGENT'],['settlement','SETTLEMENT']];
+    const navItems = screens.map(([key,label],idx) => ({
+      key, label, num: String(idx+1).padStart(2,'0'), onClick: this.setScreen(key),
+      fg: S.screen===key ? '#0A0A0A' : 'rgba(10,10,10,.5)',
+      rule: S.screen===key ? '#E2231A' : 'transparent',
+    }));
+
+    // phase chip
+    const phaseMap = {
+      open: ['OPEN · 03 SEALED','#0A0A0A'], running: ['CLEARING WINDOW','#E2231A'],
+      solving: ['SOLVING…','#FF6A1A'], cleared: ['CLEARED @ 100.00','#E2231A'],
+      settling: ['SETTLING…','#FF6A1A'], settled: ['SETTLED · ATOMIC','#E2231A'],
+    };
+    const [phaseLabel, phaseColor] = phaseMap[S.phase];
+
+    // privacy columns
+    const deskList = this.order.map(k => {
+      const d = o[k]; const isActive = k===ak; const redacted = !isActive;
+      return {
+        key:k, code:d.code, firm:d.firm, role:d.role.toUpperCase(), isActive, redacted,
+        side:d.side, sideColor: sideColor(d.side), qty:String(d.qty), limit:this.price(d.limit),
+        limitOp: d.side==='BUY' ? '≤' : '≥',
+        bondx:String(d.bondx), usdcx:this.money(d.usdcx),
+        tag: isActive ? 'YOU' : 'SEALED', tagColor: isActive ? '#0A0A0A' : '#0A0A0A',
+        tagBorder: isActive ? '#0A0A0A' : 'rgba(10,10,10,.3)',
+        colBorder: k==='halward' ? 'none' : '1px solid #0A0A0A',
+        colBg: isActive ? 'rgba(214,251,60,.10)' : 'transparent',
+      };
+    });
+
+    // desk ticket
+    const locked = S.sealed[ak];
+    const fill = r ? r.fills[ak] : null;
+    const hasFill = !!(r && cleared);
+    const afterB = r ? r.after[ak] : null;
+
+    // agent
+    const fillRows = r ? this.order.map(k => {
+      const f = r.fills[k]; const sgn = f.qty>0?'+':'';
+      const note = f.qty<0 && Math.abs(f.qty)<f.total ? ` (of ${f.total})` : '';
+      return { code:o[k].code, qty:`${sgn}${f.qty}${note}`, color: f.qty>0?'#2B3AF2':(f.qty<0?'#FF3D9A':'rgba(10,10,10,.4)') };
+    }) : [];
+    const agents = r ? [
+      { id:'SOLVER-AGENT-00', price:this.price(r.price), vol:r.matched, dot:'#FF6A1A', bg:'rgba(255,106,26,.08)' },
+      { id:'SOLVER-AGENT-02', price:this.price(r.price+1), vol:r.matched, dot:'rgba(10,10,10,.4)', bg:'transparent' },
+      { id:'SOLVER-AGENT-01', price:this.price(Math.max(0,r.price-1)), vol:Math.max(0,r.matched-2), dot:'rgba(10,10,10,.4)', bg:'transparent' },
+    ] : [];
+
+    // settlement
+    const lerp = (x,y) => x + (y-x)*S.settleProgress;
+    const legs = r ? r.legs.map(l => ({ seller:l.seller, buyer:l.buyer, qty:String(l.qty), cash:this.money(l.cash) })) : [];
+    const balanceRows = r ? this.order.map(k => {
+      const before = o[k]; const aft = r.after[k];
+      return { code:o[k].code, bondx:String(Math.round(lerp(before.bondx, aft.bondx))), usdcx:this.money(lerp(before.usdcx, aft.usdcx)) };
+    }) : this.order.map(k => ({ code:o[k].code, bondx:String(o[k].bondx), usdcx:this.money(o[k].usdcx) }));
+
+    return {
+      // chrome
+      deskSwitch, navItems, phaseLabel, phaseColor, sealedCount, onReset: this.reset,
+      // screen flags
+      isPrivacy: S.screen==='privacy', isDesk: S.screen==='desk', isTheatre: S.screen==='theatre',
+      isAgent: S.screen==='agent', isSettlement: S.screen==='settlement',
+      // privacy
+      deskList,
+      // desk
+      activeFirm: a.firm,
+      buyBg: a.side==='BUY' ? '#2B3AF2' : 'transparent', buyFg: a.side==='BUY' ? '#fff' : 'rgba(10,10,10,.45)',
+      sellBg: a.side==='SELL' ? '#FF3D9A' : 'transparent', sellFg: a.side==='SELL' ? '#fff' : 'rgba(10,10,10,.45)',
+      onBuy: this.setSide('BUY'), onSell: this.setSide('SELL'),
+      draftQty: String(a.qty), draftLimit: this.price(a.limit),
+      onQty: (e) => this.setField('qty', e.target.value),
+      onLimit: (e) => this.setField('limit', e.target.value),
+      limitOpLong: a.side==='BUY' ? '(max)' : '(min)',
+      ticketLocked: locked, ticketOpen: !locked, ticketSealed: locked, wiping: S.wiping,
+      onSeal: this.seal, onReopen: this.reopen,
+      holdBondx: String(a.bondx), holdUsdcx: this.money(a.usdcx),
+      hasFill, noFillYet: !hasFill,
+      afterBondx: afterB ? String(afterB.bondx) : '', afterUsdcx: afterB ? this.money(afterB.usdcx) : '',
+      fillQty: fill ? `${fill.qty>0?'+':''}${fill.qty}` : '0',
+      fillQtyColor: fill ? (fill.qty>0?'#2B3AF2':(fill.qty<0?'#FF3D9A':'#0A0A0A')) : '#0A0A0A',
+      fillNote: fill ? (fill.qty<0 && Math.abs(fill.qty)<fill.total ? `${Math.abs(fill.qty)} of ${fill.total} BONDX` : `${Math.abs(fill.qty)} BONDX`) : '',
+      fillCash: fill ? (fill.cash>=0?'+':'') + this.money(fill.cash) : '0',
+      clearPrice: r ? this.price(r.price) : '—', clearMatched: r ? String(r.matched) : '—',
+      // theatre
+      secondsPad: String(S.seconds).padStart(2,'0'),
+      ringDash: 753.98 * (1 - S.seconds/60),
+      ringColor: S.seconds<=10 ? '#E2231A' : '#F4F1EA',
+      theatreState: S.phase==='running' ? 'WINDOW OPEN — ORDERS LOCKED & HIDDEN' : 'WINDOW READY',
+      theatreRun: S.phase==='open' || S.phase==='running',
+      theatreSolved: S.phase==='solving' || S.phase==='cleared' || S.phase==='settling' || S.phase==='settled',
+      theatreSolving: S.phase==='solving', theatreCleared: cleared,
+      phaseOpen: S.phase==='open', phaseRunning: S.phase==='running',
+      onStart: this.startClock, onCloseSolve: this.closeSolve, onGoSettle: this.goSettle,
+      // agent
+      agentReady: !!r, agentWaiting: !r, fillRows, agents, typed: S.typed,
+      // settlement
+      settleReady: !!r, settleWaiting: !r, legs, legCount: r ? r.legs.length : 0, balanceRows,
+      canSettle: !!r && S.phase!=='settled' && S.phase!=='settling', didSettle: S.phase==='settled',
+      stampIn: S.stampIn, onSettle: this.settle,
+    };
+  }
+}
+</script>
+</body>
+</html>

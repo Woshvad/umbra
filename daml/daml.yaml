@@ -12,10 +12,15 @@ version: 0.1.0
 # Do NOT use `source: Umbra` — that resolves `Umbra.Asset` to the nonexistent
 # `daml/Umbra/Umbra/Asset.daml` and `daml build` reports "no modules found".
 source: .
-# init-script MUST be the fully module-qualified `Module:function` form. The module
-# is `Umbra.Setup`, so the value is `Umbra.Setup:initialize`. `daml start` runs it
-# after the Canton sandbox boots (`daml script ... --wall-clock-time`).
-init-script: Umbra.Setup:initialize
+# init-script MUST be the fully module-qualified `Module:function` form. `daml start`
+# runs it after the Canton sandbox boots (`daml script ... --wall-clock-time`), and
+# `script-options: --output-file parties.json` exports its return value (Parties).
+# We seed the FULL money-shot state on boot: `seedOpenRound` = initialize (parties +
+# §4 holdings + Venue) + an Open Round + RoundStats{count=3} + the 3 §4 orders, then
+# returns Parties. One allocation pass → the exported parties.json IDs match the
+# seeded orders, so per-party tokens authenticate against live data (Phase-3 money
+# shot). `initialize` alone (parties/assets/Venue, no round) remains available for tests.
+init-script: Umbra.Setup:seedOpenRound
 # Skip Navigator — not needed for Umbra; speeds up `daml start`.
 start-navigator: false
 # Bundled with the SDK tarball; resolved automatically — no npm/registry install.

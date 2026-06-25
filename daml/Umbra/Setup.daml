@@ -105,9 +105,9 @@ runCanonicalRound = do
 -- The round is left OPEN on purpose — the live Open→Closed→Cleared→Settled
 -- lifecycle and the solver's RoundStats auto-increment are Phase 4 (CLEAR-01 /
 -- D-deferred). Here the count is SEEDED to 3, never computed.
-seedOpenRound : Script ()
+seedOpenRound : Script Parties
 seedOpenRound = do
-  Parties{..} <- initialize
+  p@Parties{..} <- initialize
   -- (1) Open the Round (operator signatory; desks observe). openedAt from getTime.
   now <- getTime
   submit operator do
@@ -142,4 +142,8 @@ seedOpenRound = do
       roundId          = "R1"
       desks            = [bankA, bankB, bankC]
       sealedOrderCount = 3
-  pure ()
+  -- Return the Parties so this can serve as the `daml start` init-script and the
+  -- `--output-file parties.json` export simultaneously (one allocation pass → the
+  -- exported IDs match the seeded Round/orders, so minted tokens authenticate
+  -- against the live money-shot state).
+  pure p

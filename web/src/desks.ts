@@ -19,9 +19,16 @@ export const DESKS: DeskMeta[] = [
   { key: 'bankC', code: 'HALWARD', role: 'Seller' },
 ]
 
-// Same-origin base via the Vite proxy (config.JSON_API_URL = '/'); derive the WS
-// base from the live host so streaming hooks connect through the proxy too.
-export const httpBaseUrl = JSON_API_URL
+// Same-origin base via the Vite proxy — but @daml/ledger's Ledger constructor
+// REQUIRES an absolute `http(s)://…/` URL (it throws "httpBaseUrl must start with
+// 'http://'…" on a bare '/'). So resolve the live same-origin absolute URL at the
+// call site: the browser still talks to Vite (:5173), which proxies /v1 -> :7575.
+// (config.JSON_API_URL='/' is kept as the documented same-origin marker.)
+void JSON_API_URL
+export const httpBaseUrl =
+  typeof window !== 'undefined'
+    ? `${window.location.protocol}//${window.location.host}/`
+    : 'http://localhost:5173/'
 export const wsBaseUrl =
   typeof window !== 'undefined'
     ? `ws://${window.location.host}/`

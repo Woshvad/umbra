@@ -30,7 +30,26 @@ const REPO_ROOT = resolve(__dirname, '..')
 const DAML_LEDGER_ID = process.env.DAML_LEDGER_ID ?? 'sandbox'
 // Direct base URL for the CLI check (the browser uses the Vite proxy '/'; Node has no proxy).
 const JSON_API_URL = process.env.JSON_API_URL ?? 'http://localhost:7575'
-const ORDER_TEMPLATE = 'umbra:Umbra.Auction:Order'
+// The Daml 2.10 JSON API resolves /v1/query template IDs by PACKAGE ID, not package
+// name (`umbra:...` returns "unknownTemplateIds"). Derive the package-id form from the
+// generated @daml.js bindings (which the frontend also uses) so this stays correct
+// across rebuilds — the bindings' templateId is `<pkgId>:Umbra.Auction:Order`.
+function orderTemplateId() {
+  const candidates = [
+    resolve(REPO_ROOT, 'web', 'daml.js', 'umbra-0.1.0', 'lib', 'Umbra', 'Auction', 'module.js'),
+  ]
+  for (const p of candidates) {
+    try {
+      const src = readFileSync(p, 'utf8')
+      const m = src.match(/templateId:\s*'([0-9a-f]{64}:Umbra\.Auction:Order)'/)
+      if (m) return m[1]
+    } catch { /* try next */ }
+  }
+  console.error('FATAL: could not derive Order templateId from web/daml.js bindings.')
+  console.error('Remedy: run `daml codegen js daml/.daml/dist/umbra-0.1.0.dar -o web/daml.js` (or `daml start`).')
+  process.exit(1)
+}
+const ORDER_TEMPLATE = orderTemplateId()
 
 function loadTokens() {
   const path = resolve(REPO_ROOT, 'web', 'src', 'tokens.json')

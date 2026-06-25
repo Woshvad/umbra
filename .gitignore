@@ -37,3 +37,6 @@ Thumbs.db
 
 # NOTE: spec.md and "Umbra design/" are intentionally NOT ignored — they are
 # binding source inputs and must stay git-tracked for every later phase.
+
+# Local dev preview config (Claude preview server)
+.claude/

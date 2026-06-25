@@ -73,7 +73,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 02-03-PLAN.md — Settlement tests: test_settled_balances (§4 balances + conservation), test_atomicity (submitMustFail, no-balance-change), test_clear_rejects_bad_allocation [SETL-01, SETL-02, SETL-03, SETL-04, CLEAR-05]
+- [x] 02-03-PLAN.md — Settlement tests: test_settled_balances (§4 balances + conservation), test_atomicity (submitMustFail, no-balance-change), test_clear_rejects_bad_allocation [SETL-01, SETL-02, SETL-03, SETL-04, CLEAR-05]
 
 ### Phase 3: Privacy Proof (Vertical Slice)
 

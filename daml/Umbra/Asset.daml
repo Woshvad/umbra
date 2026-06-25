@@ -1,0 +1,48 @@
+-- Umbra — operator-custodied tokenized holding (spec §7.1, frozen field shapes).
+-- Privacy: an Asset is visible only to operator + owner, so desks never see each
+-- other's balances. Operator-custody removes multi-party authority puzzles for the
+-- MVP; the production upgrade uses Daml Finance holdings (§19).
+module Umbra.Asset where
+
+template Asset
+  with
+    operator : Party        -- sole signatory & custodian (MVP simplification)
+    owner    : Party        -- the beneficial owner
+    symbol   : Text         -- "BONDX" | "USDCx"
+    quantity : Decimal      -- >= 0
+  where
+    signatory operator
+    observer owner
+    ensure quantity >= 0.0
+
+    -- All choices are Operator-authority alone (operator-custody model). Used by
+    -- the Operator inside settlement (Round.Clear, Phase 2). Split/Merge preserve
+    -- total quantity (conservation); Reassign changes the beneficial owner.
+
+    choice Split : (ContractId Asset, ContractId Asset)
+      with
+        splitQty : Decimal
+      controller operator
+      do
+        assertMsg "splitQty out of range" (splitQty > 0.0 && splitQty < quantity)
+        a <- create this with quantity = splitQty
+        b <- create this with quantity = quantity - splitQty
+        pure (a, b)
+
+    choice Merge : ContractId Asset
+      with
+        otherCid : ContractId Asset
+      controller operator
+      do
+        other <- fetch otherCid
+        assertMsg "symbol mismatch" (other.symbol == symbol)
+        assertMsg "owner mismatch" (other.owner == owner)
+        archive otherCid
+        create this with quantity = quantity + other.quantity
+
+    choice Reassign : ContractId Asset
+      with
+        newOwner : Party
+      controller operator
+      do
+        create this with owner = newOwner

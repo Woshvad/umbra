@@ -1,0 +1,8 @@
+{
+  "name": "umbra",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "tokens": "node scripts/mint-tokens.mjs"
+  }
+}

@@ -118,7 +118,7 @@ Plans:
 
 **Wave 1**
 
-- [ ] 04-01-PLAN.md — Scaffold solver/ (pinned deps + ESM import smoke) + §8 auction.ts port with the 99-vs-100 tie-break guard + 5 vitest scenarios (§4 clears at 100.00) [CLEAR-02, CLEAR-03, SOLV-05]
+- [x] 04-01-PLAN.md — Scaffold solver/ (pinned deps + ESM import smoke) + §8 auction.ts port with the 99-vs-100 tie-break guard + 5 vitest scenarios (§4 clears at 100.00) [CLEAR-02, CLEAR-03, SOLV-05]
 
 **Wave 2** *(blocked on 04-01)*
 
@@ -126,7 +126,7 @@ Plans:
 
 **Wave 3** *(blocked on 04-02)*
 
-- [ ] 04-03-PLAN.md — api.ts: Express, the five §11 endpoints on :4000 (cors :5173, zod, secret-safe error envelope), deterministic solve-preview (100.00 + curve + rationale:null), 409 double-settle [SOLV-03, SOLV-04, CLEAR-02]
+- [x] 04-03-PLAN.md — api.ts: Express, the five §11 endpoints on :4000 (cors :5173, zod, secret-safe error envelope), deterministic solve-preview (100.00 + curve + rationale:null), 409 double-settle [SOLV-03, SOLV-04, CLEAR-02]
 
 **Wave 4** *(blocked on 04-02, 04-03)*
 
@@ -186,7 +186,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 1. Skeleton & Version Gate | 3/3 | Complete   | 2026-06-25 |
 | 2. Clear & Settle On-Ledger | 3/3 | Complete   | 2026-06-25 |
 | 3. Privacy Proof (Vertical Slice) | 3/3 | Complete   | 2026-06-25 |
-| 4. Solver Service | 2/4 | In progress | 2026-06-26 |
+| 4. Solver Service | 3/4 | In Progress|  |
 | 5. AI Solver Agent | 0/TBD | Not started | - |
 | 6. Auction Theatre & Settlement Animation | 0/TBD | Not started | - |
 | 7. Polish, Demo & Acceptance | 0/TBD | Not started | - |

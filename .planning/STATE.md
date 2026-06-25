@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04-02-PLAN.md (solver/src/ledger.ts — Operator @daml/ledger client over absolute :7575; openRound/queryRound/readSealedOrders/updateStats/refreshStats/closeRound/settle; Option-B Round.Clear; token strictly module-private; refreshStats advances sealedOrderCount off '0' proven on a stubbed ledger; 9 vitest green; tsc clean)
-last_updated: "2026-06-26T00:16:30.000Z"
-last_activity: 2026-06-26 -- Completed 04-02 (Operator ledger client + Option-B settle)
+stopped_at: "Completed 04-03-PLAN.md (solver/src/api.ts — Express §11 API: 5 endpoints on :4000, CORS :5173, zod POST /round, secret-safe error envelope, refreshStats-backed sealedOrderCount on GET, solve-preview 100.00 + matchedVolume 10 + curve + rationale:null, 409 double-settle; 14 vitest green; tsc clean)"
+last_updated: "2026-06-26T00:30:00.000Z"
+last_activity: 2026-06-26 -- Completed 04-03 (solver Express §11 API + tests)
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 13
-  completed_plans: 11
-  percent: 52
+  completed_plans: 12
+  percent: 43
 ---
 
 # Project State
@@ -26,12 +26,12 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 ## Current Position
 
 Phase: 4 (Solver Service) — EXECUTING
-Plan: 3 of 4
-Plans: 2 of 4 done (04-01, 04-02)
+Plan: 4 of 4
+Plans: 3 of 4 done (04-01, 04-02, 04-03)
 Status: Executing Phase 4
-Last activity: 2026-06-26 -- Completed 04-02 (Operator ledger client + Option-B settle)
+Last activity: 2026-06-26 -- Completed 04-03 (solver Express §11 API + tests)
 
-Milestone progress: 3/7 phases [████░░░] 52%
+Milestone progress: 3/7 phases [███░░░░] 43%
 
 ## Performance Metrics
 
@@ -61,6 +61,7 @@ Milestone progress: 3/7 phases [████░░░] 52%
 | Phase 3 P3 | 8 | 2 tasks | 15 files |
 | Phase 04 P01 | 12 min | 3 tasks | 8 files |
 | Phase 04 P02 | 5 min | 2 tasks | 2 files |
+| Phase 04 P03 | 6min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -92,6 +93,7 @@ Recent decisions affecting current work:
 - [04-02 / SOLV-01]: sealedOrderCount has no update choice → maintained by archive+recreate (updateStats); refreshStats recomputes readSealedOrders.length and writes it via updateStats (the live call site that advances a fresh round off '0' — proven on a stubbed-ledger vitest).
 - [04-02]: Option-B Round.Clear — settle gathers orderCids/buyerUsdcCid/sellerBondCids from the live ACS, re-queries the Round cid before each exercise (CloseRound/Clear recreate it, Pitfall 4), Int/Decimal as strings (Pitfall 5), sellerBondCids as DA.Types.Tuple2 { _1, _2 }. ContractId<T> is a branded string → cast gathered cids at the exercise site.
 - [04-02 / A2]: settle's asset selection assumes a single sufficient holding per (owner, symbol) — holds for the §4 fixture; non-canonical/fresh rounds with split or insufficient holdings throw a clean secret-free 'insufficient or missing <symbol> holding for <party>' error (auto-merge is stretch §19).
+- [04-03 / SOLV-03, SOLV-04]: solver/src/api.ts is the §11 HTTP surface — createApp(deps) DI factory exposing 5 endpoints on :4000, cors(:5173) only (never *), zod-validated POST /round, secret-safe `{ error: { code, message } }` envelope that never echoes the token/key/process.env/headers. GET /round/:id calls refreshStats FIRST (BLOCKER fix → solver-maintained sealedOrderCount). solve-preview derives matchedVolume = matchedAt(views, pStar) (NOT a ClearingResult field), builds the {price,demand,supply} curve, returns rationale:null (the additive P5 seam) — computes but does NOT settle. settle returns 409 on a Cleared/Settled round (T-04-06). Tests stub the ledger deps + use real §8 helpers via Node fetch on app.listen(0); 14 vitest green, tsc clean.
 
 ### Pending Todos
 
@@ -116,6 +118,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-26T00:16:30.000Z
+Last session: 2026-06-25T23:25:40.051Z
 Stopped at: Completed 04-02-PLAN.md (solver/src/ledger.ts — Operator @daml/ledger client over absolute :7575; openRound/queryRound/readSealedOrders/updateStats/refreshStats/closeRound/settle; Option-B Round.Clear; token strictly module-private; refreshStats advances sealedOrderCount off '0' proven on a stubbed ledger; 9 vitest green; tsc clean)
 Resume file: None

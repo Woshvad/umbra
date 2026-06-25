@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04-01-PLAN.md (solver/ scaffolded; §8 ported to auction.ts bit-identical to Clearing.daml; §4 fixture clears at 100.00; 6 vitest scenarios green; bindings import smoke passes)
-last_updated: "2026-06-26T00:10:00.000Z"
-last_activity: 2026-06-26 -- Completed 04-01 (solver §8 port + scaffold)
+stopped_at: Completed 04-02-PLAN.md (solver/src/ledger.ts — Operator @daml/ledger client over absolute :7575; openRound/queryRound/readSealedOrders/updateStats/refreshStats/closeRound/settle; Option-B Round.Clear; token strictly module-private; refreshStats advances sealedOrderCount off '0' proven on a stubbed ledger; 9 vitest green; tsc clean)
+last_updated: "2026-06-26T00:16:30.000Z"
+last_activity: 2026-06-26 -- Completed 04-02 (Operator ledger client + Option-B settle)
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 13
-  completed_plans: 10
-  percent: 48
+  completed_plans: 11
+  percent: 52
 ---
 
 # Project State
@@ -26,12 +26,12 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 ## Current Position
 
 Phase: 4 (Solver Service) — EXECUTING
-Plan: 2 of 4
-Plans: 1 of 4 done (04-01)
+Plan: 3 of 4
+Plans: 2 of 4 done (04-01, 04-02)
 Status: Executing Phase 4
-Last activity: 2026-06-26 -- Completed 04-01 (solver §8 port + scaffold)
+Last activity: 2026-06-26 -- Completed 04-02 (Operator ledger client + Option-B settle)
 
-Milestone progress: 3/7 phases [████░░░] 48%
+Milestone progress: 3/7 phases [████░░░] 52%
 
 ## Performance Metrics
 
@@ -60,6 +60,7 @@ Milestone progress: 3/7 phases [████░░░] 48%
 | Phase 03 P02 | 9min | 4 tasks | 16 files |
 | Phase 3 P3 | 8 | 2 tasks | 15 files |
 | Phase 04 P01 | 12 min | 3 tasks | 8 files |
+| Phase 04 P02 | 5 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -87,6 +88,10 @@ Recent decisions affecting current work:
 - [Phase ?]: Zero-dep node:crypto HS256 JWT minting (no jsonwebtoken); operator token to scripts/.operator-token, never web/src (T-03-06)
 - [04-01]: solver/ is Node ESM (type:module, tsconfig moduleResolution:Bundler + esModuleInterop); generated @daml.js/umbra-0.1.0 CJS bindings + @daml/ledger import cleanly under Node via direct named imports (no fallback) — RESEARCH Open Question 1 / Pitfall 6 resolved.
 - [04-01]: auction.ts ports Clearing.daml 1:1 (pure, no imports); for a no-cross round choosePStar returns a candidate price with matched 0 (NOT 0.0) — the 0.0 branch fires only on an empty order book. No-cross invariant is matched===0, enforced by tests + on-ledger Round.Clear backstop.
+- [04-02 / SOLV-04]: solver/src/ledger.ts is the Operator wire layer — JWT read from scripts/.operator-token (zero-dep node:crypto HS256 fallback-mint), held strictly module-private (never returned/logged); only operatorParty (public id) exported. Absolute http://localhost:7575/ base URL (no Vite proxy server-side, Pitfall 2).
+- [04-02 / SOLV-01]: sealedOrderCount has no update choice → maintained by archive+recreate (updateStats); refreshStats recomputes readSealedOrders.length and writes it via updateStats (the live call site that advances a fresh round off '0' — proven on a stubbed-ledger vitest).
+- [04-02]: Option-B Round.Clear — settle gathers orderCids/buyerUsdcCid/sellerBondCids from the live ACS, re-queries the Round cid before each exercise (CloseRound/Clear recreate it, Pitfall 4), Int/Decimal as strings (Pitfall 5), sellerBondCids as DA.Types.Tuple2 { _1, _2 }. ContractId<T> is a branded string → cast gathered cids at the exercise site.
+- [04-02 / A2]: settle's asset selection assumes a single sufficient holding per (owner, symbol) — holds for the §4 fixture; non-canonical/fresh rounds with split or insufficient holdings throw a clean secret-free 'insufficient or missing <symbol> holding for <party>' error (auto-merge is stretch §19).
 
 ### Pending Todos
 
@@ -111,6 +116,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-26T00:10:00.000Z
-Stopped at: Completed 04-01-PLAN.md (solver/ scaffolded; §8 ported to auction.ts bit-identical to Clearing.daml; §4 fixture clears at 100.00; 6 vitest scenarios green; bindings import smoke passes)
+Last session: 2026-06-26T00:16:30.000Z
+Stopped at: Completed 04-02-PLAN.md (solver/src/ledger.ts — Operator @daml/ledger client over absolute :7575; openRound/queryRound/readSealedOrders/updateStats/refreshStats/closeRound/settle; Option-B Round.Clear; token strictly module-private; refreshStats advances sealedOrderCount off '0' proven on a stubbed ledger; 9 vitest green; tsc clean)
 Resume file: None

@@ -44,7 +44,7 @@ Requirements for the hackathon MVP. Each maps to a roadmap phase.
 - [ ] **SOLV-01**: The solver service (Node/TS, runs as Operator) opens a `Round`, maintains `RoundStats.sealedOrderCount`, enforces the 60s window (`ROUND_SECONDS`), and closes the round (`CloseRound`)
 - [ ] **SOLV-02**: On close, the service reads the sealed orders, computes/verifies the clearing, and exercises `Round.Clear`
 - [ ] **SOLV-03**: The service exposes an HTTP API on :4000 — `POST /round`, `GET /round/:id`, `POST /round/:id/close`, `GET /round/:id/solve-preview`, `POST /round/:id/settle` — so the frontend can drive the demo without ledger-admin rights
-- [ ] **SOLV-04**: The Anthropic key and Operator credentials are never exposed to the browser; the browser talks only to the solver service and to the JSON API as individual desk parties
+- [x] **SOLV-04**: The Anthropic key and Operator credentials are never exposed to the browser; the browser talks only to the solver service and to the JSON API as individual desk parties
 - [x] **SOLV-05**: TypeScript unit tests cover the clearing algorithm on ≥5 scenarios (exact same-limit ties, all-or-nothing imbalance, no-cross, and the §4 case)
 
 ### AI Solver Agent (AGENT)
@@ -122,7 +122,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | SOLV-01 | Phase 4 | Pending |
 | SOLV-02 | Phase 4 | Pending |
 | SOLV-03 | Phase 4 | Pending |
-| SOLV-04 | Phase 4 | Pending |
+| SOLV-04 | Phase 4 | Complete (04-02) |
 | SOLV-05 | Phase 4 | Complete (04-01) |
 | AGENT-01 | Phase 5 | Pending |
 | AGENT-02 | Phase 5 | Pending |

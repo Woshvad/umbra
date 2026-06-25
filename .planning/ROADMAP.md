@@ -122,7 +122,7 @@ Plans:
 
 **Wave 2** *(blocked on 04-01)*
 
-- [ ] 04-02-PLAN.md — ledger.ts: Operator @daml/ledger client (absolute :7575 URL, token server-side) + open Round/RoundStats, read sealed orders, CloseRound + Option-B Round.Clear settle [SOLV-01, SOLV-02, SOLV-04]
+- [x] 04-02-PLAN.md — ledger.ts: Operator @daml/ledger client (absolute :7575 URL, token server-side) + open Round/RoundStats, read sealed orders, CloseRound + Option-B Round.Clear settle [SOLV-01, SOLV-02, SOLV-04]
 
 **Wave 3** *(blocked on 04-02)*
 
@@ -186,7 +186,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 1. Skeleton & Version Gate | 3/3 | Complete   | 2026-06-25 |
 | 2. Clear & Settle On-Ledger | 3/3 | Complete   | 2026-06-25 |
 | 3. Privacy Proof (Vertical Slice) | 3/3 | Complete   | 2026-06-25 |
-| 4. Solver Service | 1/4 | In progress | 2026-06-26 |
+| 4. Solver Service | 2/4 | In progress | 2026-06-26 |
 | 5. AI Solver Agent | 0/TBD | Not started | - |
 | 6. Auction Theatre & Settlement Animation | 0/TBD | Not started | - |
 | 7. Polish, Demo & Acceptance | 0/TBD | Not started | - |

@@ -27,8 +27,8 @@ Requirements for the hackathon MVP. Each maps to a roadmap phase.
 ### Settlement (SETL)
 
 - [x] **SETL-01**: `Round.Clear` settles the batch atomically in one transaction — reassigns BONDX & USDCx at p\* (split/merge as needed) and issues a `TradeConfirmation` per participating desk; sets `Round.status = Settled`
-- [ ] **SETL-02**: Post-settlement balances exactly match §4 (A: 10/4,000 · B: 12/1,800 · C: 13/1,200); cash and assets are conserved — asserted in `test_settled_balances`
-- [ ] **SETL-03**: If any leg fails (e.g., a seller lacks the asset), `Round.Clear` fails and **no** balances change (all-or-nothing) — asserted in `test_atomicity`
+- [x] **SETL-02**: Post-settlement balances exactly match §4 (A: 10/4,000 · B: 12/1,800 · C: 13/1,200); cash and assets are conserved — asserted in `test_settled_balances`
+- [x] **SETL-03**: If any leg fails (e.g., a seller lacks the asset), `Round.Clear` fails and **no** balances change (all-or-nothing) — asserted in `test_atomicity`
 - [x] **SETL-04**: `Round.Clear` rejects any allocation violating max-volume, limit compliance, or conservation — asserted in `test_clear_rejects_bad_allocation`
 
 ### Privacy (PRIV)
@@ -111,8 +111,8 @@ Which phases cover which requirements. Populated during roadmap creation.
 | CLEAR-04 | Phase 2 | Complete |
 | CLEAR-05 | Phase 2 | Complete |
 | SETL-01 | Phase 2 | Complete |
-| SETL-02 | Phase 2 | Pending |
-| SETL-03 | Phase 2 | Pending |
+| SETL-02 | Phase 2 | Complete |
+| SETL-03 | Phase 2 | Complete |
 | SETL-04 | Phase 2 | Complete |
 | PRIV-01 | Phase 3 | Pending |
 | PRIV-02 | Phase 3 | Pending |

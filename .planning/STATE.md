@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "Completed 02-02-PLAN.md (real Round.Clear: recompute-§8-verify + atomic DvP + per-desk confirmations + status=Settled)"
-last_updated: "2026-06-25T16:00:23.517Z"
-last_activity: 2026-06-25 -- Completed 02-01 (pure §8 Clearing.daml + test_clears_at_100 canary)
+stopped_at: "Completed 02-03-PLAN.md (settlement tests: test_settled_balances + test_atomicity + test_clear_rejects_bad_allocation; Phase 2 complete 3/3)"
+last_updated: "2026-06-25T16:09:43Z"
+last_activity: 2026-06-25 -- Completed 02-03 (3 on-ledger settlement tests green + operator-only Order.Retire fix; daml test exit 0)
 progress:
   total_phases: 7
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 6
-  completed_plans: 5
-  percent: 83
+  completed_plans: 6
+  percent: 100
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 
 ## Current Position
 
-Phase: 02 (Clear & Settle On-Ledger) — EXECUTING
-Plan: 3 of 3
-Status: Executing Phase 02 (Plans 01 & 02 complete)
-Last activity: 2026-06-25 -- Completed 02-02 (real Round.Clear: recompute-§8-verify + atomic DvP + per-desk confirmations + status=Settled)
+Phase: 02 (Clear & Settle On-Ledger) — COMPLETE (3/3)
+Plan: 3 of 3 (complete)
+Status: Phase 02 complete — ready for Phase 03 (Privacy Proof / Vertical Slice)
+Last activity: 2026-06-25 -- Completed 02-03 (3 on-ledger settlement tests green + operator-only Order.Retire fix; daml test exit 0)
 
-Progress: [████████░░] 83%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -54,6 +54,7 @@ Progress: [████████░░] 83%
 *Updated after each plan completion*
 | Phase 02 P01 | 4 min | 2 tasks | 2 files |
 | Phase 02 P02 | 10 min | 2 tasks | 4 files |
+| Phase 02 P03 | 5 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -73,6 +74,8 @@ Recent decisions affecting current work:
 - [env]: Daml 2.10.4 installed at `%APPDATA%\daml`; invoked as bare `daml` via `~/bin/daml` shim (system PATH lacks `%APPDATA%\daml\bin`); `daml build` verified working on this Windows machine.
 - [Phase ?]: [02-01]: §8 clearing math in dedicated pure Umbra/Clearing.daml; rationByPriority top-level recursive (Daml-LF forbids recursive local bindings).
 - [Phase ?]: [02-02 / D7]: Round.Clear uses additive Option-B fields; Side/Allocation relocated to leaf Clearing + re-exported (byte-identical).
+- [02-03]: Round.Clear retires settled Orders via an operator-only consuming Order.Retire choice, NOT the built-in `archive` (archive needs every signatory's authority — operator AND desk — which operator-authority-only Clear lacks).
+- [02-03]: Settlement tests use a parameterised seedAndClose (B BONDX 20.0 funded / 5.0 underfunded) returning a SeedResult of the Option-B ContractIds; atomicity proven by submitMustFail + sorted before/after Asset snapshot equality.
 
 ### Pending Todos
 
@@ -97,6 +100,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-25T15:59:54.404Z
-Stopped at: Completed 02-02-PLAN.md (real Round.Clear: recompute-§8-verify + atomic DvP + per-desk confirmations + status=Settled)
+Last session: 2026-06-25T16:09:43Z
+Stopped at: Completed 02-03-PLAN.md (3 on-ledger settlement tests green + operator-only Order.Retire fix; Phase 2 complete 3/3, daml test exit 0)
 Resume file: None

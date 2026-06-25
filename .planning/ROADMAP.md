@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Skeleton & Version Gate** - Daml templates + Setup seed the §4 world, `daml start` runs, and the SDK version + data contract are frozen
 - [x] **Phase 2: Clear & Settle On-Ledger** - `Round.Clear` re-verifies §8 and settles the batch as one atomic DvP transaction; §4 fixture clears at $100.00
-- [ ] **Phase 3: Privacy Proof (Vertical Slice)** - Per-party JWT auth proven at the wire + the 3-up Privacy money shot; ship this even if everything after is rough
+- [x] **Phase 3: Privacy Proof (Vertical Slice)** - Per-party JWT auth proven at the wire + the 3-up Privacy money shot; ship this even if everything after is rough (completed 2026-06-25)
 - [ ] **Phase 4: Solver Service** - Node/TS Operator service: 60s window lifecycle, deterministic §8, Express API, ≥5 unit-test scenarios
 - [ ] **Phase 5: AI Solver Agent** - Claude proposes + narrates the clearing; verify-don't-trust gate; additive, off the settlement path
 - [ ] **Phase 6: Auction Theatre & Settlement Animation** - Countdown + reveal, hand-rolled supply/demand crossing SVG, atomic-settle animation, Desk view
@@ -97,7 +97,7 @@ Plans:
 
 **Wave 2** *(blocked on 03-02)*
 
-- [ ] 03-03-PLAN.md — Live ledgerId verify-first + three per-party createLedgerContext + global shell (wordmark/3-desk switcher/round-status/nav) + the 3-up Privacy money shot [PRIV-05, UI-01, UI-03, CLEAR-01]
+- [x] 03-03-PLAN.md — Live ledgerId verify-first + three per-party createLedgerContext + global shell (wordmark/3-desk switcher/round-status/nav) + the 3-up Privacy money shot [PRIV-05, UI-01, UI-03, CLEAR-01]
 
 **UI hint**: yes
 
@@ -168,7 +168,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 |-------|----------------|--------|-----------|
 | 1. Skeleton & Version Gate | 3/3 | Complete   | 2026-06-25 |
 | 2. Clear & Settle On-Ledger | 3/3 | Complete   | 2026-06-25 |
-| 3. Privacy Proof (Vertical Slice) | 2/3 | In Progress|  |
+| 3. Privacy Proof (Vertical Slice) | 3/3 | Complete   | 2026-06-25 |
 | 4. Solver Service | 0/TBD | Not started | - |
 | 5. AI Solver Agent | 0/TBD | Not started | - |
 | 6. Auction Theatre & Settlement Animation | 0/TBD | Not started | - |

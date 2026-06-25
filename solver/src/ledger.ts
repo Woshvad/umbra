@@ -128,6 +128,22 @@ export const queryRound = async (roundId: string): Promise<CreateEvent<Round> | 
   return rounds.find((c) => c.payload.roundId === roundId) ?? null
 }
 
+// ── Query ALL live Rounds (for boot rehydrate; the ledger status is authoritative) ─
+// Returns a flat, secret-free view of every Round contract the Operator can see so
+// index.ts can seed the in-memory clock on boot (Plan 04-04). windowSeconds crosses
+// the wire as a STRING (Int, Pitfall 5) → coerced to number here.
+export const queryAllRounds = async (): Promise<
+  { roundId: string; status: RoundStatus; windowSeconds: number; openedAt: string }[]
+> => {
+  const rounds = await ledger.query(Round)
+  return rounds.map((c) => ({
+    roundId: c.payload.roundId,
+    status: c.payload.status,
+    windowSeconds: Number(c.payload.windowSeconds),
+    openedAt: c.payload.openedAt,
+  }))
+}
+
 // ── Read ALL sealed orders for a round (Operator is a stakeholder of every Order) ─
 // Returns the live ContractId alongside an OrderView (quantity/limit coerced to
 // number for the pure §8 math). Filters to this round's Sealed orders only.

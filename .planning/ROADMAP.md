@@ -113,7 +113,24 @@ Plans:
   3. The service exposes the HTTP API on :4000 (`POST /round`, `GET /round/:id`, `POST /round/:id/close`, `GET /round/:id/solve-preview`, `POST /round/:id/settle`); the Anthropic key and Operator credentials are never exposed to the browser.
   4. TypeScript unit tests cover the clearing algorithm on ≥5 scenarios (exact same-limit ties, all-or-nothing imbalance, no-cross, and the §4 case) and all pass.
 
-**Plans**: TBD
+**Plans**: 4 plans (4 waves)
+Plans:
+
+**Wave 1**
+
+- [ ] 04-01-PLAN.md — Scaffold solver/ (pinned deps + ESM import smoke) + §8 auction.ts port with the 99-vs-100 tie-break guard + 5 vitest scenarios (§4 clears at 100.00) [CLEAR-02, CLEAR-03, SOLV-05]
+
+**Wave 2** *(blocked on 04-01)*
+
+- [ ] 04-02-PLAN.md — ledger.ts: Operator @daml/ledger client (absolute :7575 URL, token server-side) + open Round/RoundStats, read sealed orders, CloseRound + Option-B Round.Clear settle [SOLV-01, SOLV-02, SOLV-04]
+
+**Wave 3** *(blocked on 04-02)*
+
+- [ ] 04-03-PLAN.md — api.ts: Express, the five §11 endpoints on :4000 (cors :5173, zod, secret-safe error envelope), deterministic solve-preview (100.00 + curve + rationale:null), 409 double-settle [SOLV-03, SOLV-04, CLEAR-02]
+
+**Wave 4** *(blocked on 04-02, 04-03)*
+
+- [ ] 04-04-PLAN.md — clock.ts (60s ROUND_SECONDS window + force-close, fake-timer tests) + index.ts boot (dotenv, rehydrate-from-ledger, listen) + live E2E human gate [SOLV-01, SOLV-02]
 
 ### Phase 5: AI Solver Agent
 
@@ -169,7 +186,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 1. Skeleton & Version Gate | 3/3 | Complete   | 2026-06-25 |
 | 2. Clear & Settle On-Ledger | 3/3 | Complete   | 2026-06-25 |
 | 3. Privacy Proof (Vertical Slice) | 3/3 | Complete   | 2026-06-25 |
-| 4. Solver Service | 0/TBD | Not started | - |
+| 4. Solver Service | 0/4 | Not started | - |
 | 5. AI Solver Agent | 0/TBD | Not started | - |
 | 6. Auction Theatre & Settlement Animation | 0/TBD | Not started | - |
 | 7. Polish, Demo & Acceptance | 0/TBD | Not started | - |

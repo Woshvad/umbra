@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: paused
-stopped_at: Phase 3 COMPLETE & VERIFIED (money shot live — per-party wire isolation proven via /v1/query; 3-up view renders live §4 data). Paused after Phase 3 per user request; next = Phase 4 (Solver Service).
-last_updated: "2026-06-25T18:05:00.000Z"
-last_activity: 2026-06-25 -- Phases 1-3 complete & verified; privacy money shot working end-to-end (paused at user stop point)
+stopped_at: Completed 02-03-PLAN.md (3 on-ledger settlement tests green + operator-only Order.Retire fix; Phase 2 complete 3/3, daml test exit 0)
+last_updated: "2026-06-25T22:55:53.728Z"
+last_activity: 2026-06-25 -- money shot live-verified (per-party wire isolation + 3-up render)
 progress:
   total_phases: 7
   completed_phases: 3

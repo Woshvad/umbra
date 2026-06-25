@@ -97,17 +97,54 @@ Explicitly excluded (spec §1 non-goals). Documented to prevent scope creep.
 
 ## Traceability
 
-Which phases cover which requirements. *Populated during roadmap creation.*
+Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| _(filled by roadmapper)_ | | |
+| LEDG-01 | Phase 1 | Pending |
+| LEDG-02 | Phase 1 | Pending |
+| LEDG-03 | Phase 1 | Pending |
+| LEDG-04 | Phase 1 | Pending |
+| CLEAR-01 | Phase 3 | Pending |
+| CLEAR-02 | Phase 4 | Pending |
+| CLEAR-03 | Phase 4 | Pending |
+| CLEAR-04 | Phase 2 | Pending |
+| CLEAR-05 | Phase 2 | Pending |
+| SETL-01 | Phase 2 | Pending |
+| SETL-02 | Phase 2 | Pending |
+| SETL-03 | Phase 2 | Pending |
+| SETL-04 | Phase 2 | Pending |
+| PRIV-01 | Phase 3 | Pending |
+| PRIV-02 | Phase 3 | Pending |
+| PRIV-03 | Phase 3 | Pending |
+| PRIV-04 | Phase 3 | Pending |
+| PRIV-05 | Phase 3 | Pending |
+| SOLV-01 | Phase 4 | Pending |
+| SOLV-02 | Phase 4 | Pending |
+| SOLV-03 | Phase 4 | Pending |
+| SOLV-04 | Phase 4 | Pending |
+| SOLV-05 | Phase 4 | Pending |
+| AGENT-01 | Phase 5 | Pending |
+| AGENT-02 | Phase 5 | Pending |
+| AGENT-03 | Phase 5 | Pending |
+| AGENT-04 | Phase 5 | Pending |
+| UI-01 | Phase 3 | Pending |
+| UI-02 | Phase 6 | Pending |
+| UI-03 | Phase 3 | Pending |
+| UI-04 | Phase 6 | Pending |
+| UI-05 | Phase 6 | Pending |
+| UI-06 | Phase 6 | Pending |
+| UI-07 | Phase 7 | Pending |
+| DEMO-01 | Phase 7 | Pending |
+| DEMO-02 | Phase 7 | Pending |
+| DEMO-03 | Phase 7 | Pending |
+| DEMO-04 | Phase 7 | Pending |
 
 **Coverage:**
-- v1 requirements: 36 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 36 ⚠️
+- v1 requirements: 38 total
+- Mapped to phases: 38 (100%)
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-06-25*
-*Last updated: 2026-06-25 after initial definition*
+*Last updated: 2026-06-25 after roadmap creation (traceability filled, 38/38 mapped)*

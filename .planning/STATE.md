@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-02-PLAN.md (six §7 templates frozen, daml build green)
-last_updated: "2026-06-25T14:45:00.000Z"
-last_activity: 2026-06-25 -- Plan 01-02 complete (six templates frozen, Clear placeholder, DAR builds)
+stopped_at: Completed 01-03-PLAN.md (Setup seed + Wave-0 tests + parties.json export; daml build & daml test green)
+last_updated: "2026-06-25T14:50:00.000Z"
+last_activity: 2026-06-25 -- Plan 01-03 complete — Phase 1 complete (Setup.daml seeds §4, Tests.daml green, parties.json wired)
 progress:
   total_phases: 7
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 2
-  percent: 67
+  completed_plans: 3
+  percent: 100
 ---
 
 # Project State
@@ -25,30 +25,30 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 
 ## Current Position
 
-Phase: 01 (Skeleton & Version Gate) — EXECUTING
-Plan: 3 of 3 (01-01, 01-02 complete)
-Status: Executing Phase 01
-Last activity: 2026-06-25 -- Plan 01-02 complete (six §7 templates frozen, daml build green)
+Phase: 01 (Skeleton & Version Gate) — COMPLETE
+Plan: 3 of 3 (01-01, 01-02, 01-03 complete)
+Status: Phase 01 complete — ready for Phase 02 (Clear & Settle On-Ledger)
+Last activity: 2026-06-25 -- Plan 01-03 complete (Setup seeds §4, Tests.daml green, parties.json export wired)
 
-Progress: [███████░░░] 67%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 1
-- Average duration: 2 min
-- Total execution time: 0.0 hours
+- Total plans completed: 3
+- Average duration: ~3 min
+- Total execution time: 0.2 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01 | 1 | 2 min | 2 min |
+| 01 | 3 | ~10 min | ~3 min |
 
 **Recent Trend:**
 
-- Last 5 plans: 01-01 (2 min)
+- Last 5 plans: 01-01 (2 min), 01-02 (~2 min), 01-03 (~6 min)
 - Trend: —
 
 *Updated after each plan completion*
@@ -94,5 +94,5 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-06-25
-Stopped at: Completed 01-01-PLAN.md (version gate + repo scaffold)
+Stopped at: Completed 01-03-PLAN.md (Phase 1 complete — Setup seed + Wave-0 tests + parties.json export)
 Resume file: None

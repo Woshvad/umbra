@@ -13,7 +13,7 @@ Umbra is a private, sealed-bid uniform-price batch-auction venue for a tokenized
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Skeleton & Version Gate** - Daml templates + Setup seed the §4 world, `daml start` runs, and the SDK version + data contract are frozen
+- [x] **Phase 1: Skeleton & Version Gate** - Daml templates + Setup seed the §4 world, `daml start` runs, and the SDK version + data contract are frozen
 - [ ] **Phase 2: Clear & Settle On-Ledger** - `Round.Clear` re-verifies §8 and settles the batch as one atomic DvP transaction; §4 fixture clears at $100.00
 - [ ] **Phase 3: Privacy Proof (Vertical Slice)** - Per-party JWT auth proven at the wire + the 3-up Privacy money shot; ship this even if everything after is rough
 - [ ] **Phase 4: Solver Service** - Node/TS Operator service: 60s window lifecycle, deterministic §8, Express API, ≥5 unit-test scenarios
@@ -46,7 +46,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 01-03-PLAN.md — Setup.daml (allocate + §4 mint + runCanonicalRound + exportParties) + Tests.daml + parties.json export + daml start smoke [LEDG-02, LEDG-01]
+- [x] 01-03-PLAN.md — Setup.daml (allocate + §4 mint + runCanonicalRound + exportParties) + Tests.daml + parties.json export + daml start smoke [LEDG-02, LEDG-01]
 
 ### Phase 2: Clear & Settle On-Ledger
 
@@ -142,7 +142,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Skeleton & Version Gate | 2/3 | In Progress|  |
+| 1. Skeleton & Version Gate | 3/3 | Complete | 2026-06-25 |
 | 2. Clear & Settle On-Ledger | 0/TBD | Not started | - |
 | 3. Privacy Proof (Vertical Slice) | 0/TBD | Not started | - |
 | 4. Solver Service | 0/TBD | Not started | - |

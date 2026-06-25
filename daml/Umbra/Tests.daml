@@ -16,7 +16,7 @@ import Umbra.Setup
 import Umbra.Asset
 import Umbra.Auction
   ( Side(..), Allocation(..)
-  , Order, Round(..), RoundStatus(..), TradeConfirmation
+  , Order, Round(..), RoundStatus(..), TradeConfirmation, RoundStats(..)
   , CloseRound(..), Clear(..)
   )
 import Umbra.Roles (Venue, SubmitOrder(..))
@@ -323,3 +323,107 @@ test_clear_rejects_bad_allocation = do
       orderCids
       buyerUsdcCid
       sellerBondCids
+
+-- ===========================================================================
+-- §16 privacy proofs (PRIV-01..04). Privacy is already STRUCTURAL from the
+-- Phase-1 field shapes (Order: signatory operator+desk, NO observer; Asset:
+-- observer owner; TradeConfirmation: observer singular desk; RoundStats:
+-- observer desks, count only). These two scripts PROVE it: a stray observer
+-- added later makes a `length === 1` / `all (_.desk == thisDesk)` assertion
+-- fail LOUDLY. Key fact: in Daml Script, `query @T party` returns ONLY contracts
+-- where `party` is a stakeholder — the returned set IS the disclosure boundary.
+-- ===========================================================================
+
+-- PRIV-01/02/04 — submit the 3 §4 orders, then prove per-party Order visibility
+-- is isolated (each desk sees ONLY its own, operator sees all 3), the RoundStats
+-- count is the ONLY pre-clear shared info, and Assets are owner+operator scoped.
+test_privacy_orders : Script ()
+test_privacy_orders = do
+  Parties{..} <- initialize
+  venues <- query @Venue operator
+  let venueCid = case venues of
+        ((v, _) :: _) -> v
+        []            -> error "test_privacy_orders: no Venue found after initialize"
+  -- the three §4 orders, each submitted under its OWN desk authority
+  _ <- submit bankA do
+    exerciseCmd venueCid SubmitOrder with
+      desk = bankA; roundId = "R1"; side = Buy;  quantity = 10; limit = 101.0
+  _ <- submit bankB do
+    exerciseCmd venueCid SubmitOrder with
+      desk = bankB; roundId = "R1"; side = Sell; quantity = 8;  limit = 99.0
+  _ <- submit bankC do
+    exerciseCmd venueCid SubmitOrder with
+      desk = bankC; roundId = "R1"; side = Sell; quantity = 5;  limit = 100.0
+
+  -- seed RoundStats{count = 3} (operator-signed, observer = desks) for PRIV-02
+  _ <- submit operator do
+    createCmd RoundStats with
+      operator
+      roundId          = "R1"
+      desks            = [bankA, bankB, bankC]
+      sealedOrderCount = 3
+
+  -- PRIV-01: each desk sees exactly ITS OWN order, zero of the others' ----------
+  aOrders <- query @Order bankA
+  bOrders <- query @Order bankB
+  cOrders <- query @Order bankC
+  length aOrders === 1
+  length bOrders === 1
+  length cOrders === 1
+  -- the single visible order belongs to the querying desk (no cross-leak)
+  assertMsg "BankA sees only its own order" (all (\(_, o) -> o.desk == bankA) aOrders)
+  assertMsg "BankB sees only its own order" (all (\(_, o) -> o.desk == bankB) bOrders)
+  assertMsg "BankC sees only its own order" (all (\(_, o) -> o.desk == bankC) cOrders)
+  -- operator (Order signatory) sees all three
+  ops <- query @Order operator
+  length ops === 3
+
+  -- PRIV-02: desks see the RoundStats COUNT, never order contents of others ------
+  aStats <- query @RoundStats bankA
+  length aStats === 1
+  assertMsg "desk sees the sealed-order count = 3"
+    (all (\(_, s) -> s.sealedOrderCount == 3) aStats)
+  -- (already proven above: BankA's query @Order returns ONLY its own — never B/C)
+
+  -- PRIV-04: Assets are visible only to owner + operator -------------------------
+  aAssets <- query @Asset bankA
+  assertMsg "BankA sees only its own holdings"
+    (all (\(_, a) -> a.owner == bankA) aAssets)
+  bAssets <- query @Asset bankB
+  assertMsg "BankB sees only its own holdings"
+    (all (\(_, a) -> a.owner == bankB) bAssets)
+  -- operator (Asset signatory) sees ALL holdings (the §4 seed: 5 contracts)
+  allAssets <- query @Asset operator
+  length allAssets === 5
+
+-- PRIV-03 — after a REAL Round.Clear settles the §4 fixture, each desk sees ONLY
+-- its own TradeConfirmation (observer = singular desk); no cross-visibility of
+-- fills. Reuses the Phase-2 seedCanonicalAndClose + canonicalAllocs helpers.
+test_privacy_confirmations : Script ()
+test_privacy_confirmations = do
+  SeedResult{..} <- seedCanonicalAndClose
+  let Parties{..} = parties
+  -- settle with the verified §4 allocation @100.0 (operator authority)
+  _ <- submit operator do
+    exerciseCmd roundCid Clear with
+      clearingPrice  = 100.0
+      allocations    = canonicalAllocs bankA bankB bankC
+      orderCids
+      buyerUsdcCid
+      sellerBondCids
+
+  -- each desk sees exactly its own confirmation; operator sees all three
+  aConfs <- query @TradeConfirmation bankA
+  bConfs <- query @TradeConfirmation bankB
+  cConfs <- query @TradeConfirmation bankC
+  length aConfs === 1
+  length bConfs === 1
+  length cConfs === 1
+  assertMsg "BankA sees only its own confirmation" (all (\(_, t) -> t.desk == bankA) aConfs)
+  assertMsg "BankB sees only its own confirmation" (all (\(_, t) -> t.desk == bankB) bConfs)
+  assertMsg "BankC sees only its own confirmation" (all (\(_, t) -> t.desk == bankC) cConfs)
+  -- cross-check: BankA is NOT a stakeholder of BankB's confirmation
+  assertMsg "no cross-desk confirmation leak"
+    (notElem bankB [ t.desk | (_, t) <- aConfs ])
+  allConfs <- query @TradeConfirmation operator
+  length allConfs === 3

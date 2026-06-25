@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "Completed 02-03-PLAN.md (settlement tests: test_settled_balances + test_atomicity + test_clear_rejects_bad_allocation; Phase 2 complete 3/3)"
-last_updated: "2026-06-25T16:09:43Z"
-last_activity: 2026-06-25 -- Completed 02-03 (3 on-ledger settlement tests green + operator-only Order.Retire fix; daml test exit 0)
+stopped_at: Completed 02-03-PLAN.md (3 on-ledger settlement tests green + operator-only Order.Retire fix; Phase 2 complete 3/3, daml test exit 0)
+last_updated: "2026-06-25T17:01:39.395Z"
+last_activity: 2026-06-25 -- Phase 03 execution started
 progress:
   total_phases: 7
   completed_phases: 2
-  total_plans: 6
-  completed_plans: 6
-  percent: 100
+  total_plans: 9
+  completed_plans: 7
+  percent: 29
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-25)
 
 **Core value:** The privacy money shot — three desks submit sealed orders blind to each other, an AI solver clears them at one uniform price ($100.00 on the §4 fixture), and the whole batch settles atomically in a single Canton transaction.
-**Current focus:** Phase 02 — Clear & Settle On-Ledger
+**Current focus:** Phase 03 — Privacy Proof (Vertical Slice)
 
 ## Current Position
 
-Phase: 02 (Clear & Settle On-Ledger) — COMPLETE (3/3)
-Plan: 3 of 3 (complete)
-Status: Phase 02 complete — ready for Phase 03 (Privacy Proof / Vertical Slice)
-Last activity: 2026-06-25 -- Completed 02-03 (3 on-ledger settlement tests green + operator-only Order.Retire fix; daml test exit 0)
+Phase: 03 (Privacy Proof (Vertical Slice)) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
+Last activity: 2026-06-25 -- Phase 03 execution started
 
 Progress: [██████████] 100%
 
@@ -55,6 +55,7 @@ Progress: [██████████] 100%
 | Phase 02 P01 | 4 min | 2 tasks | 2 files |
 | Phase 02 P02 | 10 min | 2 tasks | 4 files |
 | Phase 02 P03 | 5 min | 2 tasks | 2 files |
+| Phase 03 P01 | 3min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -76,6 +77,8 @@ Recent decisions affecting current work:
 - [Phase ?]: [02-02 / D7]: Round.Clear uses additive Option-B fields; Side/Allocation relocated to leaf Clearing + re-exported (byte-identical).
 - [02-03]: Round.Clear retires settled Orders via an operator-only consuming Order.Retire choice, NOT the built-in `archive` (archive needs every signatory's authority — operator AND desk — which operator-authority-only Clear lacks).
 - [02-03]: Settlement tests use a parameterised seedAndClose (B BONDX 20.0 funded / 5.0 underfunded) returning a SeedResult of the Option-B ContractIds; atomicity proven by submitMustFail + sorted before/after Asset snapshot equality.
+- [Phase ?]: [03-01]: Privacy proven on-ledger by per-party query @T (test_privacy_orders PRIV-01/02/04 + test_privacy_confirmations PRIV-03); pure additions, no template observer changed (privacy is structural from Phase 1).
+- [Phase ?]: [03-01 / CLEAR-01]: seedOpenRound leaves Round status=Open and SEEDS RoundStats{count=3}; live lifecycle + solver auto-increment deferred to Phase 4. Frontend money-shot live state, solver-free.
 
 ### Pending Todos
 
@@ -100,6 +103,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-25T16:09:43Z
+Last session: 2026-06-25T17:01:09.241Z
 Stopped at: Completed 02-03-PLAN.md (3 on-ledger settlement tests green + operator-only Order.Retire fix; Phase 2 complete 3/3, daml test exit 0)
 Resume file: None

@@ -92,7 +92,7 @@ Plans:
 
 **Wave 1**
 
-- [ ] 03-01-PLAN.md — Privacy Daml tests (test_privacy_orders PRIV-01/02/04 + test_privacy_confirmations PRIV-03) + seedOpenRound (Open Round + RoundStats{count=3} + 3 §4 orders) [PRIV-01, PRIV-02, PRIV-03, PRIV-04, CLEAR-01]
+- [x] 03-01-PLAN.md — Privacy Daml tests (test_privacy_orders PRIV-01/02/04 + test_privacy_confirmations PRIV-03) + seedOpenRound (Open Round + RoundStats{count=3} + 3 §4 orders) [PRIV-01, PRIV-02, PRIV-03, PRIV-04, CLEAR-01]
 - [ ] 03-02-PLAN.md — @daml.js/umbra codegen + web/ scaffold (Vite 5.4 + React 18.3.1 + Tailwind 3.4, comp theme, :7575 proxy) + per-party HS256 token-mint script [PRIV-05, UI-01, UI-03]
 
 **Wave 2** *(blocked on 03-02)*
@@ -168,7 +168,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 |-------|----------------|--------|-----------|
 | 1. Skeleton & Version Gate | 3/3 | Complete   | 2026-06-25 |
 | 2. Clear & Settle On-Ledger | 3/3 | Complete   | 2026-06-25 |
-| 3. Privacy Proof (Vertical Slice) | 0/TBD | Not started | - |
+| 3. Privacy Proof (Vertical Slice) | 1/3 | In Progress|  |
 | 4. Solver Service | 0/TBD | Not started | - |
 | 5. AI Solver Agent | 0/TBD | Not started | - |
 | 6. Auction Theatre & Settlement Animation | 0/TBD | Not started | - |

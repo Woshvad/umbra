@@ -69,7 +69,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 02-02-PLAN.md — Real Round.Clear body: recompute-§8-and-assert backstop + atomic DvP settlement + per-desk TradeConfirmations + status=Settled; DECISIONS.md D7 (Option B) [CLEAR-05, SETL-01, SETL-04]
+- [x] 02-02-PLAN.md — Real Round.Clear body: recompute-§8-and-assert backstop + atomic DvP settlement + per-desk TradeConfirmations + status=Settled; DECISIONS.md D7 (Option B) [CLEAR-05, SETL-01, SETL-04]
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -156,7 +156,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Skeleton & Version Gate | 3/3 | Complete   | 2026-06-25 |
-| 2. Clear & Settle On-Ledger | 1/3 | In Progress|  |
+| 2. Clear & Settle On-Ledger | 2/3 | In Progress|  |
 | 3. Privacy Proof (Vertical Slice) | 0/TBD | Not started | - |
 | 4. Solver Service | 0/TBD | Not started | - |
 | 5. AI Solver Agent | 0/TBD | Not started | - |

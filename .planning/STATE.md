@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-03-PLAN.md (Phase 1 complete — Setup seed + Wave-0 tests + parties.json export)
-last_updated: "2026-06-25T15:43:34.695Z"
-last_activity: 2026-06-25 -- Phase 02 execution started
+stopped_at: "Completed 02-02-PLAN.md (real Round.Clear: recompute-§8-verify + atomic DvP + per-desk confirmations + status=Settled)"
+last_updated: "2026-06-25T16:00:23.517Z"
+last_activity: 2026-06-25 -- Completed 02-01 (pure §8 Clearing.daml + test_clears_at_100 canary)
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 6
-  completed_plans: 4
-  percent: 67
+  completed_plans: 5
+  percent: 83
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 ## Current Position
 
 Phase: 02 (Clear & Settle On-Ledger) — EXECUTING
-Plan: 2 of 3
-Status: Executing Phase 02 (Plan 01 complete)
-Last activity: 2026-06-25 -- Completed 02-01 (pure §8 Clearing.daml + test_clears_at_100 canary)
+Plan: 3 of 3
+Status: Executing Phase 02 (Plans 01 & 02 complete)
+Last activity: 2026-06-25 -- Completed 02-02 (real Round.Clear: recompute-§8-verify + atomic DvP + per-desk confirmations + status=Settled)
 
-Progress: [███████░░░] 67%
+Progress: [████████░░] 83%
 
 ## Performance Metrics
 
@@ -53,6 +53,7 @@ Progress: [███████░░░] 67%
 
 *Updated after each plan completion*
 | Phase 02 P01 | 4 min | 2 tasks | 2 files |
+| Phase 02 P02 | 10 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -71,6 +72,7 @@ Recent decisions affecting current work:
 - [01-02]: `Round.Clear` is a signature-frozen compiling placeholder (real verify+DvP body = Phase 2); `ClearResult` defined as a minimal record (spec §7.4 left it undefined).
 - [env]: Daml 2.10.4 installed at `%APPDATA%\daml`; invoked as bare `daml` via `~/bin/daml` shim (system PATH lacks `%APPDATA%\daml\bin`); `daml build` verified working on this Windows machine.
 - [Phase ?]: [02-01]: §8 clearing math in dedicated pure Umbra/Clearing.daml; rationByPriority top-level recursive (Daml-LF forbids recursive local bindings).
+- [Phase ?]: [02-02 / D7]: Round.Clear uses additive Option-B fields; Side/Allocation relocated to leaf Clearing + re-exported (byte-identical).
 
 ### Pending Todos
 
@@ -95,6 +97,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-25T15:42:52.037Z
-Stopped at: Completed 01-03-PLAN.md (Phase 1 complete — Setup seed + Wave-0 tests + parties.json export)
+Last session: 2026-06-25T15:59:54.404Z
+Stopped at: Completed 02-02-PLAN.md (real Round.Clear: recompute-§8-verify + atomic DvP + per-desk confirmations + status=Settled)
 Resume file: None

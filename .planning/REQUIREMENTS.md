@@ -22,14 +22,14 @@ Requirements for the hackathon MVP. Each maps to a roadmap phase.
 - [ ] **CLEAR-02**: The deterministic clearing algorithm (§8) computes the uniform price p\* that maximizes matched volume, with the two-level tie-break — minimize |demand − supply| **only among max-matched candidates**, then choose the lower price — rounded to 2 decimals
 - [ ] **CLEAR-03**: Allocation fills the short side fully and rations the long side by price priority then pro-rata, with integer rounding that never exceeds matched volume (deterministic leftover-to-largest rule, identical in TS and Daml)
 - [x] **CLEAR-04**: The canonical §4 fixture clears at exactly **$100.00** with fills A=10 / B=8 / C=2 (C residual 3) — asserted in `test_clears_at_100`
-- [ ] **CLEAR-05**: The clearing algorithm is implemented in TypeScript (solver) and re-verified inside the Daml `Round.Clear` choice; both produce identical results
+- [x] **CLEAR-05**: The clearing algorithm is implemented in TypeScript (solver) and re-verified inside the Daml `Round.Clear` choice; both produce identical results
 
 ### Settlement (SETL)
 
-- [ ] **SETL-01**: `Round.Clear` settles the batch atomically in one transaction — reassigns BONDX & USDCx at p\* (split/merge as needed) and issues a `TradeConfirmation` per participating desk; sets `Round.status = Settled`
+- [x] **SETL-01**: `Round.Clear` settles the batch atomically in one transaction — reassigns BONDX & USDCx at p\* (split/merge as needed) and issues a `TradeConfirmation` per participating desk; sets `Round.status = Settled`
 - [ ] **SETL-02**: Post-settlement balances exactly match §4 (A: 10/4,000 · B: 12/1,800 · C: 13/1,200); cash and assets are conserved — asserted in `test_settled_balances`
 - [ ] **SETL-03**: If any leg fails (e.g., a seller lacks the asset), `Round.Clear` fails and **no** balances change (all-or-nothing) — asserted in `test_atomicity`
-- [ ] **SETL-04**: `Round.Clear` rejects any allocation violating max-volume, limit compliance, or conservation — asserted in `test_clear_rejects_bad_allocation`
+- [x] **SETL-04**: `Round.Clear` rejects any allocation violating max-volume, limit compliance, or conservation — asserted in `test_clear_rejects_bad_allocation`
 
 ### Privacy (PRIV)
 
@@ -109,11 +109,11 @@ Which phases cover which requirements. Populated during roadmap creation.
 | CLEAR-02 | Phase 4 | Pending |
 | CLEAR-03 | Phase 4 | Pending |
 | CLEAR-04 | Phase 2 | Complete |
-| CLEAR-05 | Phase 2 | Pending |
-| SETL-01 | Phase 2 | Pending |
+| CLEAR-05 | Phase 2 | Complete |
+| SETL-01 | Phase 2 | Complete |
 | SETL-02 | Phase 2 | Pending |
 | SETL-03 | Phase 2 | Pending |
-| SETL-04 | Phase 2 | Pending |
+| SETL-04 | Phase 2 | Complete |
 | PRIV-01 | Phase 3 | Pending |
 | PRIV-02 | Phase 3 | Pending |
 | PRIV-03 | Phase 3 | Pending |

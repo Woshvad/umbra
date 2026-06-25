@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-01-PLAN.md (version gate + repo scaffold)
-last_updated: "2026-06-25T07:57:10.000Z"
-last_activity: 2026-06-25 -- Plan 01-01 complete (version gate passed, SDK 2.10.4 pinned)
+stopped_at: Completed 01-02-PLAN.md (six §7 templates frozen, daml build green)
+last_updated: "2026-06-25T14:45:00.000Z"
+last_activity: 2026-06-25 -- Plan 01-02 complete (six templates frozen, Clear placeholder, DAR builds)
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
-  percent: 33
+  completed_plans: 2
+  percent: 67
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 ## Current Position
 
 Phase: 01 (Skeleton & Version Gate) — EXECUTING
-Plan: 2 of 3 (01-01 complete)
+Plan: 3 of 3 (01-01, 01-02 complete)
 Status: Executing Phase 01
-Last activity: 2026-06-25 -- Plan 01-01 complete (version gate passed, SDK 2.10.4 pinned)
+Last activity: 2026-06-25 -- Plan 01-02 complete (six §7 templates frozen, daml build green)
 
-Progress: [███░░░░░░░] 33%
+Progress: [███████░░░] 67%
 
 ## Performance Metrics
 
@@ -66,6 +66,9 @@ Recent decisions affecting current work:
 - [01-01 / LEDG-04]: Daml SDK pinned to **2.10.4** in `daml/daml.yaml` (version gate passed) — recorded in `DECISIONS.md`.
 - [01-01]: API line = Daml 2.x HTTP JSON API on :7575, NOT Daml 3.x / cn-quickstart (stretch §19).
 - [01-01]: `daml.yaml` uses `source: .` (folder containing `Umbra/`); no `codegen:` block in P1; frontend (P3) installs `@daml/react@2.10.4` with `--legacy-peer-deps`.
+- [01-02]: Six §7 templates frozen verbatim across `Asset.daml`/`Auction.daml`/`Roles.daml`; signatory/observer sets are the privacy control (Order has NO observer; TradeConfirmation observes singular `desk`) — no stray observers.
+- [01-02]: `Round.Clear` is a signature-frozen compiling placeholder (real verify+DvP body = Phase 2); `ClearResult` defined as a minimal record (spec §7.4 left it undefined).
+- [env]: Daml 2.10.4 installed at `%APPDATA%\daml`; invoked as bare `daml` via `~/bin/daml` shim (system PATH lacks `%APPDATA%\daml\bin`); `daml build` verified working on this Windows machine.
 
 ### Pending Todos
 

@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: "Completed 04-03-PLAN.md (solver/src/api.ts — Express §11 API: 5 endpoints on :4000, CORS :5173, zod POST /round, secret-safe error envelope, refreshStats-backed sealedOrderCount on GET, solve-preview 100.00 + matchedVolume 10 + curve + rationale:null, 409 double-settle; 14 vitest green; tsc clean)"
-last_updated: "2026-06-26T00:30:00.000Z"
-last_activity: 2026-06-26 -- Completed 04-03 (solver Express §11 API + tests)
+status: verifying
+stopped_at: "Completed 04-02-PLAN.md (solver/src/ledger.ts — Operator @daml/ledger client over absolute :7575; openRound/queryRound/readSealedOrders/updateStats/refreshStats/closeRound/settle; Option-B Round.Clear; token strictly module-private; refreshStats advances sealedOrderCount off '0' proven on a stubbed ledger; 9 vitest green; tsc clean)"
+last_updated: "2026-06-25T23:36:02.381Z"
+last_activity: 2026-06-26 -- Completed 04-04 (solver clock + boot wiring)
 progress:
   total_phases: 7
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 13
-  completed_plans: 12
-  percent: 43
+  completed_plans: 13
+  percent: 57
 ---
 
 # Project State
@@ -25,13 +25,13 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 
 ## Current Position
 
-Phase: 4 (Solver Service) — EXECUTING
+Phase: 4 (Solver Service) — COMPLETE (autonomous portion; live-E2E deferred)
 Plan: 4 of 4
-Plans: 3 of 4 done (04-01, 04-02, 04-03)
-Status: Executing Phase 4
-Last activity: 2026-06-26 -- Completed 04-03 (solver Express §11 API + tests)
+Plans: 4 of 4 done (04-01, 04-02, 04-03, 04-04)
+Status: Phase complete — ready for verification (live-`daml start` E2E Task 3 deferred to phase verification)
+Last activity: 2026-06-26 -- Completed 04-04 (solver clock + boot wiring)
 
-Milestone progress: 3/7 phases [███░░░░] 43%
+Milestone progress: 4/7 phases [████░░░] 57%
 
 ## Performance Metrics
 
@@ -62,6 +62,7 @@ Milestone progress: 3/7 phases [███░░░░] 43%
 | Phase 04 P01 | 12 min | 3 tasks | 8 files |
 | Phase 04 P02 | 5 min | 2 tasks | 2 files |
 | Phase 04 P03 | 6min | 2 tasks | 2 files |
+| Phase 04 P04 | 5min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -94,6 +95,8 @@ Recent decisions affecting current work:
 - [04-02]: Option-B Round.Clear — settle gathers orderCids/buyerUsdcCid/sellerBondCids from the live ACS, re-queries the Round cid before each exercise (CloseRound/Clear recreate it, Pitfall 4), Int/Decimal as strings (Pitfall 5), sellerBondCids as DA.Types.Tuple2 { _1, _2 }. ContractId<T> is a branded string → cast gathered cids at the exercise site.
 - [04-02 / A2]: settle's asset selection assumes a single sufficient holding per (owner, symbol) — holds for the §4 fixture; non-canonical/fresh rounds with split or insufficient holdings throw a clean secret-free 'insufficient or missing <symbol> holding for <party>' error (auto-merge is stretch §19).
 - [04-03 / SOLV-03, SOLV-04]: solver/src/api.ts is the §11 HTTP surface — createApp(deps) DI factory exposing 5 endpoints on :4000, cors(:5173) only (never *), zod-validated POST /round, secret-safe `{ error: { code, message } }` envelope that never echoes the token/key/process.env/headers. GET /round/:id calls refreshStats FIRST (BLOCKER fix → solver-maintained sealedOrderCount). solve-preview derives matchedVolume = matchedAt(views, pStar) (NOT a ClearingResult field), builds the {price,demand,supply} curve, returns rationale:null (the additive P5 seam) — computes but does NOT settle. settle returns 409 on a Cleared/Settled round (T-04-06). Tests stub the ledger deps + use real §8 helpers via Node fetch on app.listen(0); 14 vitest green, tsc clean.
+- [04-04 / SOLV-01]: solver/src/clock.ts is an in-memory Map<roundId, RoundState> clock — openRoundClock arms a single setTimeout(ROUND_SECONDS*1000) auto-close; forceClose cancels it (clearTimeout) and is idempotent; rehydrate seeds from a live query(Round) without arming a timer. The map is cache/clock state ONLY; the ledger Round.status is authoritative (T-04-10). Proven by fake-timer vitest.
+- [04-04 / SOLV-02]: solver/src/index.ts boots — dotenv.config() first, rehydrate via ledger.queryAllRounds, buildDeps(...) wiring POST /round → openRound + openRoundClock(roundId, ROUND_SECONDS) and POST /round/:id/close → clock.forceClose, createApp(deps).listen(SOLVER_PORT). Entrypoint-guarded main() + dynamic ledger import keeps index.test.ts ledger-free; injected-dep test asserts both openRound + openRoundClock fire (WARNING fix). Secret-free boot log ':<port> as <operatorParty>'. Thin adapters project ledger CreateEvent<Round>/ClearResult onto the API RoundView/SettleResult; settle allocations recomputed via computeClearing.
 
 ### Pending Todos
 
@@ -107,6 +110,7 @@ None yet.
 
 - [P1 gate]: RESOLVED (01-01) — Daml SDK 2.10.4 detected, pinned in `daml/daml.yaml`, and recorded in `DECISIONS.md` with the Daml 2.x HTTP JSON API line + React-18 `--legacy-peer-deps` note.
 - [P5 flag]: Confirm GA structured outputs (`output_config.format`) for the Anthropic account/region; wire forced-tool-use fallback if disabled.
+- [04-04 / Task 3 DEFERRED]: live `daml start` E2E (open→close→solve-preview 100.00→settle Settled→409; a fresh round's sealedOrderCount advances off 0) NOT run headless — deferred to phase verification per the Phases 1–3 precedent. All non-sandbox behavior is green (21 vitest + tsc clean across 04-01/02/03/04). See 04-04-SUMMARY.md "Deferred Human-Verification Checkpoint" for the exact resume steps.
 
 ## Deferred Items
 
@@ -118,6 +122,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-25T23:25:40.051Z
-Stopped at: Completed 04-02-PLAN.md (solver/src/ledger.ts — Operator @daml/ledger client over absolute :7575; openRound/queryRound/readSealedOrders/updateStats/refreshStats/closeRound/settle; Option-B Round.Clear; token strictly module-private; refreshStats advances sealedOrderCount off '0' proven on a stubbed ledger; 9 vitest green; tsc clean)
+Last session: 2026-06-26T00:35:00.000Z
+Stopped at: Completed 04-04-PLAN.md (solver/src/clock.ts in-memory ROUND_SECONDS auto-close + force-close clock; solver/src/index.ts boot — dotenv, rehydrate via queryAllRounds, buildDeps wiring POST /round → openRound + openRoundClock, listen on SOLVER_PORT, secret-free log; 21 vitest green incl. fake-timer clock + injected-dep wiring proof; tsc clean. Live-E2E Task 3 deferred to phase verification). Phase 4 autonomous portion complete 4/4.
 Resume file: None

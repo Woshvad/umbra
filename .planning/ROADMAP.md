@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Skeleton & Version Gate** - Daml templates + Setup seed the §4 world, `daml start` runs, and the SDK version + data contract are frozen
 - [x] **Phase 2: Clear & Settle On-Ledger** - `Round.Clear` re-verifies §8 and settles the batch as one atomic DvP transaction; §4 fixture clears at $100.00
 - [x] **Phase 3: Privacy Proof (Vertical Slice)** - Per-party JWT auth proven at the wire + the 3-up Privacy money shot; ship this even if everything after is rough (completed 2026-06-25)
-- [ ] **Phase 4: Solver Service** - Node/TS Operator service: 60s window lifecycle, deterministic §8, Express API, ≥5 unit-test scenarios
+- [x] **Phase 4: Solver Service** - Node/TS Operator service: 60s window lifecycle, deterministic §8, Express API, ≥5 unit-test scenarios (autonomous portion completed 2026-06-26; live-`daml start` E2E deferred to phase verification)
 - [ ] **Phase 5: AI Solver Agent** - Claude proposes + narrates the clearing; verify-don't-trust gate; additive, off the settlement path
 - [ ] **Phase 6: Auction Theatre & Settlement Animation** - Countdown + reveal, hand-rolled supply/demand crossing SVG, atomic-settle animation, Desk view
 - [ ] **Phase 7: Polish, Demo & Acceptance** - 100% design-comp fidelity, `make demo` + README, screenshots, live E2E acceptance flow
@@ -130,7 +130,7 @@ Plans:
 
 **Wave 4** *(blocked on 04-02, 04-03)*
 
-- [ ] 04-04-PLAN.md — clock.ts (60s ROUND_SECONDS window + force-close, fake-timer tests) + index.ts boot (dotenv, rehydrate-from-ledger, listen) + live E2E human gate [SOLV-01, SOLV-02]
+- [x] 04-04-PLAN.md — clock.ts (60s ROUND_SECONDS window + force-close, fake-timer tests) + index.ts boot (dotenv, rehydrate-from-ledger, listen) + live E2E human gate [SOLV-01, SOLV-02]
 
 ### Phase 5: AI Solver Agent
 
@@ -186,7 +186,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 1. Skeleton & Version Gate | 3/3 | Complete   | 2026-06-25 |
 | 2. Clear & Settle On-Ledger | 3/3 | Complete   | 2026-06-25 |
 | 3. Privacy Proof (Vertical Slice) | 3/3 | Complete   | 2026-06-25 |
-| 4. Solver Service | 3/4 | In Progress|  |
+| 4. Solver Service | 4/4 | Complete   | 2026-06-26 |
 | 5. AI Solver Agent | 0/TBD | Not started | - |
 | 6. Auction Theatre & Settlement Animation | 0/TBD | Not started | - |
 | 7. Polish, Demo & Acceptance | 0/TBD | Not started | - |

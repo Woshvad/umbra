@@ -12,4 +12,17 @@ export default defineConfig({
       '/v1': { target: 'http://localhost:7575', changeOrigin: true, ws: true },
     },
   },
+  // The generated @daml.js/umbra-0.1.0 bindings are CommonJS (no "type":"module";
+  // each module assigns `exports.X = ...` dynamically). Pre-bundle them with esbuild
+  // so Rollup sees proper named ESM exports for the deep `/lib/Umbra/*/module`
+  // subpaths the app imports (Order/Asset/Round/RoundStats/Venue/Side).
+  optimizeDeps: {
+    include: ['@daml.js/umbra-0.1.0', '@daml/react', '@daml/ledger', '@daml/types'],
+  },
+  build: {
+    commonjsOptions: {
+      // Allow the CJS interop transform to reach the linked (file:) bindings package.
+      include: [/daml\.js\/umbra-0\.1\.0/, /node_modules/],
+    },
+  },
 })

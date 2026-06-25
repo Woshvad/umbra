@@ -31,7 +31,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. `daml start` compiles the project (templates `Asset`, `Venue`, `Order`, `Round`, `RoundStats`, `TradeConfirmation` per §7) and runs the sandbox + HTTP JSON API on :7575.
   3. `Setup.daml` allocates Operator/BankA/BankB/BankC and mints the §4 holdings (A→5,000 USDCx; B→20 BONDX + 1,000 USDCx; C→15 BONDX + 1,000 USDCx), writing party IDs/tokens to a generated `parties.json`/`.env`.
   4. `Asset` is operator-custodied (signatory operator, observer owner) and exposes Split/Merge/Reassign usable only by the Operator; the template field names and the `Allocation` data type are frozen as the shared cross-layer contract.
-**Plans**: TBD
+**Plans**: 3 plans (3 waves)
+Plans:
+- [ ] 01-01-PLAN.md — Version gate (detect/pin SDK 2.10.4) + repo scaffold (daml.yaml, DECISIONS.md, .gitignore, .env.example, README; track spec.md + Umbra design/) [LEDG-04, LEDG-01]
+- [ ] 01-02-PLAN.md — Freeze the six §7 templates + data types + ClearResult + Round.Clear placeholder; daml build green [LEDG-01, LEDG-03]
+- [ ] 01-03-PLAN.md — Setup.daml (allocate + §4 mint + runCanonicalRound + exportParties) + Tests.daml + parties.json export + daml start smoke [LEDG-02, LEDG-01]
 
 ### Phase 2: Clear & Settle On-Ledger
 **Goal**: The ledger is the source of truth and atomicity boundary — `Round.Clear` independently re-verifies the §8 allocation and settles the whole batch delivery-versus-payment in a single all-or-nothing transaction.
@@ -109,7 +113,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Skeleton & Version Gate | 0/TBD | Not started | - |
+| 1. Skeleton & Version Gate | 0/3 | Not started | - |
 | 2. Clear & Settle On-Ledger | 0/TBD | Not started | - |
 | 3. Privacy Proof (Vertical Slice) | 0/TBD | Not started | - |
 | 4. Solver Service | 0/TBD | Not started | - |

@@ -155,9 +155,16 @@ describe('computeClearing — §8 clearing port', () => {
     expect(10 - fillOf(allocations, 'BankA')).toBe(6)
   })
 
-  // 4. No-cross: best buy limit (99) < best sell limit (101) → no price crosses,
-  //    matched 0 at every candidate, choosePStar returns 0.0 (foldl-max-0 seed).
-  it('no-cross: best buy < best sell yields matched 0 and pStar 0.0', () => {
+  // 4. No-cross: best buy limit (99) < best sell limit (101) → no price crosses.
+  //    Matched volume is 0 at EVERY candidate, so `traded` is 0 and no allocation
+  //    crosses. Note: choosePStar mirrors Clearing.daml exactly — with `maxMatched`
+  //    = 0 ALL candidate prices are in `topPrices`, and the (imbalance, price)
+  //    tie-break still ranks them, so choosePStar returns a candidate price (here
+  //    101, the min-imbalance one), NOT 0.0. The 0.0 branch fires only on a
+  //    truly empty order list. The load-bearing invariant for a no-cross round is
+  //    therefore matched===0 (the caller guards on traded volume, never settling),
+  //    which the on-ledger Round.Clear re-verification also enforces.
+  it('no-cross: best buy < best sell yields matched 0 and traded volume 0', () => {
     const views: OrderView[] = [
       { desk: 'BankA', side: 'Buy', quantity: 10, limit: 99.0 },
       { desk: 'BankB', side: 'Sell', quantity: 8, limit: 101.0 },
@@ -166,11 +173,22 @@ describe('computeClearing — §8 clearing port', () => {
     expect(matchedAt(views, 99)).toBe(0)
     expect(matchedAt(views, 101)).toBe(0)
 
-    expect(choosePStar(views)).toBe(0)
+    // pStar is a candidate price (no cross), but matched volume at it is 0 —
+    // the foldl-max-0 seed means no positive traded volume exists.
+    const pStar = choosePStar(views)
+    expect(matchedAt(views, pStar)).toBe(0)
 
-    const { clearingPrice, allocations } = computeClearing(views)
-    expect(clearingPrice).toBe(0)
-    // Nothing crosses → no positive fills.
+    const { allocations } = computeClearing(views)
+    // Nothing crosses → traded is 0 → every fill is 0.
     expect(allocations.every((a) => a.filledQty === 0)).toBe(true)
+  })
+
+  // 4b. Genuinely empty batch → choosePStar hits the empty-`ranked` branch and
+  //     returns 0.0 (the documented foldl-max-0 / no-candidate seed).
+  it('no-cross: an empty order book has pStar 0.0 and no allocations', () => {
+    expect(choosePStar([])).toBe(0)
+    const { clearingPrice, allocations } = computeClearing([])
+    expect(clearingPrice).toBe(0)
+    expect(allocations).toEqual([])
   })
 })

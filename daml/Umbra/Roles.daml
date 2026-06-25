@@ -1,0 +1,30 @@
+-- Umbra — the role contract that lets registered desks submit sealed orders
+-- (spec §7.2, frozen field shapes). The created Order is signed by operator
+-- (Venue signatory authority) + desk (controller authority) and observed by no
+-- other desk — the privacy guarantee (T-01-02).
+module Umbra.Roles where
+
+import Umbra.Auction
+
+template Venue
+  with
+    operator : Party
+    desks    : [Party]          -- [BankA, BankB, BankC]
+  where
+    signatory operator
+    observer desks
+
+    -- nonconsuming so the Venue persists across every desk's submissions.
+    nonconsuming choice SubmitOrder : ContractId Order
+      with
+        desk      : Party
+        roundId   : Text
+        side      : Side        -- data Side = Buy | Sell
+        quantity  : Int         -- > 0
+        limit     : Decimal     -- > 0
+      controller desk
+      do
+        assertMsg "desk not registered" (desk `elem` desks)
+        create Order with
+          operator; desk; roundId; side; quantity; limit
+          status = Sealed

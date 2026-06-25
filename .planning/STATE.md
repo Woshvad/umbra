@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-03-PLAN.md (Setup seed + Wave-0 tests + parties.json export; daml build & daml test green)
-last_updated: "2026-06-25T14:50:00.000Z"
-last_activity: 2026-06-25 -- Plan 01-03 complete — Phase 1 complete (Setup.daml seeds §4, Tests.daml green, parties.json wired)
+stopped_at: Completed 01-03-PLAN.md (Phase 1 complete — Setup seed + Wave-0 tests + parties.json export)
+last_updated: "2026-06-25T15:43:34.695Z"
+last_activity: 2026-06-25 -- Phase 02 execution started
 progress:
   total_phases: 7
   completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
-  percent: 100
+  total_plans: 6
+  completed_plans: 4
+  percent: 67
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-25)
 
 **Core value:** The privacy money shot — three desks submit sealed orders blind to each other, an AI solver clears them at one uniform price ($100.00 on the §4 fixture), and the whole batch settles atomically in a single Canton transaction.
-**Current focus:** Phase 01 — Skeleton & Version Gate
+**Current focus:** Phase 02 — Clear & Settle On-Ledger
 
 ## Current Position
 
-Phase: 01 (Skeleton & Version Gate) — COMPLETE
-Plan: 3 of 3 (01-01, 01-02, 01-03 complete)
-Status: Phase 01 complete — ready for Phase 02 (Clear & Settle On-Ledger)
-Last activity: 2026-06-25 -- Plan 01-03 complete (Setup seeds §4, Tests.daml green, parties.json export wired)
+Phase: 02 (Clear & Settle On-Ledger) — EXECUTING
+Plan: 2 of 3
+Status: Executing Phase 02 (Plan 01 complete)
+Last activity: 2026-06-25 -- Completed 02-01 (pure §8 Clearing.daml + test_clears_at_100 canary)
 
-Progress: [██████████] 100%
+Progress: [███████░░░] 67%
 
 ## Performance Metrics
 
@@ -52,6 +52,7 @@ Progress: [██████████] 100%
 - Trend: —
 
 *Updated after each plan completion*
+| Phase 02 P01 | 4 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -69,6 +70,7 @@ Recent decisions affecting current work:
 - [01-02]: Six §7 templates frozen verbatim across `Asset.daml`/`Auction.daml`/`Roles.daml`; signatory/observer sets are the privacy control (Order has NO observer; TradeConfirmation observes singular `desk`) — no stray observers.
 - [01-02]: `Round.Clear` is a signature-frozen compiling placeholder (real verify+DvP body = Phase 2); `ClearResult` defined as a minimal record (spec §7.4 left it undefined).
 - [env]: Daml 2.10.4 installed at `%APPDATA%\daml`; invoked as bare `daml` via `~/bin/daml` shim (system PATH lacks `%APPDATA%\daml\bin`); `daml build` verified working on this Windows machine.
+- [Phase ?]: [02-01]: §8 clearing math in dedicated pure Umbra/Clearing.daml; rationByPriority top-level recursive (Daml-LF forbids recursive local bindings).
 
 ### Pending Todos
 
@@ -93,6 +95,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-25
+Last session: 2026-06-25T15:42:52.037Z
 Stopped at: Completed 01-03-PLAN.md (Phase 1 complete — Setup seed + Wave-0 tests + parties.json export)
 Resume file: None

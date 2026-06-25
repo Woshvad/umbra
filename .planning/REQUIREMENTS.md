@@ -21,7 +21,7 @@ Requirements for the hackathon MVP. Each maps to a roadmap phase.
 - [ ] **CLEAR-01**: A registered desk can submit exactly one sealed order per round (side Buy/Sell, integer qty > 0, decimal limit > 0) via `Venue.SubmitOrder`; the created `Order` is signed by operator + desk; the ticket disables after submit
 - [ ] **CLEAR-02**: The deterministic clearing algorithm (§8) computes the uniform price p\* that maximizes matched volume, with the two-level tie-break — minimize |demand − supply| **only among max-matched candidates**, then choose the lower price — rounded to 2 decimals
 - [ ] **CLEAR-03**: Allocation fills the short side fully and rations the long side by price priority then pro-rata, with integer rounding that never exceeds matched volume (deterministic leftover-to-largest rule, identical in TS and Daml)
-- [ ] **CLEAR-04**: The canonical §4 fixture clears at exactly **$100.00** with fills A=10 / B=8 / C=2 (C residual 3) — asserted in `test_clears_at_100`
+- [x] **CLEAR-04**: The canonical §4 fixture clears at exactly **$100.00** with fills A=10 / B=8 / C=2 (C residual 3) — asserted in `test_clears_at_100`
 - [ ] **CLEAR-05**: The clearing algorithm is implemented in TypeScript (solver) and re-verified inside the Daml `Round.Clear` choice; both produce identical results
 
 ### Settlement (SETL)
@@ -108,7 +108,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | CLEAR-01 | Phase 3 | Pending |
 | CLEAR-02 | Phase 4 | Pending |
 | CLEAR-03 | Phase 4 | Pending |
-| CLEAR-04 | Phase 2 | Pending |
+| CLEAR-04 | Phase 2 | Complete |
 | CLEAR-05 | Phase 2 | Pending |
 | SETL-01 | Phase 2 | Pending |
 | SETL-02 | Phase 2 | Pending |
@@ -141,6 +141,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | DEMO-04 | Phase 7 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 38 total
 - Mapped to phases: 38 (100%)
 - Unmapped: 0

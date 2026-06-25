@@ -21,7 +21,24 @@
 module Umbra.Clearing where
 
 import DA.List (sort, sortOn, dedup)
-import Umbra.Auction (Side(..), Allocation(..))
+
+-- §7.3 — order side (verbatim). Defined here (the math leaf module) rather than
+-- in Auction so that Auction.Clear can `import Umbra.Clearing (computeClearing)`
+-- without a cyclic module dependency (Daml forbids import cycles; no .hs-boot).
+-- Re-exported by Umbra.Auction, so `Umbra.Auction.Side` still resolves unchanged
+-- for every existing consumer (Roles/Setup/Tests). Record/constructor shape is
+-- byte-identical to the Phase-1 definition.
+data Side = Buy | Sell deriving (Eq, Show)
+
+-- §7.7 — the solver's verified output (plain data, re-checked on-ledger in Phase 2).
+-- Lives in the leaf math module for the same cycle-breaking reason as `Side`;
+-- re-exported by Umbra.Auction so `Umbra.Auction.Allocation` is unchanged. The
+-- record field shape (desk : Party, side : Side, filledQty : Int) is byte-identical.
+data Allocation = Allocation with
+    desk      : Party
+    side      : Side
+    filledQty : Int
+  deriving (Eq, Show)
 
 -- A flattened view of one order, decoupled from the `Order` template so the
 -- math is a pure function of plain data — easy to test and to mirror in TS (P4).

@@ -6,6 +6,10 @@
 # --- Daml build artifacts ---
 .daml/
 *.dar
+# Canton runtime logs emitted by `daml build`/`daml test`/`daml start`.
+daml/log/
+canton.log
+canton_errors.log
 
 # --- Ephemeral runtime state ---
 # parties.json holds per-boot Canton party IDs (hint::<fingerprint>), which are

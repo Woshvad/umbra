@@ -2,21 +2,57 @@
 -- The signatory/observer sets here ARE the privacy model: Order is private to
 -- exactly operator+desk (no observer) — the core of the money shot; a stray
 -- observer would silently break PRIV-01..04.
-module Umbra.Auction where
+-- The module re-exports `Side` and `Allocation` (now defined in the leaf math
+-- module Umbra.Clearing to break a module-import cycle — Auction.Clear must
+-- import computeClearing, and Clearing previously imported Auction). Re-exporting
+-- keeps `Umbra.Auction.Side` / `Umbra.Auction.Allocation` resolvable, byte-shape
+-- unchanged, for every existing consumer (Roles / Setup / Tests).
+module Umbra.Auction
+  ( module Umbra.Auction
+  , Side(..)
+  , Allocation(..)
+  ) where
 
--- §7.3 — order side & status (verbatim)
-data Side = Buy | Sell deriving (Eq, Show)
+import DA.Action (when, foldlA)
+import DA.Foldable (forA_)
+import DA.List (sortOn, head)
+import Umbra.Asset (Asset(..), Split(..), Reassign(..))
+import Umbra.Clearing (Side(..), Allocation(..), OrderView(..), computeClearing)
+
+-- §7.3 — order status (verbatim). `Side` is defined in Umbra.Clearing and
+-- re-exported above (cycle-break); its Buy/Sell shape is byte-unchanged.
 data OrderStatus = Sealed | Filled | PartiallyFilled | Unfilled deriving (Eq, Show)
+
+-- Settlement helper (Update-monad; top-level because it is reused per leg and
+-- Daml-LF forbids recursive/closure-heavy local bindings). Moves EXACTLY `qty`
+-- units off the holding `cid` to `newOwner`, returning the moved-slice cid.
+--   * qty == holding.quantity → Reassign the WHOLE contract (Asset.Split is
+--     STRICT `splitQty < quantity`, so a full move must NOT call Split).
+--   * qty <  holding.quantity → Split a `qty` slice, Reassign that slice (the
+--     remainder stays with the current owner).
+--   * qty >  holding.quantity → Asset.Split's guard / `ensure quantity >= 0.0`
+--     throws → the whole Clear transaction rolls back (atomicity, SETL-03).
+-- Quantities cross to Decimal here via the caller's `intToDecimal` (units stay Int).
+moveExact : ContractId Asset -> Decimal -> Party -> Update (ContractId Asset)
+moveExact cid qty newOwner = do
+  holding <- fetch cid
+  if qty == holding.quantity
+    then exercise cid Reassign with newOwner
+    else do
+      (slice, _remainder) <- exercise cid Split with splitQty = qty
+      exercise slice Reassign with newOwner
+
+-- Lookup a desk's filled quantity for a given side from the verified allocations.
+fillFor : [Allocation] -> Party -> Side -> Int
+fillFor allocs party sd =
+  sum [ a.filledQty | a <- allocs, a.desk == party, a.side == sd ]
 
 -- §7.4 — round lifecycle status (verbatim)
 data RoundStatus = Open | Closed | Cleared | Settled deriving (Eq, Show)
 
--- §7.7 — the solver's verified output (plain data, re-checked on-ledger in Phase 2)
-data Allocation = Allocation with
-    desk      : Party
-    side      : Side
-    filledQty : Int
-  deriving (Eq, Show)
+-- §7.7 — the solver's verified output (`Allocation`) is defined in Umbra.Clearing
+-- and re-exported above; its record shape (desk : Party, side : Side,
+-- filledQty : Int) is byte-unchanged.
 
 -- §7.3 — a sealed limit order. Stakeholders are exactly operator + desk: both
 -- signatories make it unforgeable, and NO observer keeps it private to those two.
@@ -94,19 +130,112 @@ template Round
       do
         create this with status = Closed
 
-    -- SIGNATURE-ONLY PLACEHOLDER: signature frozen (clearingPrice, allocations,
-    -- controller operator) returning ClearResult, with a LOUD assertMsg ... False
-    -- body so it type-checks but FAILS LOUDLY if exercised before Phase 2 (NOT a
-    -- silent no-op). The real verify+DvP body lands in Phase 2.
-    choice Clear : ClearResult                      -- THE atomic settlement choice (see §10)
+    -- §10 — THE atomic settlement choice. The named frozen fields
+    -- (clearingPrice, allocations, controller operator, → ClearResult) are
+    -- UNCHANGED; the orderCids / buyerUsdcCid / sellerBondCids fields are
+    -- ADDITIVE settlement inputs (Option B, DECISIONS.md D7) — a choice body
+    -- cannot `query` the ACS, so the caller (Script test now, TS solver P4)
+    -- locates and passes in the ContractIds it operates on.
+    choice Clear : ClearResult
       with
-        clearingPrice : Decimal
-        allocations   : [Allocation]                -- solver output, verified on-ledger
+        clearingPrice  : Decimal
+        allocations    : [Allocation]               -- solver output, verified on-ledger
+        orderCids      : [ContractId Order]          -- the round's sealed orders
+        buyerUsdcCid   : ContractId Asset            -- buyer's USDCx holding to debit
+        sellerBondCids : [(Party, ContractId Asset)] -- each seller's BONDX holding
       controller operator
       do
-        assertMsg "Clear not yet implemented (Phase 2)" False
+        -- 0. Lifecycle guard (RESEARCH Pitfall 7 / T-02-07, double-settle): only a
+        --    Closed (or Cleared) round is settleable. Clear recreates the Round with
+        --    status = Settled, so a re-exercise on the new contract fails this guard.
+        assertMsg "round not settleable (must be Closed or Cleared)"
+          (status == Closed || status == Cleared)
+
+        -- 1. RE-VERIFY — the security keystone (CLEAR-05 + SETL-04, spec §9/§10
+        --    step 1). Fetch the sealed orders, rebuild OrderViews, recompute §8,
+        --    and assert the proposal matches EXACTLY. This single recompute-and-
+        --    equal check provably subsumes max-volume + per-order-limit-compliance
+        --    + conservation: a bad allocation (e.g. A buys 12) or a wrong price
+        --    (e.g. 99.0) is rejected here regardless of holdings.
+        orders <- mapA fetch orderCids
+        let views = [ OrderView with
+                        desk     = o.desk
+                        side     = o.side
+                        quantity = o.quantity
+                        limit    = o.limit
+                    | o <- orders ]
+        let (pStarExpected, allocsExpected) = computeClearing views
+        assertMsg "clearingPrice does not match recomputed §8 p*"
+          (roundBankers 2 clearingPrice == roundBankers 2 pStarExpected)
+        -- Order-independent (multiset) allocation equality via a stable sort key.
+        let allocKey a = (show a.desk, show a.side, a.filledQty)
+        assertMsg "allocations do not match recomputed §8"
+          (sortOn allocKey allocations == sortOn allocKey allocsExpected)
+        -- Defense-in-depth conservation: Σ buy fills == Σ sell fills.
+        let totalBuy  = sum [ a.filledQty | a <- allocations, a.side == Buy ]
+        let totalSell = sum [ a.filledQty | a <- allocations, a.side == Sell ]
+        assertMsg "fills not conserved (Σbuy /= Σsell)" (totalBuy == totalSell)
+
+        -- 2. SETTLE DvP in this ONE transaction (spec §10 step 2, SETL-01) under
+        --    sole operator authority (operator-custody — Clear is `controller
+        --    operator` and every Asset choice is `controller operator`, so
+        --    authority flows automatically; no counterparty submit). Any failing
+        --    leg rolls back the whole transaction (atomicity, SETL-03).
+        let priceDec = roundBankers 2 clearingPrice
+        -- The buyer is the (single) desk on the Buy side of the verified allocation.
+        let buyer = head [ a.desk | a <- allocations, a.side == Buy ]
+
+        -- BONDX leg: each seller delivers `filledQty` BONDX to the buyer.
+        forA_ sellerBondCids $ \(seller, bondCid) -> do
+          let filled = fillFor allocations seller Sell
+          when (filled > 0) $ do
+            _ <- moveExact bondCid (intToDecimal filled) buyer
+            pure ()
+
+        -- Cash leg: debit the buyer's USDCx and credit each seller `filledQty * p*`.
+        -- Thread the buyer's USDCx ContractId through the per-seller splits so each
+        -- slice comes off the running remainder (the final remainder stays with the
+        -- buyer). The buyer's net debit is Σ(sellerFill * p*) = totalSell * p*.
+        let creditCash usdcCid (seller, _) = do
+              let filled = fillFor allocations seller Sell
+              if filled <= 0
+                then pure usdcCid
+                else do
+                  let cashDue = intToDecimal filled * priceDec
+                  holding <- fetch usdcCid
+                  if cashDue == holding.quantity
+                    then do
+                      _ <- exercise usdcCid Reassign with newOwner = seller
+                      pure usdcCid   -- holding fully consumed; no remainder cid to thread
+                    else do
+                      (slice, remainder) <- exercise usdcCid Split with splitQty = cashDue
+                      _ <- exercise slice Reassign with newOwner = seller
+                      pure remainder
+        -- Fold the cash credits across sellers, threading the buyer's USDCx remainder.
+        _finalBuyerCash <- foldlA creditCash buyerUsdcCid sellerBondCids
+
+        -- 3. Mark the Orders settled — archive each (spec §10 step 3); the per-desk
+        --    TradeConfirmation is the durable fill receipt.
+        forA_ orderCids archive
+
+        -- 4. Per-desk TradeConfirmation (spec §10 step 4) — observer = that desk
+        --    only (the privacy field is frozen in the template). One per
+        --    participating desk (each allocation row maps to one desk+side).
+        confs <- forA allocations $ \a ->
+          create TradeConfirmation with
+            operator
+            desk          = a.desk
+            roundId
+            symbol
+            side          = a.side
+            filledQty     = a.filledQty
+            clearingPrice = priceDec
+            cashMoved     = intToDecimal a.filledQty * priceDec
+
+        -- 5. Settle the Round (spec §10 step 5) and return the verified result.
+        _newRound <- create this with status = Settled
         pure ClearResult with
           roundId
-          clearingPrice
-          totalMatched  = 0
-          confirmations = []
+          clearingPrice = priceDec
+          totalMatched  = totalBuy
+          confirmations = confs

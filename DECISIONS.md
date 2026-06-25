@@ -97,3 +97,49 @@ This satisfies threat **T-01-05** (insecure dev JWT misuse).
 frontend, and is **never committed**. `.env` is gitignored; the repo ships
 `.env.example` with empty placeholder values only (spec §15). Satisfies threat
 **T-01-04**.
+
+---
+
+## D7 — Round.Clear locates Assets via additive choice fields (Option B), not a contract key
+
+**Decision:** `Round.Clear` **receives** the `ContractId`s it operates on as
+**additive choice fields** (Option B) rather than looking them up on-ledger.
+
+**Why a lookup is impossible inside the choice:** Daml choice bodies run in the
+`Update` monad and **cannot `query` the ACS**. `query` / `queryContractId` /
+`queryFilter` are `Daml.Script`-only functions (the `Script` monad); they are not
+in scope inside a choice and would not type-check there. A choice body may only
+`fetch` / `exercise` / `create` / `archive` contracts for which it already holds a
+`ContractId` (or contract key). Therefore `Round.Clear` must be **given** the
+`Order` and `Asset` references it settles.
+
+**Option B (ADOPTED) — additive choice fields.** The `Clear` choice keeps its
+frozen shape (`clearingPrice : Decimal`, `allocations : [Allocation]`,
+`controller operator`, returning `ClearResult`) and **adds** purely-additive
+settlement-input fields:
+
+- `orderCids : [ContractId Order]` — the round's sealed orders (operator is signatory),
+- `buyerUsdcCid : ContractId Asset` — the buyer's USDCx holding to debit,
+- `sellerBondCids : [(Party, ContractId Asset)]` — each seller's BONDX holding to debit.
+
+The caller — the Daml Script test now, the TS solver service in Phase 4 — locates
+these contracts by `query` at the **Script / service tier** (where `query` is
+valid) and passes the `ContractId`s in. `Round.Clear` stays a pure
+verifier+settler of its inputs.
+
+**This does NOT break the cross-layer contract.** The named frozen fields
+(`clearingPrice`, `allocations`, controller `operator`, return `ClearResult`) are
+**unchanged**, and the `Allocation` and `ClearResult` **data shapes are
+byte-unchanged**. The new fields are *purely additive* settlement inputs — they do
+not alter the existing cross-layer surface that downstream codegen (P3+) and the
+TS solver (P4) depend on. The Phase-1 `Asset` template is left **byte-untouched**.
+
+**Rejected fallback — Option A (contract key on `Asset`).** Add
+`key (operator, owner, symbol)` + `maintainer operator` to `Asset` and use
+`fetchByKey` / `exerciseByKey` inside `Clear`. **Rejected** because it mutates the
+Phase-1-frozen `Asset` template, and because settlement Splits/Reassigns create
+multiple same-symbol Assets per owner — risking a `DuplicateKey` error unless every
+credit is `Merge`d back to one-per-key, adding avoidable complexity. Option B keeps
+the frozen template intact and matches spec §9's "solver output, verified
+on-ledger" framing. (Per 02-CONTEXT phase_critical_constraint 2; 02-RESEARCH
+Open Question 1 / Assumptions A1–A2.)

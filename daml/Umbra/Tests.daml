@@ -1,0 +1,73 @@
+-- Umbra — Wave-0 Daml Script validation scaffolds (spec §16; this phase only
+-- needs the "seeds + compiles" smoke — clearing/settlement/privacy tests 1-6
+-- arrive in Phases 2-3). Run with `daml test` (exit code is authoritative).
+--
+--   * test_setup_seeds      (LEDG-02): initialize seeds 4 parties + the exact
+--                            §4 holdings (5 Asset contracts).
+--   * test_asset_split_merge(LEDG-03): operator Split then Merge preserve total
+--                            quantity (conservation); out-of-range Split rejected.
+module Umbra.Tests where
+
+import Daml.Script
+import DA.Assert
+import DA.Foldable (forA_)
+import Umbra.Setup
+import Umbra.Asset
+
+-- LEDG-02 — the §4 seed is the single correctness reference. Assert that after
+-- `initialize` the operator sees exactly the 5 §4 Assets with the right
+-- owner/symbol/quantity. A wrong mint literal fails here instead of silently
+-- corrupting every downstream test (threat T-01-07).
+test_setup_seeds : Script ()
+test_setup_seeds = do
+  Parties{..} <- initialize
+  assets <- query @Asset operator
+  -- Exactly 5 Asset contracts minted.
+  length assets === 5
+  let holdings = [(a.owner, a.symbol, a.quantity) | (_, a) <- assets]
+  -- The four parties are distinct.
+  assertMsg "parties must be distinct"
+    (operator /= bankA && bankA /= bankB && bankB /= bankC && operator /= bankC)
+  -- Every §4 holding is present (owner, symbol, quantity).
+  let expected =
+        [ (bankA, "USDCx", 5000.0)
+        , (bankB, "BONDX", 20.0)
+        , (bankB, "USDCx", 1000.0)
+        , (bankC, "BONDX", 15.0)
+        , (bankC, "USDCx", 1000.0)
+        ]
+  forA_ expected $ \h ->
+    assertMsg ("missing expected §4 holding: " <> show h) (h `elem` holdings)
+
+-- LEDG-03 — operator-only Split/Merge preserve total quantity. Mint BONDX 10.0,
+-- Split into 4.0 + 6.0 (conservation: sum == original), then Merge back to 10.0.
+-- Also prove the ensure/assert guard rejects an out-of-range splitQty.
+test_asset_split_merge : Script ()
+test_asset_split_merge = do
+  Parties{operator, bankB} <- allocateAll
+  assetCid <- mintAsset operator bankB "BONDX" 10.0
+
+  -- Split 10.0 -> (4.0, 6.0)
+  (aCid, bCid) <- submit operator do
+    exerciseCmd assetCid Split with splitQty = 4.0
+  a <- queryContractId operator aCid
+  b <- queryContractId operator bCid
+  case (a, b) of
+    (Some av, Some bv) -> do
+      av.quantity === 4.0
+      bv.quantity === 6.0
+      -- conservation: the two halves sum to the original.
+      (av.quantity + bv.quantity) === 10.0
+    _ -> abort "Split did not produce two Asset contracts"
+
+  -- Merge (4.0) back with (6.0) -> 10.0
+  mergedCid <- submit operator do
+    exerciseCmd aCid Merge with otherCid = bCid
+  merged <- queryContractId operator mergedCid
+  case merged of
+    Some mv -> mv.quantity === 10.0
+    None    -> abort "Merge did not produce a merged Asset"
+
+  -- Edge: out-of-range Split (>= quantity) is rejected by the assertMsg guard.
+  submitMustFail operator do
+    exerciseCmd mergedCid Split with splitQty = 10.0

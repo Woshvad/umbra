@@ -13,6 +13,8 @@ import DA.Assert
 import DA.Foldable (forA_)
 import Umbra.Setup
 import Umbra.Asset
+import Umbra.Auction (Side(..), Allocation(..))
+import Umbra.Clearing
 
 -- LEDG-02 — the §4 seed is the single correctness reference. Assert that after
 -- `initialize` the operator sees exactly the 5 §4 Assets with the right
@@ -71,3 +73,42 @@ test_asset_split_merge = do
   -- Edge: out-of-range Split (>= quantity) is rejected by the assertMsg guard.
   submitMustFail operator do
     exerciseCmd mergedCid Split with splitQty = 10.0
+
+-- CLEAR-04 — THE §8 canary, the build's continuous correctness reference
+-- (CLAUDE.md rule 3). Runs the PURE `computeClearing` on the §4 fixture (no
+-- ledger needed — the tightest guardrail isolating the §8 trap from settlement)
+-- and asserts BOTH the price AND the fills:
+--   * p* == 100.0 (NOT 99.0 — the tie-break must stay scoped to the max-matched
+--     set {100,101}; across all prices 99 has the smaller imbalance and would win)
+--   * fills A=10 / B=8 / C=2  (C residual = 5 - 2 = 3)
+-- If the tie-break ever escapes the max-matched subset, this test fails LOUDLY.
+test_clears_at_100 : Script ()
+test_clears_at_100 = do
+  -- throwaway parties for the OrderView `desk` fields (the §4 desks).
+  bankA <- allocatePartyWithHint "BankA" (PartyIdHint "bankA")
+  bankB <- allocatePartyWithHint "BankB" (PartyIdHint "bankB")
+  bankC <- allocatePartyWithHint "BankC" (PartyIdHint "bankC")
+
+  -- §4 fixture: A Buy 10 @101, B Sell 8 @99, C Sell 5 @100 (Decimal limits,
+  -- Int quantities — never compare an Int fill against a Decimal).
+  let views =
+        [ OrderView with desk = bankA; side = Buy;  quantity = 10; limit = 101.0
+        , OrderView with desk = bankB; side = Sell; quantity = 8;  limit = 99.0
+        , OrderView with desk = bankC; side = Sell; quantity = 5;  limit = 100.0
+        ]
+      (pStar, allocs) = computeClearing views
+      -- sum the filledQty for all allocations matching a desk.
+      fillOf d = sum [ a.filledQty | a <- allocs, a.desk == d ]
+
+  -- The price clears at exactly 100.0 ...
+  pStar === 100.0
+  -- ... and NOT at 99.0 — a loud, named failure if the tie-break trap reappears.
+  assertMsg "TIE-BREAK TRAP: cleared at 99 — tie-break escaped the max-matched subset"
+    (pStar /= 99.0)
+
+  -- Fills: A=10, B=8, C=2.
+  fillOf bankA === 10
+  fillOf bankB === 8
+  fillOf bankC === 2
+  -- C's residual: order qty (5) minus its fill (2) == 3.
+  (5 - fillOf bankC) === 3

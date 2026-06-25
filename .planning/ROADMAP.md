@@ -87,7 +87,18 @@ Plans:
   3. The frontend authenticates as each party using that party's own JSON-API token, so it structurally cannot fetch other desks' private data (privacy enforced at the wire, not in render logic).
   4. The Privacy view renders three desk panels side by side, each driven by that desk's independent credentials, plus a center column showing the shared `RoundStats` count, with a redaction motif on the "other" columns and a working party switcher + round-status indicator.
 
-**Plans**: TBD
+**Plans**: 3 plans (2 waves)
+Plans:
+
+**Wave 1**
+
+- [ ] 03-01-PLAN.md — Privacy Daml tests (test_privacy_orders PRIV-01/02/04 + test_privacy_confirmations PRIV-03) + seedOpenRound (Open Round + RoundStats{count=3} + 3 §4 orders) [PRIV-01, PRIV-02, PRIV-03, PRIV-04, CLEAR-01]
+- [ ] 03-02-PLAN.md — @daml.js/umbra codegen + web/ scaffold (Vite 5.4 + React 18.3.1 + Tailwind 3.4, comp theme, :7575 proxy) + per-party HS256 token-mint script [PRIV-05, UI-01, UI-03]
+
+**Wave 2** *(blocked on 03-02)*
+
+- [ ] 03-03-PLAN.md — Live ledgerId verify-first + three per-party createLedgerContext + global shell (wordmark/3-desk switcher/round-status/nav) + the 3-up Privacy money shot [PRIV-05, UI-01, UI-03, CLEAR-01]
+
 **UI hint**: yes
 
 ### Phase 4: Solver Service

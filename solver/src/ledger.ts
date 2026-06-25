@@ -20,11 +20,14 @@
 import { readFileSync } from 'node:fs'
 import { createHmac } from 'node:crypto'
 import Ledger, { CreateEvent } from '@daml/ledger'
-import { Round, RoundStats, Order, RoundStatus } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
+import { ContractId } from '@daml/types'
+import { Round, RoundStats, Order, RoundStatus, ClearResult } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
+import { Asset } from '@daml.js/umbra-0.1.0/lib/Umbra/Asset/module'
 import { Side } from '@daml.js/umbra-0.1.0/lib/Umbra/Clearing/module'
-import { OrderView } from './auction.js'
+import { computeClearing, matchedAt, OrderView } from './auction.js'
 
 const BOND_SYMBOL = 'BONDX'
+const CASH_SYMBOL = 'USDCx'
 
 // ── Operator credential resolution (Pitfall 7: no __dirname under ESM) ──────────
 // Prefer scripts/.operator-token (minted by scripts/mint-tokens.mjs, gitignored).
@@ -180,4 +183,103 @@ export const refreshStats = async (roundId: string): Promise<number> => {
     await updateStats(roundId, count)
   }
   return count
+}
+
+// ── Force-close a round (operator-only CloseRound) ──────────────────────────────
+// Re-query the CURRENT Round cid first (Pitfall 4: CloseRound returns a NEW cid;
+// never reuse a cached one). Returns the new round status (Closed).
+export const closeRound = async (roundId: string): Promise<RoundStatus> => {
+  const round = await queryRound(roundId)
+  if (!round) throw new Error(`round ${roundId} not found`)
+  await ledger.exercise(Round.CloseRound, round.contractId, {})
+  const closed = await queryRound(roundId)
+  return closed?.payload.status ?? 'Closed'
+}
+
+// ── The Option-B Round.Clear settle sequence (Pattern 2 / Auction.daml 151-158) ─
+// `Round.Clear` cannot query the ACS (D7), so the solver gathers every ContractId
+// the choice needs and passes them as additive args. The deterministic §8
+// `computeClearing` output is submitted and re-verified on-ledger (verify-don't-
+// trust, T-04-05) — there is NO skip-verification path.
+//
+// ASSET-SELECTION SCOPE (RESEARCH Assumption A2, documented P4 limitation, T-04-12):
+// `settle` assumes a single (owner, symbol) holding with sufficient quantity — true
+// for the §4 fixture (BankA 5000 USDCx, BankB 20 BONDX, BankC 15 BONDX). It does NOT
+// merge split holdings (Asset.Merge before settle is stretch). When no single holding
+// satisfies the sufficiency predicate — which can happen for a FRESH POST /round
+// round with unconstrained holdings — it throws a clean, secret-free
+// `insufficient or missing <symbol> holding for <party>` error rather than passing an
+// undefined cid into Clear.
+export const settle = async (
+  roundId: string,
+): Promise<{ result: ClearResult; status: RoundStatus }> => {
+  // 1. Read the round's sealed orders → orderCids + the OrderView[] for the math.
+  const sealed = await readSealedOrders(roundId)
+  const orderCids = sealed.map((o) => o.contractId as ContractId<Order>)
+  const views: OrderView[] = sealed.map((o) => o.view)
+
+  // 2. Compute §8 locally — the SAME result the on-ledger Clear re-verifies.
+  const { clearingPrice, allocations } = computeClearing(views)
+  const matchedVolume = matchedAt(views, clearingPrice)
+
+  // 3. The buyer is the single desk on the Buy side of the verified allocation.
+  const buyAlloc = allocations.find((a) => a.side === 'Buy')
+  if (!buyAlloc) throw new Error(`round ${roundId} has no Buy-side allocation (no cross)`)
+  const buyer = buyAlloc.desk
+
+  // 4. The buyer's USDCx holding sufficient for the cash leg (matchedVolume × price).
+  const assets = await ledger.query(Asset)
+  const cashNeeded = matchedVolume * clearingPrice
+  const buyerUsdc = assets.find(
+    (c) =>
+      c.payload.owner === buyer &&
+      c.payload.symbol === CASH_SYMBOL &&
+      Number(c.payload.quantity) >= cashNeeded,
+  )
+  if (!buyerUsdc) {
+    throw new Error(
+      `insufficient or missing ${CASH_SYMBOL} holding for ${buyer} (need ${cashNeeded})`,
+    )
+  }
+  const buyerUsdcCid = buyerUsdc.contractId
+
+  // 5. Each seller's BONDX holding sufficient for its filledQty.
+  //    sellerBondCids crosses the wire as DA.Types.Tuple2 → { _1: party, _2: cid }.
+  const sellerBondCids: { _1: string; _2: ContractId<Asset> }[] = []
+  for (const a of allocations) {
+    if (a.side !== 'Sell' || a.filledQty <= 0) continue
+    const bond = assets.find(
+      (c) =>
+        c.payload.owner === a.desk &&
+        c.payload.symbol === BOND_SYMBOL &&
+        Number(c.payload.quantity) >= a.filledQty,
+    )
+    if (!bond) {
+      throw new Error(
+        `insufficient or missing ${BOND_SYMBOL} holding for ${a.desk} (need ${a.filledQty})`,
+      )
+    }
+    sellerBondCids.push({ _1: a.desk, _2: bond.contractId as ContractId<Asset> })
+  }
+
+  // 6. Re-query the CURRENT Round cid (CloseRound recreated it; Pitfall 4), then
+  //    exercise Clear with all Int/Decimal as STRINGS (Pitfall 5). The on-ledger
+  //    guard (status == Closed || Cleared) rejects a non-settleable round.
+  const round = await queryRound(roundId)
+  if (!round) throw new Error(`round ${roundId} not found`)
+  const [result] = await ledger.exercise(Round.Clear, round.contractId, {
+    clearingPrice: String(clearingPrice),
+    allocations: allocations.map((a) => ({
+      desk: a.desk,
+      side: a.side as Side,
+      filledQty: String(a.filledQty),
+    })),
+    orderCids,
+    buyerUsdcCid,
+    sellerBondCids,
+  })
+
+  // 7. The Round was recreated as Settled — return the verified result + new status.
+  const settled = await queryRound(roundId)
+  return { result: result as ClearResult, status: settled?.payload.status ?? 'Settled' }
 }

@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Global resets — transcribed from 03-UI-SPEC lines 31-36 (comp lines 15-18, 30). */
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  background: #f4f1ea;
+}
+input {
+  font-family: inherit;
+}
+::selection {
+  background: #d6fb3c;
+  color: #0a0a0a;
+}
+#root {
+  min-height: 100vh;
+  background: #f4f1ea;
+  color: #0a0a0a;
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}

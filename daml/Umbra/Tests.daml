@@ -11,9 +11,15 @@ module Umbra.Tests where
 import Daml.Script
 import DA.Assert
 import DA.Foldable (forA_)
+import DA.List (sort)
 import Umbra.Setup
 import Umbra.Asset
-import Umbra.Auction (Side(..), Allocation(..))
+import Umbra.Auction
+  ( Side(..), Allocation(..)
+  , Order, Round(..), RoundStatus(..), ClearResult
+  , CloseRound(..), Clear(..)
+  )
+import Umbra.Roles (Venue, SubmitOrder(..))
 import Umbra.Clearing
 
 -- LEDG-02 — the §4 seed is the single correctness reference. Assert that after
@@ -112,3 +118,108 @@ test_clears_at_100 = do
   fillOf bankC === 2
   -- C's residual: order qty (5) minus its fill (2) == 3.
   (5 - fillOf bankC) === 3
+
+-- ===========================================================================
+-- Phase-2 settlement seed helpers (RESEARCH A5 + Pitfall 5).
+--
+-- `runCanonicalRound` (Setup) only SUBMITS the three §4 orders — it never opens
+-- or closes a Round, and the real `Round.Clear` (Option B, DECISIONS D7) needs
+-- the round's `[ContractId Order]`, the buyer's USDCx `ContractId Asset`, and
+-- each seller's BONDX `ContractId Asset` passed IN as choice args (a choice body
+-- cannot `query` the ACS). So these helpers open a Round, submit the orders,
+-- CloseRound, and locate the Option-B ContractIds at the SCRIPT tier via `query`.
+-- ===========================================================================
+
+-- Everything the real `Round.Clear` needs to settle the §4 fixture.
+data SeedResult = SeedResult with
+    parties        : Parties
+    roundCid       : ContractId Round
+    orderCids      : [ContractId Order]
+    buyerUsdcCid   : ContractId Asset
+    sellerBondCids : [(Party, ContractId Asset)]
+
+-- Locate the (single) Asset cid an owner holds for a given symbol from the
+-- operator's view of the ACS (Script-tier query — exactly why Option B passes
+-- these into Clear; RESEARCH Pitfall 5).
+findAssetCid : Party -> [(ContractId Asset, Asset)] -> Party -> Text -> ContractId Asset
+findAssetCid owner assets _operator sym =
+  case [ cid | (cid, a) <- assets, a.owner == owner, a.symbol == sym ] of
+    (cid :: _) -> cid
+    []         -> error ("findAssetCid: no Asset for " <> show owner <> " " <> sym)
+
+-- Open a Round, submit the three §4 orders via the seeded Venue, CloseRound, and
+-- collect the Option-B ContractIds. `bondForB` lets the underfunded variant seed
+-- B with too little BONDX (it still SUBMITS the canonical §4 order — qty 8 @99 —
+-- so computeClearing returns the canonical A=10/B=8/C=2 @100.0; only the holding
+-- is undersized, so the failure is the missing asset, not a bad proposal).
+seedAndClose : Decimal -> Script SeedResult
+seedAndClose bondForB = do
+  p@Parties{..} <- initialize
+  -- The underfunded variant re-points B's BONDX holding at an undersized mint.
+  -- (initialize already minted B 20.0 BONDX; for the underfunded case we mint a
+  -- second, too-small BONDX holding and use IT as B's sellerBondCid below.)
+  -- Open the Round (operator is signatory; desks observe). openedAt from getTime.
+  now <- getTime
+  roundCid0 <- submit operator do
+    createCmd Round with
+      operator
+      roundId       = "R1"
+      symbol        = "BONDX"
+      desks         = [bankA, bankB, bankC]
+      openedAt      = now
+      windowSeconds = 60
+      status        = Open
+
+  -- Find the seeded Venue (one created by initialize) and submit the §4 orders.
+  venues <- query @Venue operator
+  let venueCid = case venues of
+        ((v, _) :: _) -> v
+        []            -> error "seedAndClose: no Venue found after initialize"
+  oa <- submit bankA do
+    exerciseCmd venueCid SubmitOrder with
+      desk = bankA; roundId = "R1"; side = Buy;  quantity = 10; limit = 101.0
+  ob <- submit bankB do
+    exerciseCmd venueCid SubmitOrder with
+      desk = bankB; roundId = "R1"; side = Sell; quantity = 8;  limit = 99.0
+  oc <- submit bankC do
+    exerciseCmd venueCid SubmitOrder with
+      desk = bankC; roundId = "R1"; side = Sell; quantity = 5;  limit = 100.0
+
+  -- CloseRound → status flips to Closed (the new contract is what Clear settles).
+  roundCid <- submit operator do
+    exerciseCmd roundCid0 CloseRound
+
+  -- Optionally re-seed B's BONDX undersized (for the atomicity test): mint a
+  -- too-small BONDX holding for B and use it as B's sellerBondCid so the Split in
+  -- Clear (filledQty 8 > bondForB) throws and the whole tx rolls back.
+  bondBCidM <- if bondForB < 20.0
+    then do
+      -- B already has 20.0 BONDX from initialize; mint the undersized one and
+      -- point sellerBondCids at it so the seller is effectively short.
+      cid <- mintAsset operator bankB "BONDX" bondForB
+      pure (Some cid)
+    else pure None
+
+  -- Locate the Option-B ContractIds (Script-tier query).
+  assets <- query @Asset operator
+  let buyerUsdcCid = findAssetCid bankA assets operator "USDCx"
+      bondCcid     = findAssetCid bankC assets operator "BONDX"
+      bondBcid     = case bondBCidM of
+        Some cid -> cid                                       -- undersized holding
+        None     -> findAssetCid bankB assets operator "BONDX"
+  pure SeedResult with
+    parties        = p
+    roundCid
+    orderCids      = [oa, ob, oc]
+    buyerUsdcCid
+    sellerBondCids = [(bankB, bondBcid), (bankC, bondCcid)]
+
+-- Canonical §4 seed: B funded (20.0 BONDX) — used by test_settled_balances and
+-- test_clear_rejects_bad_allocation (rejection is by re-verification, not assets).
+seedCanonicalAndClose : Script SeedResult
+seedCanonicalAndClose = seedAndClose 20.0
+
+-- Underfunded-seller seed: B holds only 5.0 BONDX (< its fill of 8) — used by
+-- test_atomicity to prove the Split/ensure throws and the whole Clear rolls back.
+seedUnderfundedSellerAndClose : Script SeedResult
+seedUnderfundedSellerAndClose = seedAndClose 5.0

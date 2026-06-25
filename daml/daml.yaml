@@ -23,11 +23,15 @@ dependencies:
   - daml-prim
   - daml-stdlib
   - daml-script
-# parties.json export hint (Plan 03 finalizes the mechanism). Uncommenting this
-# makes `daml start` append `--output-file parties.json` to the init-script run so
-# the init-script's return value (the Parties record) is written on each boot.
-# script-options:
-#   - --output-file
-#   - parties.json
+# parties.json export (LEDG-02, Plan 03). `script-options` are appended to the
+# init-script's `daml script` invocation, so `daml start` writes the init-script
+# return value (the Parties record) to parties.json on each boot (Option B). If
+# the write-directory under `daml start` is surprising on this machine, use the
+# guaranteed Option A documented in README.md (explicit `daml script ...
+# --output-file parties.json`). Either satisfies LEDG-02. parties.json is
+# gitignored — it holds per-boot `hint::<fingerprint>` IDs, never committed.
+script-options:
+  - --output-file
+  - parties.json
 # NO codegen block in Phase 1 — adding it makes every `daml start` run daml2js with
 # no consumer yet. Add in Phase 3 when @daml.js/umbra is needed by web/ + solver/.

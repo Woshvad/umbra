@@ -76,12 +76,47 @@ See `.env.example` for the full key list (spec §15). `ANTHROPIC_API_KEY` is rea
 ## Party IDs (`parties.json`)
 
 The Canton sandbox is ephemeral — party IDs come back as `hint::<fingerprint>`
-and change on every `daml start`. They are captured to `parties.json` (gitignored)
-at allocation time; the export mechanism is finalized in Plan 03.
+and change on every `daml start`. They are captured to `parties.json` (gitignored,
+never committed) at allocation time as `{ operator, bankA, bankB, bankC }`.
+
+**Option B (automatic, default):** `daml/daml.yaml` carries
+
+```yaml
+script-options:
+  - --output-file
+  - parties.json
+```
+
+so `daml start` writes the init-script's return value (the `Parties` record) to
+`parties.json` on each boot — no extra step.
+
+**Option A (explicit / guaranteed):** run the export script directly against a
+booted sandbox (use this if the Option-B write lands somewhere unexpected):
+
+```bash
+cd daml
+daml script \
+  --dar .daml/dist/umbra-0.1.0.dar \
+  --script-name Umbra.Setup:exportParties \
+  --ledger-host localhost --ledger-port <sandboxLedgerApiPort> \
+  --output-file ../parties.json
+```
+
+For a quick local capture without a separate sandbox, run it against the
+in-process simulated ledger (writes the readable hint IDs):
+
+```bash
+cd daml
+daml script --dar .daml/dist/umbra-0.1.0.dar \
+  --script-name Umbra.Setup:exportParties --ide-ledger \
+  --output-file ../parties.json
+```
 
 ## Tests
 
 ```bash
 cd daml
-daml test       # runs the Daml Script tests in Umbra/Tests.daml (added in Plan 03)
+daml test       # runs Umbra/Tests.daml:
+                #   test_setup_seeds      (4 parties + 5 §4 Asset holdings)
+                #   test_asset_split_merge (operator Split/Merge preserve quantity)
 ```

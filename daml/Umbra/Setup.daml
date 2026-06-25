@@ -1,0 +1,96 @@
+-- Umbra — Setup script: allocate the four parties, create the Venue, mint the
+-- §4 holdings, submit the canonical round, and provide a parties-export script.
+-- This is the seed every later phase and test runs against; the §4 quantities
+-- are the SINGLE correctness reference for the whole build (spec §4 / §14).
+--
+-- Pitfall guards (RESEARCH):
+--   * every Decimal literal carries a decimal point (`5000.0`, not `5000`) —
+--     Daml does not coerce a bare Int literal into Decimal position (Pitfall 1).
+--   * party IDs come back as `hint::<fingerprint>` and are NOT stable across
+--     `daml start` boots → captured to parties.json via the export script,
+--     never hard-coded (Pitfall 3).
+module Umbra.Setup where
+
+import Daml.Script
+import Umbra.Asset
+import Umbra.Roles
+import Umbra.Auction
+
+-- Frozen shape returned by the export script → becomes parties.json.
+data Parties = Parties with
+    operator : Party
+    bankA    : Party
+    bankB    : Party
+    bankC    : Party
+  deriving (Eq, Show)
+
+-- Allocate the four parties with readable id-hints. The hint controls the
+-- readable prefix (`bankA::<fp>`); the fingerprint suffix is still per-boot.
+allocateAll : Script Parties
+allocateAll = do
+  operator <- allocatePartyWithHint "Operator" (PartyIdHint "operator")
+  bankA    <- allocatePartyWithHint "BankA"    (PartyIdHint "bankA")
+  bankB    <- allocatePartyWithHint "BankB"    (PartyIdHint "bankB")
+  bankC    <- allocatePartyWithHint "BankC"    (PartyIdHint "bankC")
+  pure Parties with operator, bankA, bankB, bankC
+
+-- Mint one operator-custodied Asset for `owner`. All choices on Asset are
+-- operator-authority alone, so the operator submits the create.
+mintAsset : Party -> Party -> Text -> Decimal -> Script (ContractId Asset)
+mintAsset operator owner symbol quantity =
+  submit operator do
+    createCmd Asset with operator, owner, symbol, quantity
+
+-- init-script for daml.yaml (`init-script: Umbra.Setup:initialize`). Allocates
+-- the four parties, creates one Venue{operator, desks=[A,B,C]}, and mints the
+-- EXACT §4 holdings (5 Asset contracts). These quantities are NON-NEGOTIABLE
+-- (spec §4 single source of truth) — a wrong literal silently corrupts every
+-- downstream test, so test_setup_seeds asserts them.
+initialize : Script Parties
+initialize = do
+  p@Parties{..} <- allocateAll
+  -- one Venue, all three desks as observers
+  submit operator do
+    createCmd Venue with operator, desks = [bankA, bankB, bankC]
+  -- §4 holdings (every Decimal literal carries a decimal point):
+  --   BankA → 5,000 USDCx
+  --   BankB → 20 BONDX + 1,000 USDCx
+  --   BankC → 15 BONDX + 1,000 USDCx
+  mintAsset operator bankA "USDCx" 5000.0
+  mintAsset operator bankB "BONDX" 20.0
+  mintAsset operator bankB "USDCx" 1000.0
+  mintAsset operator bankC "BONDX" 15.0
+  mintAsset operator bankC "USDCx" 1000.0
+  pure p
+
+-- Export script: run SEPARATELY against the live sandbox with
+-- `daml script ... --output-file parties.json`, which writes this return value
+-- (the Parties record) as Daml-LF JSON for downstream phases (LEDG-02).
+exportParties : Script Parties
+exportParties = allocateAll
+
+-- Submit the three §4 orders via Venue.SubmitOrder (spec §4 + §14). Order
+-- quantities are Int (no decimal point); limit prices are Decimal (decimal
+-- point). The Venue is nonconsuming, so all three submissions hit the same cid.
+runCanonicalRound : Script ()
+runCanonicalRound = do
+  Parties{..} <- initialize
+  -- The init-script created exactly one Venue, signed by operator; find it.
+  venues <- query @Venue operator
+  let (venueCid, _) = case venues of
+        (v :: _) -> v
+        []       -> error "runCanonicalRound: no Venue found after initialize"
+  -- A Buy 10 @ 101, B Sell 8 @ 99, C Sell 5 @ 100 (each submitted by its desk).
+  submit bankA do
+    exerciseCmd venueCid SubmitOrder with
+      desk = bankA; roundId = "R1"; side = Buy;  quantity = 10; limit = 101.0
+  submit bankB do
+    exerciseCmd venueCid SubmitOrder with
+      desk = bankB; roundId = "R1"; side = Sell; quantity = 8;  limit = 99.0
+  submit bankC do
+    exerciseCmd venueCid SubmitOrder with
+      desk = bankC; roundId = "R1"; side = Sell; quantity = 5;  limit = 100.0
+  pure ()
+  -- DEFERRED to Phase 2: open a Round, CloseRound, then Round.Clear and assert
+  -- clearingPrice == 100.0 with fills A=10 / B=8 / C=2 (C residual 3 unfilled).
+  -- Clear is a loud Phase-1 placeholder (assertMsg False) — do NOT call it here.

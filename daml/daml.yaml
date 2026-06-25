@@ -33,5 +33,14 @@ dependencies:
 script-options:
   - --output-file
   - parties.json
-# NO codegen block in Phase 1 — adding it makes every `daml start` run daml2js with
-# no consumer yet. Add in Phase 3 when @daml.js/umbra is needed by web/ + solver/.
+# Codegen block (Phase 3) — `daml start` now regenerates the JS bindings on every
+# boot so @daml.js/umbra-0.1.0 stays in sync with template changes. `output-directory`
+# is relative to THIS daml.yaml (which lives in `daml/`), so `../web/daml.js` writes
+# to the repo-root `web/daml.js/`. The standalone command run once in Plan 03-02 was:
+#   daml codegen js daml/.daml/dist/umbra-0.1.0.dar -o web/daml.js
+# The generated npm package is @daml.js/umbra-0.1.0 (scope @daml.js, name umbra-0.1.0),
+# landing at web/daml.js/umbra-0.1.0/ with a `@daml/types` 2.10.4 peer-dep.
+codegen:
+  js:
+    output-directory: ../web/daml.js
+    npm-scope: daml.js

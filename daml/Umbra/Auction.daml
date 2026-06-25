@@ -1,0 +1,112 @@
+-- Umbra — auction data model (spec §7.3–7.7, frozen field shapes).
+-- The signatory/observer sets here ARE the privacy model: Order is private to
+-- exactly operator+desk (no observer) — the core of the money shot; a stray
+-- observer would silently break PRIV-01..04.
+module Umbra.Auction where
+
+-- §7.3 — order side & status (verbatim)
+data Side = Buy | Sell deriving (Eq, Show)
+data OrderStatus = Sealed | Filled | PartiallyFilled | Unfilled deriving (Eq, Show)
+
+-- §7.4 — round lifecycle status (verbatim)
+data RoundStatus = Open | Closed | Cleared | Settled deriving (Eq, Show)
+
+-- §7.7 — the solver's verified output (plain data, re-checked on-ledger in Phase 2)
+data Allocation = Allocation with
+    desk      : Party
+    side      : Side
+    filledQty : Int
+  deriving (Eq, Show)
+
+-- §7.3 — a sealed limit order. Stakeholders are exactly operator + desk: both
+-- signatories make it unforgeable, and NO observer keeps it private to those two.
+template Order
+  with
+    operator : Party
+    desk     : Party
+    roundId  : Text
+    side     : Side
+    quantity : Int
+    limit    : Decimal
+    status   : OrderStatus
+  where
+    signatory operator, desk     -- both; unforgeable, and private to these two
+    ensure quantity > 0 && limit > 0.0
+
+-- §7.6 — each desk's private fill receipt; observed by the SINGULAR desk only.
+template TradeConfirmation
+  with
+    operator      : Party
+    desk          : Party
+    roundId       : Text
+    symbol        : Text
+    side          : Side
+    filledQty     : Int
+    clearingPrice : Decimal
+    cashMoved     : Decimal
+  where
+    signatory operator
+    -- visible only to this desk
+    observer desk
+
+-- §7.5 — the only pre-clear info desks may see: a COUNT, never the contents.
+template RoundStats
+  with
+    operator : Party
+    roundId  : Text
+    desks    : [Party]
+    sealedOrderCount : Int     -- count ONLY, no contents
+  where
+    signatory operator
+    observer desks
+
+-- Recommended freeze (spec §7.4 references ClearResult but never defines it —
+-- RESEARCH Pattern 2 / Assumption A1). Becomes the shared cross-layer return type.
+-- Declared after TradeConfirmation because it references `ContractId TradeConfirmation`.
+data ClearResult = ClearResult with
+    roundId       : Text
+    clearingPrice : Decimal
+    totalMatched  : Int
+    confirmations : [ContractId TradeConfirmation]
+  deriving (Eq, Show)
+
+-- §7.4 — the auction round the solver acts on. Desks observe the round + status
+-- + (later) count, never the order contents.
+template Round
+  with
+    operator      : Party
+    roundId       : Text
+    symbol        : Text          -- "BONDX"
+    desks         : [Party]
+    openedAt      : Time
+    windowSeconds : Int           -- 60
+    status        : RoundStatus
+  where
+    signatory operator
+    observer desks                -- desks see the round + status + (later) count, never contents
+
+    -- PHASE-1 MINIMAL PLACEHOLDER: spec §7.4 shows CloseRound without an explicit
+    -- controller/body, so freeze it as operator-only with a minimal recreating body
+    -- that flips status = Closed purely so the template compiles. NOT real lifecycle
+    -- logic — the Open→Closed→Cleared→Settled lifecycle (timing, guards) is Phase 2.
+    choice CloseRound : ContractId Round            -- after the window
+      controller operator
+      do
+        create this with status = Closed
+
+    -- SIGNATURE-ONLY PLACEHOLDER: signature frozen (clearingPrice, allocations,
+    -- controller operator) returning ClearResult, with a LOUD assertMsg ... False
+    -- body so it type-checks but FAILS LOUDLY if exercised before Phase 2 (NOT a
+    -- silent no-op). The real verify+DvP body lands in Phase 2.
+    choice Clear : ClearResult                      -- THE atomic settlement choice (see §10)
+      with
+        clearingPrice : Decimal
+        allocations   : [Allocation]                -- solver output, verified on-ledger
+      controller operator
+      do
+        assertMsg "Clear not yet implemented (Phase 2)" False
+        pure ClearResult with
+          roundId
+          clearingPrice
+          totalMatched  = 0
+          confirmations = []

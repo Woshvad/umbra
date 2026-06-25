@@ -1,0 +1,33 @@
+# Umbra — Daml project config (the version-gate driver for `daml start`)
+# Fields verified against github.com/digital-asset/daml v2.10.0
+#   (daml-helper Start.hs / Codegen.hs). See DECISIONS.md (LEDG-04) for the
+#   version-gate rationale and the Daml 2.x HTTP JSON API line decision.
+sdk-version: 2.10.4
+name: umbra
+version: 0.1.0
+# `source:` is relative to THIS daml.yaml. daml.yaml lives in `daml/` and the
+# package directory is `daml/Umbra/` (modules headered `module Umbra.Asset where`,
+# `Umbra.Auction`, `Umbra.Roles`, `Umbra.Setup`, `Umbra.Tests`). So `source:` must
+# point at the folder CONTAINING `Umbra/`, i.e. `.` (the `daml/` folder itself).
+# Do NOT use `source: Umbra` — that resolves `Umbra.Asset` to the nonexistent
+# `daml/Umbra/Umbra/Asset.daml` and `daml build` reports "no modules found".
+source: .
+# init-script MUST be the fully module-qualified `Module:function` form. The module
+# is `Umbra.Setup`, so the value is `Umbra.Setup:initialize`. `daml start` runs it
+# after the Canton sandbox boots (`daml script ... --wall-clock-time`).
+init-script: Umbra.Setup:initialize
+# Skip Navigator — not needed for Umbra; speeds up `daml start`.
+start-navigator: false
+# Bundled with the SDK tarball; resolved automatically — no npm/registry install.
+dependencies:
+  - daml-prim
+  - daml-stdlib
+  - daml-script
+# parties.json export hint (Plan 03 finalizes the mechanism). Uncommenting this
+# makes `daml start` append `--output-file parties.json` to the init-script run so
+# the init-script's return value (the Parties record) is written on each boot.
+# script-options:
+#   - --output-file
+#   - parties.json
+# NO codegen block in Phase 1 — adding it makes every `daml start` run daml2js with
+# no consumer yet. Add in Phase 3 when @daml.js/umbra is needed by web/ + solver/.

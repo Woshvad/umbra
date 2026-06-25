@@ -38,7 +38,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 3 plans (3 waves)Plans:
 **Wave 1**
 
-- [ ] 01-01-PLAN.md — Version gate (detect/pin SDK 2.10.4) + repo scaffold (daml.yaml, DECISIONS.md, .gitignore, .env.example, README; track spec.md + Umbra design/) [LEDG-04, LEDG-01]
+- [x] 01-01-PLAN.md — Version gate (detect/pin SDK 2.10.4) + repo scaffold (daml.yaml, DECISIONS.md, .gitignore, .env.example, README; track spec.md + Umbra design/) [LEDG-04, LEDG-01]
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -142,7 +142,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Skeleton & Version Gate | 0/3 | Not started | - |
+| 1. Skeleton & Version Gate | 1/3 | In progress | - |
 | 2. Clear & Settle On-Ledger | 0/TBD | Not started | - |
 | 3. Privacy Proof (Vertical Slice) | 0/TBD | Not started | - |
 | 4. Solver Service | 0/TBD | Not started | - |

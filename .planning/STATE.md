@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Roadmap + STATE created; REQUIREMENTS traceability filled (38/38 mapped)
-last_updated: "2026-06-25T07:37:46.419Z"
-last_activity: 2026-06-25 — Roadmap created (7 phases, 38/38 v1 requirements mapped)
+stopped_at: Completed 01-01-PLAN.md (version gate + repo scaffold)
+last_updated: "2026-06-25T07:57:10.000Z"
+last_activity: 2026-06-25 -- Plan 01-01 complete (version gate passed, SDK 2.10.4 pinned)
 progress:
   total_phases: 7
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_plans: 3
+  completed_plans: 1
+  percent: 33
 ---
 
 # Project State
@@ -21,34 +21,34 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-25)
 
 **Core value:** The privacy money shot — three desks submit sealed orders blind to each other, an AI solver clears them at one uniform price ($100.00 on the §4 fixture), and the whole batch settles atomically in a single Canton transaction.
-**Current focus:** Phase 1 — Skeleton & Version Gate
+**Current focus:** Phase 01 — Skeleton & Version Gate
 
 ## Current Position
 
-Phase: 1 of 7 (Skeleton & Version Gate)
-Plan: 0 of TBD in current phase
-Status: Ready to execute
-Last activity: 2026-06-25 — Roadmap created (7 phases, 38/38 v1 requirements mapped)
+Phase: 01 (Skeleton & Version Gate) — EXECUTING
+Plan: 2 of 3 (01-01 complete)
+Status: Executing Phase 01
+Last activity: 2026-06-25 -- Plan 01-01 complete (version gate passed, SDK 2.10.4 pinned)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [███░░░░░░░] 33%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 0
-- Average duration: — min
+- Total plans completed: 1
+- Average duration: 2 min
 - Total execution time: 0.0 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 01 | 1 | 2 min | 2 min |
 
 **Recent Trend:**
 
-- Last 5 plans: —
+- Last 5 plans: 01-01 (2 min)
 - Trend: —
 
 *Updated after each plan completion*
@@ -63,6 +63,9 @@ Recent decisions affecting current work:
 - [Roadmap]: Build on Daml 2.x line via `daml start`; Canton LocalNet / Daml Finance are §19 stretch (deferred past P7).
 - [Roadmap]: Standard mode (horizontal layers) — early phases are ledger-only with no UI; vertical slice emerges at P3.
 - [Roadmap]: Ship the privacy→clear→settle slice by end of Phase 3 even if everything after is rough.
+- [01-01 / LEDG-04]: Daml SDK pinned to **2.10.4** in `daml/daml.yaml` (version gate passed) — recorded in `DECISIONS.md`.
+- [01-01]: API line = Daml 2.x HTTP JSON API on :7575, NOT Daml 3.x / cn-quickstart (stretch §19).
+- [01-01]: `daml.yaml` uses `source: .` (folder containing `Umbra/`); no `codegen:` block in P1; frontend (P3) installs `@daml/react@2.10.4` with `--legacy-peer-deps`.
 
 ### Pending Todos
 
@@ -74,7 +77,7 @@ None yet.
 
 [Issues that affect future work]
 
-- [P1 gate]: Installed Daml SDK version + JSON API line is the spec's #1 risk and an empirical unknown — must be detected, pinned, and recorded in `DECISIONS.md` before any other build work.
+- [P1 gate]: RESOLVED (01-01) — Daml SDK 2.10.4 detected, pinned in `daml/daml.yaml`, and recorded in `DECISIONS.md` with the Daml 2.x HTTP JSON API line + React-18 `--legacy-peer-deps` note.
 - [P5 flag]: Confirm GA structured outputs (`output_config.format`) for the Anthropic account/region; wire forced-tool-use fallback if disabled.
 
 ## Deferred Items
@@ -88,5 +91,5 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-06-25
-Stopped at: Roadmap + STATE created; REQUIREMENTS traceability filled (38/38 mapped)
+Stopped at: Completed 01-01-PLAN.md (version gate + repo scaffold)
 Resume file: None

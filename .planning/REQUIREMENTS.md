@@ -14,7 +14,7 @@ Requirements for the hackathon MVP. Each maps to a roadmap phase.
 - [ ] **LEDG-01**: Daml project compiles with templates `Asset`, `Venue`, `Order`, `Round`, `RoundStats`, `TradeConfirmation` (per §7), and `daml start` runs the sandbox + HTTP JSON API on :7575
 - [ ] **LEDG-02**: `Setup.daml` allocates parties Operator/BankA/BankB/BankC and mints the §4 holdings (A→5,000 USDCx; B→20 BONDX + 1,000 USDCx; C→15 BONDX + 1,000 USDCx); party IDs/tokens are written to a generated `parties.json`/`.env` for the solver + frontend
 - [ ] **LEDG-03**: `Asset` is operator-custodied (signatory operator, observer owner) and supports Split/Merge/Reassign used only by the Operator inside settlement
-- [ ] **LEDG-04**: The installed Daml SDK version is detected, `daml.yaml` pins it, and the version + API line (2.x HTTP JSON API) is recorded in `DECISIONS.md` before any other build work (version-drift gate)
+- [x] **LEDG-04**: The installed Daml SDK version is detected, `daml.yaml` pins it, and the version + API line (2.x HTTP JSON API) is recorded in `DECISIONS.md` before any other build work (version-drift gate)
 
 ### Order Submission & Clearing (CLEAR)
 
@@ -104,7 +104,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | LEDG-01 | Phase 1 | Pending |
 | LEDG-02 | Phase 1 | Pending |
 | LEDG-03 | Phase 1 | Pending |
-| LEDG-04 | Phase 1 | Pending |
+| LEDG-04 | Phase 1 | Complete (01-01) |
 | CLEAR-01 | Phase 3 | Pending |
 | CLEAR-02 | Phase 4 | Pending |
 | CLEAR-03 | Phase 4 | Pending |

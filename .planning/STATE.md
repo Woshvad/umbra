@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 02-03-PLAN.md (3 on-ledger settlement tests green + operator-only Order.Retire fix; Phase 2 complete 3/3, daml test exit 0)
-last_updated: "2026-06-25T17:01:39.395Z"
+last_updated: "2026-06-25T17:14:28.935Z"
 last_activity: 2026-06-25 -- Phase 03 execution started
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 9
-  completed_plans: 7
+  completed_plans: 8
   percent: 29
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 ## Current Position
 
 Phase: 03 (Privacy Proof (Vertical Slice)) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-06-25 -- Phase 03 execution started
 
@@ -56,6 +56,7 @@ Progress: [██████████] 100%
 | Phase 02 P02 | 10 min | 2 tasks | 4 files |
 | Phase 02 P03 | 5 min | 2 tasks | 2 files |
 | Phase 03 P01 | 3min | 2 tasks | 2 files |
+| Phase 03 P02 | 9min | 4 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -79,6 +80,8 @@ Recent decisions affecting current work:
 - [02-03]: Settlement tests use a parameterised seedAndClose (B BONDX 20.0 funded / 5.0 underfunded) returning a SeedResult of the Option-B ContractIds; atomicity proven by submitMustFail + sorted before/after Asset snapshot equality.
 - [Phase ?]: [03-01]: Privacy proven on-ledger by per-party query @T (test_privacy_orders PRIV-01/02/04 + test_privacy_confirmations PRIV-03); pure additions, no template observer changed (privacy is structural from Phase 1).
 - [Phase ?]: [03-01 / CLEAR-01]: seedOpenRound leaves Round status=Open and SEEDS RoundStats{count=3}; live lifecycle + solver auto-increment deferred to Phase 4. Frontend money-shot live state, solver-free.
+- [Phase ?]: Generated bindings package is @daml.js/umbra-0.1.0 (import from /lib/Umbra/*)
+- [Phase ?]: Zero-dep node:crypto HS256 JWT minting (no jsonwebtoken); operator token to scripts/.operator-token, never web/src (T-03-06)
 
 ### Pending Todos
 
@@ -103,6 +106,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-25T17:01:09.241Z
+Last session: 2026-06-25T17:13:47.105Z
 Stopped at: Completed 02-03-PLAN.md (3 on-ledger settlement tests green + operator-only Order.Retire fix; Phase 2 complete 3/3, daml test exit 0)
 Resume file: None

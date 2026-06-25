@@ -60,7 +60,20 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. If any settlement leg fails (e.g., a seller lacks the asset), `Round.Clear` fails and no balances change — all-or-nothing (`test_atomicity`).
   4. `Round.Clear` rejects any allocation violating max-volume, limit compliance, or conservation (`test_clear_rejects_bad_allocation`); the on-ledger §8 re-verification matches the algorithm spec.
 
-**Plans**: TBD
+**Plans**: 3 plans (3 waves)
+Plans:
+
+**Wave 1**
+
+- [ ] 02-01-PLAN.md — Umbra/Clearing.daml: pure §8 (tie-break-trap-safe) + test_clears_at_100 canary (p*=100.00, A=10/B=8/C=2) [CLEAR-04]
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 02-02-PLAN.md — Real Round.Clear body: recompute-§8-and-assert backstop + atomic DvP settlement + per-desk TradeConfirmations + status=Settled; DECISIONS.md D7 (Option B) [CLEAR-05, SETL-01, SETL-04]
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 02-03-PLAN.md — Settlement tests: test_settled_balances (§4 balances + conservation), test_atomicity (submitMustFail, no-balance-change), test_clear_rejects_bad_allocation [SETL-01, SETL-02, SETL-03, SETL-04, CLEAR-05]
 
 ### Phase 3: Privacy Proof (Vertical Slice)
 
@@ -143,7 +156,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Skeleton & Version Gate | 3/3 | Complete   | 2026-06-25 |
-| 2. Clear & Settle On-Ledger | 0/TBD | Not started | - |
+| 2. Clear & Settle On-Ledger | 0/3 | Not started | - |
 | 3. Privacy Proof (Vertical Slice) | 0/TBD | Not started | - |
 | 4. Solver Service | 0/TBD | Not started | - |
 | 5. AI Solver Agent | 0/TBD | Not started | - |

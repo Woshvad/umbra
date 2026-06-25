@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: Completed 03-03-PLAN.md (3-up Privacy money shot + global shell + three per-party createLedgerContext; Phase 3 complete 3/3, npm run build exit 0)
-last_updated: "2026-06-25T17:26:59.342Z"
-last_activity: 2026-06-25 -- Phase 03 complete (privacy money shot built)
+status: paused
+stopped_at: Phase 3 COMPLETE & VERIFIED (money shot live — per-party wire isolation proven via /v1/query; 3-up view renders live §4 data). Paused after Phase 3 per user request; next = Phase 4 (Solver Service).
+last_updated: "2026-06-25T18:05:00.000Z"
+last_activity: 2026-06-25 -- Phases 1-3 complete & verified; privacy money shot working end-to-end (paused at user stop point)
 progress:
   total_phases: 7
   completed_phases: 3
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 
 ## Current Position
 
-Phase: 03 (Privacy Proof (Vertical Slice)) — EXECUTING
-Plan: 3 of 3
-Status: Phase complete — ready for verification
-Last activity: 2026-06-25 -- Phase 03 complete (privacy money shot built)
+Phase: 03 (Privacy Proof (Vertical Slice)) — COMPLETE & VERIFIED
+Plans: 3 of 3 done; VERIFICATION status: passed (8/8 requirements)
+Status: **Phases 1–3 done. Vertical slice (privacy → clear → atomic settle → live 3-up money shot) works end-to-end.** Paused per user request; next = Phase 4 (Solver Service).
+Last activity: 2026-06-25 -- money shot live-verified (per-party wire isolation + 3-up render)
 
-Progress: [██████████] 100%
+Milestone progress: 3/7 phases [████░░░] 43%
 
 ## Performance Metrics
 

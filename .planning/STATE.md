@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: "Completed 04-02-PLAN.md (solver/src/ledger.ts — Operator @daml/ledger client over absolute :7575; openRound/queryRound/readSealedOrders/updateStats/refreshStats/closeRound/settle; Option-B Round.Clear; token strictly module-private; refreshStats advances sealedOrderCount off '0' proven on a stubbed ledger; 9 vitest green; tsc clean)"
-last_updated: "2026-06-25T23:36:02.381Z"
+status: executing
+stopped_at: Completed 04-04-PLAN.md (solver/src/clock.ts in-memory ROUND_SECONDS auto-close + force-close clock; solver/src/index.ts boot — dotenv, rehydrate via queryAllRounds, buildDeps wiring POST /round → openRound + openRoundClock, listen on SOLVER_PORT, secret-free log; 21 vitest green incl. fake-timer clock + injected-dep wiring proof; tsc clean. Live-E2E Task 3 deferred to phase verification). Phase 4 autonomous portion complete 4/4.
+last_updated: "2026-06-26T00:06:21.567Z"
 last_activity: 2026-06-26 -- Completed 04-04 (solver clock + boot wiring)
 progress:
   total_phases: 7
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 Phase: 4 (Solver Service) — COMPLETE (autonomous portion; live-E2E deferred)
 Plan: 4 of 4
 Plans: 4 of 4 done (04-01, 04-02, 04-03, 04-04)
-Status: Phase complete — ready for verification (live-`daml start` E2E Task 3 deferred to phase verification)
+Status: Ready to execute
 Last activity: 2026-06-26 -- Completed 04-04 (solver clock + boot wiring)
 
 Milestone progress: 4/7 phases [████░░░] 57%

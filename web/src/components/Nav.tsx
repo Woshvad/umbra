@@ -1,16 +1,15 @@
 // Nav (UI-SPEC lines 239-245). 5 tabs (PRIVACY/DESK/THEATRE/AGENT/SETTLEMENT), each
 // num (mono 11px/600 opacity .6) + label (Inter 13px/600 .04em), border-top 3px
 // (active = red #E2231A, inactive transparent), active fg ink / inactive
-// rgba(10,10,10,.5). Phase-3: PRIVACY is the only navigable tab; the others are
-// rendered for visual fidelity but disabled.
-export type Screen = 'privacy'
+// rgba(10,10,10,.5). Phase-6: all five views are live and navigable.
+export type Screen = 'privacy' | 'desk' | 'theatre' | 'agent' | 'settlement'
 
 const TABS = [
   { num: '01', label: 'PRIVACY', screen: 'privacy' as const, enabled: true },
-  { num: '02', label: 'DESK', screen: null, enabled: false },
-  { num: '03', label: 'THEATRE', screen: null, enabled: false },
-  { num: '04', label: 'AGENT', screen: null, enabled: false },
-  { num: '05', label: 'SETTLEMENT', screen: null, enabled: false },
+  { num: '02', label: 'DESK', screen: 'desk' as const, enabled: true },
+  { num: '03', label: 'THEATRE', screen: 'theatre' as const, enabled: true },
+  { num: '04', label: 'AGENT', screen: 'agent' as const, enabled: true },
+  { num: '05', label: 'SETTLEMENT', screen: 'settlement' as const, enabled: true },
 ]
 
 type Props = {

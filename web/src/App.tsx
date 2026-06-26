@@ -11,6 +11,16 @@ import Header from './components/Header'
 import Nav, { type Screen } from './components/Nav'
 import { phaseFromStatus, type Phase } from './components/StatusIndicator'
 import PrivacyView from './views/PrivacyView'
+import DeskView from './views/DeskView'
+import TheatreView from './views/TheatreView'
+import AgentView from './views/AgentView'
+import SettlementView from './views/SettlementView'
+import type { SolvePreviewResponse } from './solver'
+import type { OperatorViewState, TheatrePhase } from './operatorState'
+
+// The seeded screenshot-ready round (RESEARCH Open Question 2). Theatre drives R1;
+// VITE_ROUND_ID may override for ad-hoc rounds.
+const DEFAULT_ROUND_ID: string = import.meta.env.VITE_ROUND_ID ?? 'R1'
 
 // Reads the shared Round + RoundStats via ctxA and lifts the derived phase + sealed
 // count up to App, which feeds the Header's StatusIndicator. Rendered inside a
@@ -45,6 +55,25 @@ export default function App() {
     sealedCount: 0,
   })
 
+  // ── Lifted operator-plane round state (RESEARCH Pattern 8) ────────────────────
+  // Shared across Theatre → Agent → Settlement so they all drive ONE round. The
+  // `offline` flag is set when any solver call throws SolverError.code==='OFFLINE';
+  // operator views then show the offline caption while Privacy keeps rendering.
+  const [roundId] = useState<string>(DEFAULT_ROUND_ID)
+  const [phase, setPhase] = useState<TheatrePhase>('open')
+  const [preview, setPreview] = useState<SolvePreviewResponse | null>(null)
+  const [offline, setOffline] = useState<boolean>(false)
+
+  const operatorState: OperatorViewState = {
+    roundId,
+    phase,
+    setPhase,
+    preview,
+    setPreview,
+    offline,
+    setOffline,
+  }
+
   const onReset = () => {
     // Phase-3 RESET is a refetch affordance; the lifecycle reset is Phase 4
     // (UI-SPEC line 237). A reload re-streams the seeded state.
@@ -72,6 +101,10 @@ export default function App() {
       {screen === 'privacy' && (
         <PrivacyView activeDesk={activeDesk} sealedCount={roundState.sealedCount} />
       )}
+      {screen === 'desk' && <DeskView activeDesk={activeDesk} />}
+      {screen === 'theatre' && <TheatreView {...operatorState} />}
+      {screen === 'agent' && <AgentView {...operatorState} />}
+      {screen === 'settlement' && <SettlementView {...operatorState} />}
     </div>
   )
 }

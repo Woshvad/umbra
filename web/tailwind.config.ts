@@ -33,6 +33,19 @@ export default {
         '30':  ['30px',  '1'],     // wordmark UMBRA
         '78':  ['78px',  '.94'],   // Privacy headline
         '108': ['108px', '.85'],   // venue-spine sealed count numeral
+        // Phase-6 large numerals (UI-SPEC Typography, lines 76-101). The existing
+        // '30' (wordmark) stays byte-unchanged; the reveal-label 30px lives at '30b'.
+        '15':  ['15px',  '1.7'],   // agent rationale (typed) + DvP leg party
+        '18':  ['18px',  '1'],     // balance numeral + COMPUTING label
+        '22':  ['22px',  '1'],     // agent proposal value
+        '34':  ['34px',  '1'],     // reveal sub-stat
+        '40':  ['40px',  '1'],     // holdings numeral
+        '44':  ['44px',  '1'],     // desk big input numeral
+        '54':  ['54px',  '.96'],   // view headline (Desk/Agent/Settlement)
+        '56':  ['56px',  '.98'],   // Theatre headline
+        '84':  ['84px',  '1'],     // countdown ring seconds
+        '120': ['120px', '.9'],    // price-reveal hero numeral — the money shot
+        '30b': ['30px',  '1'],     // reveal "CLEARS AT" label
       },
       letterSpacing: {
         tightest: '-.04em',  // 108px count
@@ -68,6 +81,9 @@ export default {
         umbraRise:  { from: { opacity: '0', transform: 'translateY(10px)' }, to: { opacity: '1', transform: 'translateY(0)' } },
         umbraCaret: { '0%,49%': { opacity: '1' }, '50%,100%': { opacity: '0' } },
         umbraPulse: { '0%,100%': { opacity: '1' }, '50%': { opacity: '.35' } },
+        // Phase-6 ADD: settlement leg draw-on (UI-SPEC line 262). `--len` is the
+        // per-leg stroke length set inline if an SVG-stroke leg path is chosen.
+        umbraLeg:   { from: { strokeDashoffset: 'var(--len)' }, to: { strokeDashoffset: '0' } },
       },
       animation: {
         'umbra-wipe':  'umbraWipe .3s ease forwards',
@@ -75,6 +91,13 @@ export default {
         'umbra-stamp': 'umbraStamp .22s cubic-bezier(.2,.7,.3,1)',
         'umbra-rise':  'umbraRise .4s ease',
         'umbra-fade':  'umbraFade .4s ease',
+        // Phase-6 ADD: the umbraDraw/umbraPulse/umbraCaret keyframes existed with NO
+        // alias — these make `animate-umbra-draw`/`-pulse`/`-caret` live utility classes
+        // that Plans 03/04 consume via className (without these they are dead no-ops).
+        'umbra-draw':  'umbraDraw 1s ease forwards',
+        'umbra-pulse': 'umbraPulse 1s infinite',
+        'umbra-caret': 'umbraCaret .9s steps(1) infinite',
+        'umbra-leg':   'umbraLeg .8s linear forwards',
       },
     },
   },

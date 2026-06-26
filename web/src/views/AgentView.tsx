@@ -1,12 +1,18 @@
-// Solver Agent (view 04) — STUB. Operator plane (:4000). Plan 04 OVERWRITES this
-// stub with the AgentProposal + AgentRationale typewriter composition + the
-// VERIFIED · CLAUDE/DETERMINISTIC badge (UI-SPEC "04 — SOLVER AGENT"). This stub
-// exists only so App routing compiles and the build stays green.
+// Solver Agent (view 04) — UI-SPEC "04 — SOLVER AGENT" (lines 196-210). Operator
+// plane (:4000) via the lifted SolvePreviewResponse; NO operator token, NO @daml/react
+// context (the solver service is the sole Operator-authority proxy — threat T-06-01).
+//
+// When a `preview` is present: the 2-col grid — left AgentProposal (the proposal list +
+// the verified/source badge), right AgentRationale (the typewriter rationale + flame
+// caret + the rank-1 competing-agents row). Empty state = the verbatim "No proposal yet"
+// paragraph. Offline → the graceful SOLVER OFFLINE caption (Privacy still renders).
 import type { OperatorViewState } from '../operatorState'
+import AgentProposal from '../components/AgentProposal'
+import AgentRationale from '../components/AgentRationale'
 
 type Props = OperatorViewState
 
-export default function AgentView({ offline }: Props) {
+export default function AgentView({ preview, offline }: Props) {
   return (
     <main style={{ position: 'relative', padding: '30px 48px 64px', overflow: 'hidden' }}>
       {/* Section marker */}
@@ -25,11 +31,31 @@ export default function AgentView({ offline }: Props) {
         THE AGENT CLEARS THE BOOK
       </h1>
 
-      <p className="font-body text-14 opacity-65" style={{ lineHeight: 1.6, maxWidth: '560px' }}>
-        {offline
-          ? 'SOLVER OFFLINE — START THE SERVICE ON :4000'
-          : 'No proposal yet. Run the batch in 03 Theatre — once the window closes, SOLVER-AGENT-00 computes the uniform clearing price and narrates its reasoning here.'}
-      </p>
+      {offline ? (
+        <p
+          className="font-mono text-13 uppercase"
+          style={{ letterSpacing: '.12em', opacity: 0.65, lineHeight: 1.6, maxWidth: '560px' }}
+        >
+          SOLVER OFFLINE — START THE SERVICE ON :4000
+        </p>
+      ) : preview ? (
+        <div
+          className="border-t"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0,560px) 1fr',
+            gap: '56px',
+          }}
+        >
+          <AgentProposal preview={preview} />
+          <AgentRationale rationale={preview.rationale} />
+        </div>
+      ) : (
+        <p className="font-body text-14 opacity-65" style={{ lineHeight: 1.6, maxWidth: '560px' }}>
+          No proposal yet. Run the batch in 03 Theatre — once the window closes,
+          SOLVER-AGENT-00 computes the uniform clearing price and narrates its reasoning here.
+        </p>
+      )}
     </main>
   )
 }

@@ -1,16 +1,55 @@
-// Desk View (view 02) — STUB. Per-party plane (:7575) via the active desk's ctx.
-// Plan 02 OVERWRITES this stub with the full OrderTicket / HoldingsPanel / FillCard
-// composition (UI-SPEC "02 — DESK VIEW"). This stub exists only so App routing
-// compiles and `npm run build` stays green.
-import type { DeskKey } from '../ledgerContexts'
-import { DESKS } from '../desks'
+// Desk View (view 02) — the desk-side half of the money shot (UI-SPEC "02 — DESK
+// VIEW", lines 148-168). Per-party plane (:7575) via the ACTIVE desk's own ctx: the
+// whole body mounts inside `ctxFor[activeDesk].DamlLedger` carrying that desk's own
+// token (DeskColumn lines 212-227), so every hook streams ONLY this desk's contracts.
+// A rival desk's Order / Asset / TradeConfirmation genuinely never reach this view —
+// privacy is structural, not a render-time filter (threat T-06-01 / T-06-04). This view
+// holds only the desk's own credential — no privileged venue token / context anywhere.
+import { ctxFor, type Ctx, type DeskKey } from '../ledgerContexts'
+import { tokens, httpBaseUrl, wsBaseUrl, DESKS } from '../desks'
+import { Order } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
+import OrderTicket from '../components/OrderTicket'
+import HoldingsPanel from '../components/HoldingsPanel'
+import FillCard from '../components/FillCard'
 
 type Props = {
   activeDesk: DeskKey
 }
 
+// Inner body — rendered INSIDE the active desk's own ctx.DamlLedger provider, so every
+// hook here reads only this desk's own contracts.
+function DeskBody({ ctx, deskKey }: { ctx: Ctx; deskKey: DeskKey }) {
+  const orders = ctx.useStreamQueries(Order)
+  const order = orders.contracts[0]?.payload
+
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'minmax(0,420px) 1fr',
+        gap: 0,
+        borderTop: '1px solid #0A0A0A',
+      }}
+    >
+      {/* Left — Order Ticket */}
+      <div style={{ padding: '28px 36px 30px 0', borderRight: '1px solid #0A0A0A' }}>
+        <OrderTicket ctx={ctx} deskKey={deskKey} order={order} />
+      </div>
+
+      {/* Right — Holdings + Fill */}
+      <div style={{ padding: '28px 0 0 40px' }}>
+        <HoldingsPanel ctx={ctx} />
+        <FillCard ctx={ctx} deskKey={deskKey} />
+      </div>
+    </div>
+  )
+}
+
 export default function DeskView({ activeDesk }: Props) {
   const firm = DESKS.find((d) => d.key === activeDesk)?.code ?? activeDesk
+  const ctx = ctxFor[activeDesk]
+  const { party, token } = tokens[activeDesk]
+
   return (
     <main style={{ position: 'relative', padding: '30px 48px 64px', overflow: 'hidden' }}>
       {/* Section marker */}
@@ -24,15 +63,15 @@ export default function DeskView({ activeDesk }: Props) {
 
       <h1
         className="font-display text-54 font-bold"
-        style={{ letterSpacing: '-.02em', margin: '26px 0 36px' }}
+        style={{ lineHeight: 0.96, letterSpacing: '-.02em', margin: '26px 0 36px' }}
       >
         ORDERS IN THE DARK
       </h1>
 
-      <p className="font-body text-14 opacity-65" style={{ lineHeight: 1.6, maxWidth: '560px' }}>
-        Seal your order, then run the auction in 03 Theatre. Your fill — quantity, price and cash —
-        appears here only after the batch clears, and only you can see it.
-      </p>
+      {/* Per-party provider — the body reads/exercises on THIS desk's own connection */}
+      <ctx.DamlLedger token={token} party={party} httpBaseUrl={httpBaseUrl} wsBaseUrl={wsBaseUrl}>
+        <DeskBody ctx={ctx} deskKey={activeDesk} />
+      </ctx.DamlLedger>
     </main>
   )
 }

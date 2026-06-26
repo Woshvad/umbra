@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: "Completed 06-03-PLAN.md — built the 03 Auction Theatre on the operator plane (:4000): CountdownRing (hand-rolled 280×280 SVG, CIRC=753.98, red≤10s, 84px mono numeral) + TheatreView dark inverted stage with a 1s setInterval 60→0 auto-firing Close&Solve at 0 + live sealedOrderCount; Close&Solve = closeRound then solvePreview (NOT GET) revealing the lime 100.00 hero slab (PriceReveal, 120px mono, animate-umbra-slam + red sliver) beside the hand-rolled CrossingChart (UI-05, viewBox 0 0 480 360, step supply/demand from the live curve via lib/curve, p*=100/q=10 marker at (296,160), animate-umbra-draw) — inline SOLVER-AGENT-00 COMPUTING (animate-umbra-pulse) for the round-trip; graceful SOLVER OFFLINE caption; interval cleaned up on unmount. No operator token/no @daml/react context in any of the 4 files (grep-clean); web build + 11 vitest green. Phase 6 → 3/4."
-last_updated: "2026-06-26T01:42:00.000Z"
-last_activity: 2026-06-26 -- Completed 06-03 (03 Auction Theatre)
+status: verifying
+stopped_at: "Completed 05-02-PLAN.md — wired the AI Solver Agent into the API (solve-preview + GET /round/:id terminal branch emit the agent rationale + an additive agent:{verified,source} block; deterministic numbers unchanged; settle untouched / AI off the settlement path), constructed the real keyless-safe agent at boot in index.ts, extended api.test.ts (verified/fallback/GET-terminal + ANTHROPIC_API_KEY sentinel), and wrote solver/PROMPT.md (the AGENT-04 contract, SYSTEM_PROMPT byte-matched). 33-test suite green; tsc clean. Phase 5 COMPLETE (2/2)."
+last_updated: "2026-06-26T01:52:54.975Z"
+last_activity: "2026-06-26 -- Completed 06-03 (03 Auction Theatre: CountdownRing + CrossingChart + PriceReveal, operator plane)"
 progress:
   total_phases: 7
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 19
-  completed_plans: 18
-  percent: 76
+  completed_plans: 19
+  percent: 86
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 Phase: 6 (Auction Theatre & Settlement Animation) — EXECUTING
 Plan: 4 of 4
 Plans: 3 of 4 done (06-01, 06-02, 06-03)
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-26 -- Completed 06-03 (03 Auction Theatre: CountdownRing + CrossingChart + PriceReveal, operator plane)
 
 Milestone progress: 5/7 phases [█████░░] 71%
@@ -67,6 +67,7 @@ Milestone progress: 5/7 phases [█████░░] 71%
 | Phase 5 P2 | 12min | 2 tasks | 5 files |
 | Phase 06 P01 | 22min | 2 tasks | 17 files |
 | Phase 06 P03 | 5min | 2 tasks | 4 files |
+| Phase 06 P04 | 4min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -106,6 +107,7 @@ Recent decisions affecting current work:
 - [05-02 / AGENT-03, AGENT-04]: api.ts AppDeps gains proposeClearing: (views) => Promise<AgentResult>; solve-preview + GET /round/:id terminal branch call deps.proposeClearing(views) and emit rationale: agent.rationale (was null in P4) + an additive agent:{verified,source} block — the deterministic clearingPrice/matchedVolume/allocations/curve stay byte-unchanged (P4 backward-compatible). settle is UNCHANGED and never calls proposeClearing (AI off the settlement path). index.ts main() constructs the real agent once via createAgent({computeClearing, matchedAt}) (NO client arg — agent.ts owns the module-private ANTHROPIC_API_KEY, keyless-degrades; index.ts never reads the key) and threads proposeClearing through buildDeps/BuildDepsArgs. api.test.ts extended (verified-claude + deterministic-fallback + GET-terminal rationale tests; secret sweep extended with an ANTHROPIC_API_KEY sentinel asserted absent from both responses). solver/PROMPT.md (new, AGENT-04) documents the system prompt VERBATIM (byte-matched to agent.ts SYSTEM_PROMPT, keep-in-sync note), the user batch JSON shape, the required response JSON {clearingPrice, allocations:[{desk,side,filledQty}], rationale}, the §4 worked example (100.00, A=10/B=8/C=2), and the never-used-unverified guarantee. 33-test suite green; tsc clean. Phase 5 COMPLETE (2/2).
 - [06-03 / UI-04, UI-05]: 03 Auction Theatre on the operator plane (:4000) — CountdownRing (hand-rolled 280×280 SVG, CIRC=753.98, stroke-dashoffset=753.98*(1-s/60), red≤10s, 84px mono; pure presentation of `seconds`, the clock lives in TheatreView). TheatreView: 1s setInterval 60→0 auto-fires Close&Solve at 0; Close&Solve = closeRound then solvePreview (NOT GET — Pitfall 4); SOLVER OFFLINE caption on a SolverError 'OFFLINE'; interval cleaned up on unmount. CrossingChart (UI-05, no chart lib): viewBox 0 0 480 360, step supply (animate-umbra-draw, dasharray 640) + dashed demand derived from the LIVE solve-preview curve via lib/curve sx/sy (NOT hard-coded binding polylines), p* rule/dropline/marker positioned by crossingPoint(curve,price,vol)→(296,160) for §4. PriceReveal: lime #D6FB3C 120px hero slab + animate-umbra-slam + red skewX sliver, "1 for all" sub-stats. Solved state = COMPUTING (animate-umbra-pulse) → 2-col chart+reveal grid. No operator token/no @daml/react context in TheatreView/CountdownRing/CrossingChart/PriceReveal (grep-clean, T-06-01). web build + 11 vitest green. CrossingChart reused by 06-04 (AgentView).
 - [Phase ?]: [06-01]: web/src/solver.ts is the operator-plane :4000 fetch client (VITE_SOLVER_URL) mirroring solver/src/api.ts; SolverError throws OFFLINE on network reject — no operator token/no @daml/react context in the bundle. Pure lib helpers (curve crossing→296/160, deskBalancesFromAllocations→§4 finals, badgeLabel+parseSolvePreview) vitest@2.1.9-tested. tailwind: umbraLeg + fontSize literals + umbra-draw/pulse/caret/leg aliases (existing values byte-unchanged). Nav 5-tab; App routes 5 + lifts roundId(R1)/phase/preview/offline via operatorState.ts; 4 stub views; Privacy untouched. build+11 vitest green.
+- [Phase ?]: 06-04: Settlement plays via a SINGLE rAF settleProgress driving ALL DvP legs + balance lerps simultaneously; aggregate derived from solver allocations with Allocation shape confirmed vs auction.ts; agent badge maps agent.source via badgeLabel
 
 ### Pending Todos
 
@@ -131,6 +133,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-26T01:24:55.388Z
+Last session: 2026-06-26T01:52:11.656Z
 Stopped at: Completed 05-02-PLAN.md — wired the AI Solver Agent into the API (solve-preview + GET /round/:id terminal branch emit the agent rationale + an additive agent:{verified,source} block; deterministic numbers unchanged; settle untouched / AI off the settlement path), constructed the real keyless-safe agent at boot in index.ts, extended api.test.ts (verified/fallback/GET-terminal + ANTHROPIC_API_KEY sentinel), and wrote solver/PROMPT.md (the AGENT-04 contract, SYSTEM_PROMPT byte-matched). 33-test suite green; tsc clean. Phase 5 COMPLETE (2/2).
 Resume file: None

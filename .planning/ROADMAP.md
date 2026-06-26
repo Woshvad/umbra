@@ -18,7 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Privacy Proof (Vertical Slice)** - Per-party JWT auth proven at the wire + the 3-up Privacy money shot; ship this even if everything after is rough (completed 2026-06-25)
 - [x] **Phase 4: Solver Service** - Node/TS Operator service: 60s window lifecycle, deterministic §8, Express API, ≥5 unit-test scenarios (autonomous portion completed 2026-06-26; live-`daml start` E2E deferred to phase verification)
 - [x] **Phase 5: AI Solver Agent** - Claude proposes + narrates the clearing; verify-don't-trust gate; additive, off the settlement path (completed 2026-06-26)
-- [ ] **Phase 6: Auction Theatre & Settlement Animation** - Countdown + reveal, hand-rolled supply/demand crossing SVG, atomic-settle animation, Desk view
+- [x] **Phase 6: Auction Theatre & Settlement Animation** - Countdown + reveal, hand-rolled supply/demand crossing SVG, atomic-settle animation, Desk view (completed 2026-06-26)
 - [ ] **Phase 7: Polish, Demo & Acceptance** - 100% design-comp fidelity, `make demo` + README, screenshots, live E2E acceptance flow
 
 ## Phase Details
@@ -181,7 +181,7 @@ Plans:
 
 **Wave 3** *(blocked on 06-01, 06-03)*
 
-- [ ] 06-04-PLAN.md — 04 Agent (proposal + verified/source badge + typewriter rationale) + 05 Settlement (DvP legs + single-rAF SIMULTANEOUS settle + before/after balances to §4 finals + one-transaction stamp) — operator plane [UI-06]
+- [x] 06-04-PLAN.md — 04 Agent (proposal + verified/source badge + typewriter rationale) + 05 Settlement (DvP legs + single-rAF SIMULTANEOUS settle + before/after balances to §4 finals + one-transaction stamp) — operator plane [UI-06]
 
 **UI hint**: yes
 
@@ -212,5 +212,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 3. Privacy Proof (Vertical Slice) | 3/3 | Complete   | 2026-06-25 |
 | 4. Solver Service | 4/4 | Complete   | 2026-06-26 |
 | 5. AI Solver Agent | 2/2 | Complete   | 2026-06-26 |
-| 6. Auction Theatre & Settlement Animation | 3/4 | In Progress|  |
+| 6. Auction Theatre & Settlement Animation | 4/4 | Complete   | 2026-06-26 |
 | 7. Polish, Demo & Acceptance | 0/TBD | Not started | - |

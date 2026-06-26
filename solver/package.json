@@ -10,6 +10,7 @@
     "smoke": "tsx src/ledger-smoke.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.106.0",
     "@daml.js/umbra-0.1.0": "file:../web/daml.js/umbra-0.1.0",
     "@daml/ledger": "2.10.4",
     "@daml/types": "2.10.4",

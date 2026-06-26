@@ -7,10 +7,14 @@
 // holds only the desk's own credential — no privileged venue token / context anywhere.
 import { ctxFor, type Ctx, type DeskKey } from '../ledgerContexts'
 import { tokens, httpBaseUrl, wsBaseUrl, DESKS } from '../desks'
-import { Order } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
+import { Order, TradeConfirmation } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
+import { Asset } from '@daml.js/umbra-0.1.0/lib/Umbra/Asset/module'
 import OrderTicket from '../components/OrderTicket'
 import HoldingsPanel from '../components/HoldingsPanel'
 import FillCard from '../components/FillCard'
+
+const BOND_SYMBOL = 'BONDX'
+const CASH_SYMBOL = 'USDCx'
 
 type Props = {
   activeDesk: DeskKey
@@ -21,6 +25,28 @@ type Props = {
 function DeskBody({ ctx, deskKey }: { ctx: Ctx; deskKey: DeskKey }) {
   const orders = ctx.useStreamQueries(Order)
   const order = orders.contracts[0]?.payload
+
+  // Shared own-fill read: when this desk has a TradeConfirmation the batch has settled
+  // and the desk's own Assets ALREADY reflect the new balances — so the post-settle
+  // holdings are the live sums themselves. HoldingsPanel renders these as the
+  // "→ {after} after settle" sub-line (BONDX in the fill-sign color). Daml numbers are
+  // STRINGS → Number(...).
+  const confirms = ctx.useStreamQueries(TradeConfirmation)
+  const assets = ctx.useStreamQueries(Asset)
+  const tc = confirms.contracts[0]?.payload
+
+  let bondAfter: number | undefined
+  let cashAfter: number | undefined
+  let fillColor: string | undefined
+  if (tc) {
+    bondAfter = assets.contracts
+      .filter((c) => c.payload.symbol === BOND_SYMBOL)
+      .reduce((a, c) => a + Number(c.payload.quantity), 0)
+    cashAfter = assets.contracts
+      .filter((c) => c.payload.symbol === CASH_SYMBOL)
+      .reduce((a, c) => a + Number(c.payload.quantity), 0)
+    fillColor = Number(tc.filledQty) > 0 ? '#2B3AF2' : '#FF3D9A'
+  }
 
   return (
     <div
@@ -38,7 +64,12 @@ function DeskBody({ ctx, deskKey }: { ctx: Ctx; deskKey: DeskKey }) {
 
       {/* Right — Holdings + Fill */}
       <div style={{ padding: '28px 0 0 40px' }}>
-        <HoldingsPanel ctx={ctx} />
+        <HoldingsPanel
+          ctx={ctx}
+          bondAfter={bondAfter}
+          cashAfter={cashAfter}
+          fillColor={fillColor}
+        />
         <FillCard ctx={ctx} deskKey={deskKey} />
       </div>
     </div>

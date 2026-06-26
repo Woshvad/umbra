@@ -176,7 +176,7 @@ Plans:
 
 **Wave 2** *(blocked on 06-01)*
 
-- [ ] 06-02-PLAN.md — 02 Desk view: OrderTicket (Venue.SubmitOrder, one-per-round lock, §4 load-demo, seal-wipe) + HoldingsPanel (live BONDX/USDCx) + FillCard (post-settle TradeConfirmation) — per-party plane [UI-02]
+- [x] 06-02-PLAN.md — 02 Desk view: OrderTicket (Venue.SubmitOrder, one-per-round lock, §4 load-demo, seal-wipe) + HoldingsPanel (live BONDX/USDCx) + FillCard (post-settle TradeConfirmation) — per-party plane [UI-02]
 - [ ] 06-03-PLAN.md — 03 Theatre: CountdownRing (753.98 / red≤10 / auto-fire) + Close&Solve reveal (lime 100.00 umbraSlam hero) + CrossingChart (hand-rolled SVG p*=100/q=10) — operator plane [UI-04, UI-05]
 
 **Wave 3** *(blocked on 06-01, 06-03)*
@@ -212,5 +212,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 3. Privacy Proof (Vertical Slice) | 3/3 | Complete   | 2026-06-25 |
 | 4. Solver Service | 4/4 | Complete   | 2026-06-26 |
 | 5. AI Solver Agent | 2/2 | Complete   | 2026-06-26 |
-| 6. Auction Theatre & Settlement Animation | 1/4 | In Progress|  |
+| 6. Auction Theatre & Settlement Animation | 2/4 | In Progress|  |
 | 7. Polish, Demo & Acceptance | 0/TBD | Not started | - |

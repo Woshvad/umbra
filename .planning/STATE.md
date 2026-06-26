@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "Completed 05-02-PLAN.md — wired the AI Solver Agent into the API (solve-preview + GET /round/:id terminal branch emit the agent rationale + an additive agent:{verified,source} block; deterministic numbers unchanged; settle untouched / AI off the settlement path), constructed the real keyless-safe agent at boot in index.ts, extended api.test.ts (verified/fallback/GET-terminal + ANTHROPIC_API_KEY sentinel), and wrote solver/PROMPT.md (the AGENT-04 contract, SYSTEM_PROMPT byte-matched). 33-test suite green; tsc clean. Phase 5 COMPLETE (2/2)."
-last_updated: "2026-06-26T01:25:06.408Z"
-last_activity: 2026-06-26 -- Phase 6 execution started
+stopped_at: "Completed 06-02-PLAN.md — built the 02 Desk view on the per-party plane (:7575): OrderTicket submits Venue.SubmitOrder via the active desk's own useLedger with Int/Numeric as STRINGS, one-per-round lock + RE-OPEN, §4 load-demo prefill (BLUEROCK Buy 10@101 · MERIDIAN Sell 8@99 · HALWARD Sell 5@100), and a reduced-motion-gated seal-wipe; HoldingsPanel sums the desk's own BONDX/USDCx; FillCard renders the post-settlement YOUR FILL trio (sign-colored filledQty, 100.00 clearing, signed cashMoved) from the desk's own TradeConfirmation + empty state. No operator token in any touched file (grep-clean); web build green. Phase 6 → 2/4."
+last_updated: "2026-06-26T02:10:00.000Z"
+last_activity: 2026-06-26 -- Completed 06-02 (02 Desk view)
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 19
-  completed_plans: 16
-  percent: 71
+  completed_plans: 17
+  percent: 74
 ---
 
 # Project State
@@ -26,10 +26,10 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 ## Current Position
 
 Phase: 6 (Auction Theatre & Settlement Animation) — EXECUTING
-Plan: 2 of 4
-Plans: 1 of 4 done (06-01)
+Plan: 3 of 4
+Plans: 2 of 4 done (06-01, 06-02)
 Status: Ready to execute
-Last activity: 2026-06-26 -- Completed 06-01 (Auction Theatre scaffold)
+Last activity: 2026-06-26 -- Completed 06-02 (02 Desk view: OrderTicket + HoldingsPanel + FillCard, per-party plane)
 
 Milestone progress: 5/7 phases [█████░░] 71%
 

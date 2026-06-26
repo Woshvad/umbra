@@ -53,6 +53,9 @@ export interface BuildDepsArgs {
   // can assert it fires alongside openRound on POST /round.
   openRoundClock: (roundId: string, windowSeconds: number) => void
   roundSeconds: number
+  // The AI Solver Agent's verify-don't-trust proposeClearing (agent.ts). main()
+  // constructs the real keyless-safe agent once at boot; the unit test injects a stub.
+  proposeClearing: AppDeps['proposeClearing']
 }
 
 // Assemble the AppDeps so the API routes are wired to the ledger + clock.
@@ -64,7 +67,7 @@ export interface BuildDepsArgs {
 // is the single path index.ts and index.test.ts both use, so the test's spies prove
 // the live wiring.
 export const buildDeps = (args: BuildDepsArgs): AppDeps => {
-  const { ledger, math, clock, openRoundClock, roundSeconds } = args
+  const { ledger, math, clock, openRoundClock, roundSeconds, proposeClearing } = args
   return {
     // POST /round → ledger create THEN timer start (both).
     openRound: async (roundId, desks, windowSeconds): Promise<RoundView> => {
@@ -82,6 +85,8 @@ export const buildDeps = (args: BuildDepsArgs): AppDeps => {
       return state?.status ?? 'Closed'
     },
     settle: ledger.settle,
+    // The AI Solver Agent — proposes a clearing, the deterministic core verifies it.
+    proposeClearing,
     computeClearing: math.computeClearing,
     matchedAt: math.matchedAt,
     demandAt: math.demandAt,
@@ -102,6 +107,15 @@ const main = async (): Promise<void> => {
   const ledger = await import('./ledger.js')
   const auction = await import('./auction.js')
   const { createClock } = await import('./clock.js')
+  const { createAgent } = await import('./agent.js')
+
+  // Construct the real AI Solver Agent ONCE at boot. No `client` is passed — agent.ts
+  // resolves its own module-private ANTHROPIC_API_KEY (or runs keyless: the §4 fixture
+  // still clears at 100.00 with a neutral rationale). index.ts NEVER reads the key.
+  const agent = createAgent({
+    computeClearing: auction.computeClearing,
+    matchedAt: auction.matchedAt,
+  })
 
   // The clock force-closes ON-LEDGER via ledger.closeRound at the window / on demand.
   const clock = createClock({ closeRound: ledger.closeRound })
@@ -178,6 +192,7 @@ const main = async (): Promise<void> => {
     clock,
     openRoundClock: (roundId, windowSeconds) => clock.openRoundClock(roundId, windowSeconds),
     roundSeconds,
+    proposeClearing: agent.proposeClearing,
   })
 
   const app = createApp(deps)

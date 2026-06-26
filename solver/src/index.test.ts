@@ -21,12 +21,27 @@ import {
 } from './auction.js'
 import { createApp, type RoundView, type SealedOrder, type SettleResult } from './api.js'
 import { buildDeps, type LedgerPort, type MathPort } from './index.js'
+import type { AgentResult } from './agent.js'
 import type { Clock, RoundState } from './clock.js'
 
 const ROUND_SECONDS = 60
 
 // The real §8 helpers (the API math is never stubbed — keeps shapes honest).
 const math: MathPort = { computeClearing, matchedAt, demandAt, supplyAt, candidatePrices }
+
+// A keyless-safe agent stub — buildDeps requires proposeClearing; the boot-wiring
+// proofs below never exercise the terminal/solve-preview path, so a deterministic
+// fallback stub suffices.
+const proposeClearing = vi.fn(
+  async (): Promise<AgentResult> => ({
+    clearingPrice: 100,
+    allocations: [],
+    matchedVolume: 0,
+    rationale: 'Cleared at 100.00 by the deterministic §8 algorithm.',
+    verified: false,
+    source: 'deterministic-fallback',
+  }),
+)
 
 // A ledger port whose every function is a spy; defaults are inert.
 const makeLedger = (overrides: Partial<LedgerPort> = {}): LedgerPort => ({
@@ -101,7 +116,7 @@ describe('solver boot wiring (buildDeps)', () => {
     )
     const clock = makeClock(openRoundClock)
 
-    const deps = buildDeps({ ledger, math, clock, openRoundClock, roundSeconds: ROUND_SECONDS })
+    const deps = buildDeps({ ledger, math, clock, openRoundClock, roundSeconds: ROUND_SECONDS, proposeClearing })
     const app = createApp(deps)
     const started = await listen(app)
     server = started.server
@@ -133,7 +148,7 @@ describe('solver boot wiring (buildDeps)', () => {
     )
     const clock = makeClock(openRoundClock)
 
-    const deps = buildDeps({ ledger, math, clock, openRoundClock, roundSeconds: ROUND_SECONDS })
+    const deps = buildDeps({ ledger, math, clock, openRoundClock, roundSeconds: ROUND_SECONDS, proposeClearing })
     const started = await listen(createApp(deps))
     server = started.server
 

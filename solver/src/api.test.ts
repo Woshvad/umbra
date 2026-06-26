@@ -23,6 +23,7 @@ import {
   candidatePrices,
   type OrderView,
 } from './auction.js'
+import type { AgentResult } from './agent.js'
 import {
   createApp,
   type AppDeps,
@@ -48,6 +49,25 @@ const SECTION4_SEALED: SealedOrder[] = SECTION4_VIEWS.map((view, i) => ({
 // (Stubs close over it the way the real ledger client holds the module-private JWT.)
 const SENTINEL_TOKEN = 'SENTINEL-OPERATOR-TOKEN-do-not-leak-7f3a9b'
 
+// A sentinel ANTHROPIC_API_KEY — the agent's secret. proposeClearing stubs close over
+// it the way agent.ts holds the module-private key; it must NEVER reach any response.
+const SENTINEL_API_KEY = 'sk-ant-SENTINEL-API-KEY-do-not-leak-9c4e2d'
+
+// The deterministic §4 result the agent returns on the fallback path (no key / mismatch /
+// SDK error). The NUMBERS are always deterministic; only `rationale`/`verified`/`source`
+// distinguish the fallback from the verified-claude path.
+const FALLBACK_AGENT_RESULT = (): AgentResult => {
+  const { clearingPrice, allocations } = computeClearing(SECTION4_VIEWS)
+  return {
+    clearingPrice,
+    allocations,
+    matchedVolume: matchedAt(SECTION4_VIEWS, clearingPrice),
+    rationale: 'Cleared at 100.00 by the deterministic §8 algorithm (no AI rationale).',
+    verified: false,
+    source: 'deterministic-fallback',
+  }
+}
+
 // Build a deps object with the REAL §8 helpers + caller-supplied ledger stubs.
 const makeDeps = (overrides: Partial<AppDeps>): AppDeps => ({
   // Ledger stubs — defaults are inert; tests override per scenario.
@@ -65,6 +85,9 @@ const makeDeps = (overrides: Partial<AppDeps>): AppDeps => ({
   refreshStats: vi.fn(async (): Promise<number> => 0),
   closeRound: vi.fn(async (): Promise<string> => 'Closed'),
   settle: vi.fn(async (): Promise<SettleResult> => ({ clearingPrice: 100, allocations: [] })),
+  // Agent stub — defaults to the deterministic fallback (keyless degradation); tests
+  // override per scenario to assert the verified-claude path.
+  proposeClearing: vi.fn(async (): Promise<AgentResult> => FALLBACK_AGENT_RESULT()),
   // Real pure §8 helpers — solve-preview asserts true deterministic clearing.
   computeClearing,
   matchedAt,
@@ -143,12 +166,136 @@ describe('solver §11 HTTP API', () => {
     expect(body.curve[0]).toHaveProperty('price')
     expect(body.curve[0]).toHaveProperty('demand')
     expect(body.curve[0]).toHaveProperty('supply')
-    expect(body.rationale).toBeNull() // additive seam for Phase 5.
+    // P5: rationale is now POPULATED (was null in P4) + an additive agent block.
+    expect(body.rationale).not.toBeNull()
+    expect(typeof body.rationale).toBe('string')
+    expect(body.agent).toBeDefined()
+    expect(body.agent).toHaveProperty('verified')
+    expect(body.agent).toHaveProperty('source')
   })
 
-  it('no secret in any response body — GET /round/:id nor solve-preview leak the token', async () => {
-    // Stubs close over the sentinel token (as the real client holds the JWT) but
-    // must never serialize it into a response.
+  it('GET /round/:id/solve-preview surfaces the agent rationale + block (verified:true)', async () => {
+    const rationale = 'Cleared at 100.00: maximizes matched volume at 10 units; BankB filled first on price priority, BankC partially filled.'
+    const proposeClearing = vi.fn(async (): Promise<AgentResult> => {
+      const { clearingPrice, allocations } = computeClearing(SECTION4_VIEWS)
+      return {
+        clearingPrice,
+        allocations,
+        matchedVolume: matchedAt(SECTION4_VIEWS, clearingPrice),
+        rationale,
+        verified: true,
+        source: 'claude',
+      }
+    })
+    const deps = makeDeps({
+      readSealedOrders: vi.fn(async (): Promise<SealedOrder[]> => SECTION4_SEALED),
+      proposeClearing,
+    })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/solve-preview`)
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    // Deterministic numbers UNCHANGED (P4 backward-compat).
+    expect(body.clearingPrice).toBe(100)
+    expect(body.matchedVolume).toBe(10)
+    expect(Array.isArray(body.curve)).toBe(true)
+    expect(body.curve.length).toBeGreaterThan(0)
+    // The agent's rationale + provenance block.
+    expect(body.rationale).toBe(rationale)
+    expect(body.agent).toEqual({ verified: true, source: 'claude' })
+    // proposeClearing was called with the sealed views.
+    expect(proposeClearing).toHaveBeenCalledTimes(1)
+    expect(proposeClearing).toHaveBeenCalledWith(SECTION4_VIEWS)
+  })
+
+  it('GET /round/:id/solve-preview deterministic-fallback shape (verified:false)', async () => {
+    const proposeClearing = vi.fn(async (): Promise<AgentResult> => {
+      const { clearingPrice, allocations } = computeClearing(SECTION4_VIEWS)
+      return {
+        clearingPrice,
+        allocations,
+        matchedVolume: matchedAt(SECTION4_VIEWS, clearingPrice),
+        rationale: 'Cleared at 100.00 by the deterministic §8 algorithm (no AI rationale).',
+        verified: false,
+        source: 'deterministic-fallback',
+      }
+    })
+    const deps = makeDeps({
+      readSealedOrders: vi.fn(async (): Promise<SealedOrder[]> => SECTION4_SEALED),
+      proposeClearing,
+    })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/solve-preview`)
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    // P4 numbers unchanged even on the fallback path.
+    expect(body.clearingPrice).toBe(100)
+    expect(body.matchedVolume).toBe(10)
+    // Non-null neutral rationale + the fallback provenance.
+    expect(body.rationale).not.toBeNull()
+    expect(typeof body.rationale).toBe('string')
+    expect(body.agent).toEqual({ verified: false, source: 'deterministic-fallback' })
+  })
+
+  it('GET /round/:id terminal-status branch surfaces rationale + agent block', async () => {
+    const rationale = 'Cleared at 100.00 on the deterministic §8 result, settled atomically.'
+    const proposeClearing = vi.fn(async (): Promise<AgentResult> => {
+      const { clearingPrice, allocations } = computeClearing(SECTION4_VIEWS)
+      return {
+        clearingPrice,
+        allocations,
+        matchedVolume: matchedAt(SECTION4_VIEWS, clearingPrice),
+        rationale,
+        verified: true,
+        source: 'claude',
+      }
+    })
+    const deps = makeDeps({
+      queryRound: vi.fn(async (roundId: string) => ({ roundId, status: 'Settled' })),
+      readSealedOrders: vi.fn(async (): Promise<SealedOrder[]> => SECTION4_SEALED),
+      refreshStats: vi.fn(async (): Promise<number> => 3),
+      proposeClearing,
+    })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1`)
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    expect(body.status).toBe('Settled')
+    // Deterministic fields (P4 unchanged).
+    expect(body.clearingPrice).toBe(100)
+    expect(body.matchedVolume).toBe(10)
+    expect(Array.isArray(body.allocations)).toBe(true)
+    expect(Array.isArray(body.curve)).toBe(true)
+    // P5: rationale (non-null) + agent block.
+    expect(body.rationale).toBe(rationale)
+    expect(body.agent).toEqual({ verified: true, source: 'claude' })
+  })
+
+  it('no secret in any response body — GET /round/:id nor solve-preview leak the operator token or ANTHROPIC_API_KEY', async () => {
+    // Stubs close over the sentinel operator token (as the real client holds the JWT)
+    // AND the sentinel ANTHROPIC_API_KEY (as agent.ts holds the module-private key) but
+    // must never serialize either into a response.
+    const proposeClearing = vi.fn(async (): Promise<AgentResult> => {
+      void SENTINEL_API_KEY // agent closes over the key, must NOT reach the wire
+      const { clearingPrice, allocations } = computeClearing(SECTION4_VIEWS)
+      return {
+        clearingPrice,
+        allocations,
+        matchedVolume: matchedAt(SECTION4_VIEWS, clearingPrice),
+        rationale: 'Cleared at 100.00 on the deterministic §8 result.',
+        verified: true,
+        source: 'claude',
+      }
+    })
     const deps = makeDeps({
       readSealedOrders: vi.fn(async (): Promise<SealedOrder[]> => {
         void SENTINEL_TOKEN // referenced in scope, must NOT reach the wire
@@ -160,8 +307,9 @@ describe('solver §11 HTTP API', () => {
       }),
       queryRound: vi.fn(async (roundId: string) => {
         void SENTINEL_TOKEN
-        return { roundId, status: 'Open' }
+        return { roundId, status: 'Settled' }
       }),
+      proposeClearing,
     })
     const started = await listen(deps)
     server = started.server
@@ -173,6 +321,9 @@ describe('solver §11 HTTP API', () => {
 
     expect(JSON.stringify(getJson)).not.toContain(SENTINEL_TOKEN)
     expect(JSON.stringify(previewJson)).not.toContain(SENTINEL_TOKEN)
+    // The extended ANTHROPIC_API_KEY sentinel sweep — neither response carries the key.
+    expect(JSON.stringify(getJson)).not.toContain(SENTINEL_API_KEY)
+    expect(JSON.stringify(previewJson)).not.toContain(SENTINEL_API_KEY)
   })
 
   it('POST /round/:id/settle returns 409 on double-settle (round already Settled)', async () => {

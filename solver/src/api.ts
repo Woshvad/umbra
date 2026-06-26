@@ -24,6 +24,7 @@ import express, { type Express, type Request, type Response, type NextFunction }
 import cors from 'cors'
 import { z } from 'zod'
 import type { OrderView, Allocation, ClearingResult } from './auction.js'
+import type { AgentResult } from './agent.js'
 
 // The Vite dev origin — the ONLY allowed CORS origin (never '*').
 export const ALLOWED_ORIGIN = 'http://localhost:5173'
@@ -59,6 +60,12 @@ export interface AppDeps {
   refreshStats: (roundId: string) => Promise<number>
   closeRound: (roundId: string) => Promise<string>
   settle: (roundId: string) => Promise<SettleResult>
+  // The AI Solver Agent (agent.ts) — proposes a clearing, VERIFIES it against the
+  // deterministic core, and returns the deterministic NUMBERS + the model's rationale
+  // (only on an exact match) + an additive {verified, source} provenance block. It
+  // NEVER throws (keyless / SDK-error paths degrade to the deterministic fallback) and
+  // is OFF the settlement path — the AI's numbers are never settled (verify-don't-trust).
+  proposeClearing: (views: OrderView[]) => Promise<AgentResult>
   // pure §8 helpers from auction.ts
   computeClearing: (orders: OrderView[]) => ClearingResult
   matchedAt: (orders: OrderView[], p: number) => number
@@ -172,7 +179,12 @@ export const createApp = (deps: AppDeps): Express => {
         body.matchedVolume = deps.matchedAt(views, clearingPrice)
         body.allocations = allocations
         body.curve = buildCurve(deps, views)
-        body.rationale = null // Phase 5 fills this; P4 keeps the field present as null.
+        // Phase 5: surface the agent's rationale + an additive provenance block. The
+        // deterministic numbers above are UNCHANGED — the agent never throws (keyless /
+        // SDK-error → deterministic fallback) and is OFF the settlement path.
+        const agent = await deps.proposeClearing(views)
+        body.rationale = agent.rationale
+        body.agent = { verified: agent.verified, source: agent.source }
       }
       res.json(body)
     }),
@@ -199,13 +211,19 @@ export const createApp = (deps: AppDeps): Express => {
       // matchedVolume is NOT on ClearingResult — derive it here from the exported helper.
       const matchedVolume = deps.matchedAt(views, clearingPrice)
       const curve = buildCurve(deps, views)
+      // Phase 5: the agent PROPOSES; the deterministic numbers above are authoritative
+      // and UNCHANGED (P4 backward-compat). We take only the rationale + the additive
+      // {verified, source} block. proposeClearing never throws (it handles keyless /
+      // SDK-error internally → deterministic fallback) — no try/catch needed.
+      const agent = await deps.proposeClearing(views)
       res.json({
         roundId: id,
         clearingPrice,
         matchedVolume,
         allocations,
         curve,
-        rationale: null, // additive seam for Phase 5 (Claude rationale).
+        rationale: agent.rationale, // populated (was null in P4) — the Claude rationale.
+        agent: { verified: agent.verified, source: agent.source },
       })
     }),
   )

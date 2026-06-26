@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 05-02-PLAN.md (wired the agent into the API + the AGENT-04 prompt contract). api.ts AppDeps gains proposeClearing; solve-preview + GET /round/:id terminal branch now emit the agent rationale (was null) + an additive agent:{verified,source} block while the deterministic clearingPrice/matchedVolume/allocations/curve stay byte-unchanged; settle untouched (AI off the settlement path). index.ts constructs the real keyless-safe agent once at boot via createAgent({computeClearing, matchedAt}) (no client arg; key stays module-private) and threads proposeClearing into buildDeps. api.test.ts extended (verified + fallback + GET-terminal rationale; ANTHROPIC_API_KEY sentinel sweep); solver/PROMPT.md documents the system prompt verbatim (byte-matched to SYSTEM_PROMPT), the batch JSON, the required response JSON, and the never-used-unverified guarantee. 33-test suite green; tsc clean. Phase 5 COMPLETE (2/2).
-last_updated: "2026-06-26T01:30:00.000Z"
+stopped_at: "Completed 05-02-PLAN.md — wired the AI Solver Agent into the API (solve-preview + GET /round/:id terminal branch emit the agent rationale + an additive agent:{verified,source} block; deterministic numbers unchanged; settle untouched / AI off the settlement path), constructed the real keyless-safe agent at boot in index.ts, extended api.test.ts (verified/fallback/GET-terminal + ANTHROPIC_API_KEY sentinel), and wrote solver/PROMPT.md (the AGENT-04 contract, SYSTEM_PROMPT byte-matched). 33-test suite green; tsc clean. Phase 5 COMPLETE (2/2)."
+last_updated: "2026-06-26T01:14:21.521Z"
 last_activity: 2026-06-26 -- Completed 05-02 (agent wired into API + PROMPT.md); Phase 5 complete
 progress:
   total_phases: 7
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 Phase: 5 (AI Solver Agent) — COMPLETE
 Plan: 2 of 2
 Plans: 2 of 2 done (05-01, 05-02)
-Status: Phase 5 complete — ready for Phase 6 (Auction Theatre)
+Status: Ready to execute
 Last activity: 2026-06-26 -- Completed 05-02 (agent wired into API + PROMPT.md); Phase 5 complete
 
 Milestone progress: 5/7 phases [█████░░] 71%

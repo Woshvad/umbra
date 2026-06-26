@@ -555,17 +555,15 @@ const fillColor = Number(tc?.filledQty) > 0 ? '#2B3AF2' : '#FF3D9A'  // buy / se
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Exact `Allocation` field names from the solver response.**
+1. **Exact `Allocation` field names from the solver response.** **(RESOLVED — to be CONFIRMED in-task)**
    - What we know: `solve-preview`/`settle`/`GET` all return `allocations: Allocation[]`; `Allocation` is defined in `solver/src/auction.ts`.
-   - What's unclear: the precise per-element fields (desk party, filledQty, side, cash) were not re-read this session.
-   - Recommendation: Wave-1 task greps `solver/src/auction.ts` for `Allocation`/`OrderView` and mirrors them into `solver.ts` types before wiring the aggregate BalanceTable + DvP legs. Per-desk own rows can use `TradeConfirmation` regardless.
+   - Resolution: `Allocation = { desk: string; side: 'Buy' | 'Sell'; filledQty: number }` (`solver/src/auction.ts` lines 30-34). Plan 01 mirrors this exact shape into `web/src/solver.ts` and `lib/balance.deskBalancesFromAllocations` reads `desk`/`side`/`filledQty` (signed BONDX = +filledQty Buy / −filledQty Sell; signed USDCx = ∓filledQty·clearingPrice). Plan 04 Task 2 carries a `<read_first>` on `solver/src/auction.ts` + an explicit action step to re-confirm these field names against the file BEFORE wiring the aggregate BalanceTable/DvpLegs, so the §4-finals derivation decodes the right fields. Per-desk own rows can use `TradeConfirmation` regardless.
 
-2. **Whether the round must be created from the UI (`POST /round`) or already exists from Phase-3 seeding.**
+2. **Whether the round must be created from the UI (`POST /round`) or already exists from Phase-3 seeding.** **(RESOLVED)**
    - What we know: Phase 3 seeds a screenshot-ready round (`R1`); the solver has `POST /round`.
-   - What's unclear: whether Theatre's START 60s WINDOW should open a NEW round or drive the existing seeded `R1`.
-   - Recommendation: The comp's flow starts a window on an already-sealed book, so the simplest faithful path is: Theatre operates on the existing seeded round id; `POST /round` is available but the demo can run on `R1`. Confirm the round-id source in Wave-1 (likely a `VITE_ROUND_ID` default of `R1`, matching the seeded id).
+   - Resolution: Theatre drives the EXISTING seeded round, default round id `'R1'` (matching the Phase-3 seed); `App.tsx` lifts `roundId` with default `'R1'` (Plan 01 Task 2). `POST /round` remains available but the §4 demo runs on `R1`. (Optional `VITE_ROUND_ID` env knob may override the default.)
 
 ---
 

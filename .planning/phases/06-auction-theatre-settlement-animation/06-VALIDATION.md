@@ -1,15 +1,15 @@
 ---
 phase: 6
 slug: auction-theatre-settlement-animation
-status: draft
-nyquist_compliant: false
+status: approved
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-06-26
 ---
 
 # Phase 6 — Validation Strategy
 
-> Per-phase validation contract. Source: `06-RESEARCH.md` → `## Validation Architecture`. Frontend phase: the always-on gate is a green TypeScript build (`tsc`/`vite build`); pure data-mapping helpers get fast unit tests asserting the §4 values; visual fidelity to the binding comp is verified by `gsd-ui-review` + the Phase-7 acceptance pass.
+> Per-phase validation contract. Source: `06-RESEARCH.md` → `## Validation Architecture`. Frontend phase: the always-on gate is a green TypeScript build (`tsc`/`vite build`); pure data-mapping helpers get fast vitest unit tests asserting the §4 values (incl. `deskBalancesFromAllocations` against a canonical §4 allocations fixture); visual/animation fidelity to the binding comp is verified by `gsd-ui-review` + the Phase-7 acceptance pass.
 
 ---
 
@@ -17,7 +17,7 @@ created: 2026-06-26
 
 | Property | Value |
 |----------|-------|
-| **Framework** | `tsc --noEmit` / `vite build` (always-on) + vitest (Wave-0 add for `web/` pure helpers) |
+| **Framework** | `tsc --noEmit` / `vite build` (always-on) + vitest@2.1.9 (Wave-0 add for `web/src/lib` pure helpers) |
 | **Config file** | `web/tsconfig.json` (exists); `web/vitest.config.ts` (Wave-0 add, mirrors solver/) |
 | **Quick run command** | `cd web && npx vitest run src/lib` (pure helpers) |
 | **Full suite command** | `cd web && npm run build` (tsc typecheck + bundle — the authoritative gate) |
@@ -36,22 +36,24 @@ created: 2026-06-26
 
 ## Per-Task Verification Map
 
-> Detailed task IDs filled by the planner. UI rendering/animation fidelity is validated by `gsd-ui-review` (visual) + Phase-7 live acceptance; the AUTOMATED surface here is the build + the pure data-mapping helpers.
+> UI rendering/animation fidelity is validated by `gsd-ui-review` (visual comp diff) + Phase-7 live acceptance; the AUTOMATED surface here is the build + the pure §4-value data-mapping helpers.
 
 | Task ID | Plan | Wave | Requirement | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|-----------------|-----------|-------------------|-------------|--------|
-| (planner) | — | 0 | UI-04/05 | — | curve→SVG-path mapping yields p*=100, matched=10 | unit | `cd web && npx vitest run src/lib` | ❌ W0 | ⬜ pending |
-| (planner) | — | — | UI-06 | — | settlement `lerp` before/after = §4 balances (A:10/4000·B:12/1800·C:13/1200) | unit | `cd web && npx vitest run src/lib` | ❌ W0 | ⬜ pending |
-| (planner) | — | — | UI-04 | T-06-token | solver.ts payload parse + offline guard; NO operator token anywhere in web/src | unit + grep | `cd web && npx vitest run src/lib` | ❌ W0 | ⬜ pending |
-| (planner) | — | all | UI-02/04/05/06 | — | whole app typechecks + bundles | build | `cd web && npm run build` | ✅ | ⬜ pending |
+| 06-01-01 | 01 | 0 | UI-04/05/06 | — | curve→SVG-path mapping → p*=100, matched=10; balance `lerp`; `deskBalancesFromAllocations(§4 allocations, before)` → A:10/4000·B:12/1800·C:13/1200; solver payload parse + offline guard | unit | `cd web && npx vitest run src/lib` | ❌ W0 | ⬜ pending |
+| 06-01-02 | 01 | 0 | UI-02/04/05/06 | T-06-token | tailwind umbraLeg + umbra-draw/pulse/caret aliases present; Nav 5-tab + App routing typecheck; NO operator token / operator @daml context in web/src | build + grep | `cd web && npm run build` | ✅ | ⬜ pending |
+| 06-02-01/02 | 02 | 2 | UI-02 | — | Desk view (OrderTicket/HoldingsPanel/FillCard) typechecks + bundles; §4 load-demo values exact | build | `cd web && npm run build` | ✅ | ⬜ pending |
+| 06-03-01/02 | 03 | 2 | UI-04/05 | — | Theatre (CountdownRing/PriceReveal/CrossingChart) bundles; reveal 100.00 + matched=10 rendered from solve-preview | build | `cd web && npm run build` | ✅ | ⬜ pending |
+| 06-04-01/02 | 04 | 3 | UI-06 | — | Agent + Settlement bundle; §4 finals + DvP legs A↔B 8@100 / A↔C 2@100; simultaneous draw-on | build | `cd web && npm run build` | ✅ | ⬜ pending |
 
 ---
 
 ## Wave 0 Requirements
 
-- [ ] `web/vitest.config.ts` + `vitest` devDep in `web/` (mirror solver/) — `web/` currently has NO test runner
-- [ ] Extract pure data-mapping helpers into `web/src/lib/` (curve→SVG path, balance `lerp`, solver payload parse/offline guard) so they are unit-testable without the DOM
-- [ ] `web/src/lib/*.test.ts` — the §4-value assertions above
+- [ ] `web/vitest.config.ts` + `vitest@2.1.9` devDep in `web/` (mirror solver/) — `web/` currently has NO test runner
+- [ ] Extract pure data-mapping helpers into `web/src/lib/` (curve→SVG path, balance `lerp`, `deskBalancesFromAllocations`, solver payload parse/offline guard) so they are unit-testable without the DOM
+- [ ] `web/src/lib/*.test.ts` — the §4-value assertions above (incl. the allocations→balances fixture)
+- [ ] `web/tailwind.config.ts` — add the `umbraLeg` keyframe + the `umbra-draw`/`umbra-pulse`/`umbra-caret`/`umbra-leg` animation aliases + large fontSize literals (existing keyframes/tokens unchanged)
 
 *Visual/animation fidelity is intentionally NOT unit-tested — it is covered by `gsd-ui-review` (comp diff) and Phase-7 live acceptance.*
 
@@ -69,10 +71,10 @@ created: 2026-06-26
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` (build or helper test) or a Wave 0 dependency, or are explicitly visual→ui-review
-- [ ] Sampling continuity: no 3 consecutive code tasks without a build/typecheck
-- [ ] Wave 0 covers the vitest add + extracted pure helpers
-- [ ] No watch-mode flags
-- [ ] `nyquist_compliant: true` set after the planner fills the per-task map
+- [x] All tasks have `<automated>` (build or helper test) or a Wave 0 dependency, or are explicitly visual→ui-review
+- [x] Sampling continuity: no 3 consecutive code tasks without a build/typecheck
+- [x] Wave 0 covers the vitest add + extracted pure helpers + tailwind animation aliases
+- [x] No watch-mode flags (use `vitest run` / `npm run build`)
+- [x] `nyquist_compliant: true` set (per-task map filled from the plan tasks)
 
-**Approval:** pending
+**Approval:** approved 2026-06-26

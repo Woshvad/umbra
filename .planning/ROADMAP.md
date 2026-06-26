@@ -167,7 +167,22 @@ Plans:
   3. A hand-rolled SVG chart renders the step demand (down) and supply (up) curves and marks p\* where matched volume is maximized.
   4. A "Settle atomically" action plays the atomic-settlement animation (all legs snap simultaneously), shows before/after balances, and renders the DvP legs (A↔B 8@100, A↔C 2@100) with a single "one transaction" badge.
 
-**Plans**: TBD
+**Plans**: 4 plans (3 waves)
+Plans:
+
+**Wave 1**
+
+- [ ] 06-01-PLAN.md — Scaffold: web/src/solver.ts (:4000 client + offline guard) + web/src/lib/{curve,balance,solverParse}.ts + §4-value vitest + tailwind umbraLeg/fontSize literals + Nav 5-tab union + App routing & lifted solver state + 4 compiling view stubs [UI-02, UI-04, UI-05, UI-06]
+
+**Wave 2** *(blocked on 06-01)*
+
+- [ ] 06-02-PLAN.md — 02 Desk view: OrderTicket (Venue.SubmitOrder, one-per-round lock, §4 load-demo, seal-wipe) + HoldingsPanel (live BONDX/USDCx) + FillCard (post-settle TradeConfirmation) — per-party plane [UI-02]
+- [ ] 06-03-PLAN.md — 03 Theatre: CountdownRing (753.98 / red≤10 / auto-fire) + Close&Solve reveal (lime 100.00 umbraSlam hero) + CrossingChart (hand-rolled SVG p*=100/q=10) — operator plane [UI-04, UI-05]
+
+**Wave 3** *(blocked on 06-01, 06-03)*
+
+- [ ] 06-04-PLAN.md — 04 Agent (proposal + verified/source badge + typewriter rationale) + 05 Settlement (DvP legs + single-rAF SIMULTANEOUS settle + before/after balances to §4 finals + one-transaction stamp) — operator plane [UI-06]
+
 **UI hint**: yes
 
 ### Phase 7: Polish, Demo & Acceptance
@@ -197,5 +212,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 3. Privacy Proof (Vertical Slice) | 3/3 | Complete   | 2026-06-25 |
 | 4. Solver Service | 4/4 | Complete   | 2026-06-26 |
 | 5. AI Solver Agent | 2/2 | Complete   | 2026-06-26 |
-| 6. Auction Theatre & Settlement Animation | 0/TBD | Not started | - |
+| 6. Auction Theatre & Settlement Animation | 0/4 | Not started | - |
 | 7. Polish, Demo & Acceptance | 0/TBD | Not started | - |

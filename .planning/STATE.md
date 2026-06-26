@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "Completed 06-02-PLAN.md — built the 02 Desk view on the per-party plane (:7575): OrderTicket submits Venue.SubmitOrder via the active desk's own useLedger with Int/Numeric as STRINGS, one-per-round lock + RE-OPEN, §4 load-demo prefill (BLUEROCK Buy 10@101 · MERIDIAN Sell 8@99 · HALWARD Sell 5@100), and a reduced-motion-gated seal-wipe; HoldingsPanel sums the desk's own BONDX/USDCx; FillCard renders the post-settlement YOUR FILL trio (sign-colored filledQty, 100.00 clearing, signed cashMoved) from the desk's own TradeConfirmation + empty state. No operator token in any touched file (grep-clean); web build green. Phase 6 → 2/4."
-last_updated: "2026-06-26T02:10:00.000Z"
-last_activity: 2026-06-26 -- Completed 06-02 (02 Desk view)
+stopped_at: "Completed 06-03-PLAN.md — built the 03 Auction Theatre on the operator plane (:4000): CountdownRing (hand-rolled 280×280 SVG, CIRC=753.98, red≤10s, 84px mono numeral) + TheatreView dark inverted stage with a 1s setInterval 60→0 auto-firing Close&Solve at 0 + live sealedOrderCount; Close&Solve = closeRound then solvePreview (NOT GET) revealing the lime 100.00 hero slab (PriceReveal, 120px mono, animate-umbra-slam + red sliver) beside the hand-rolled CrossingChart (UI-05, viewBox 0 0 480 360, step supply/demand from the live curve via lib/curve, p*=100/q=10 marker at (296,160), animate-umbra-draw) — inline SOLVER-AGENT-00 COMPUTING (animate-umbra-pulse) for the round-trip; graceful SOLVER OFFLINE caption; interval cleaned up on unmount. No operator token/no @daml/react context in any of the 4 files (grep-clean); web build + 11 vitest green. Phase 6 → 3/4."
+last_updated: "2026-06-26T01:42:00.000Z"
+last_activity: 2026-06-26 -- Completed 06-03 (03 Auction Theatre)
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 19
-  completed_plans: 17
-  percent: 74
+  completed_plans: 18
+  percent: 76
 ---
 
 # Project State
@@ -26,10 +26,10 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 ## Current Position
 
 Phase: 6 (Auction Theatre & Settlement Animation) — EXECUTING
-Plan: 3 of 4
-Plans: 2 of 4 done (06-01, 06-02)
+Plan: 4 of 4
+Plans: 3 of 4 done (06-01, 06-02, 06-03)
 Status: Ready to execute
-Last activity: 2026-06-26 -- Completed 06-02 (02 Desk view: OrderTicket + HoldingsPanel + FillCard, per-party plane)
+Last activity: 2026-06-26 -- Completed 06-03 (03 Auction Theatre: CountdownRing + CrossingChart + PriceReveal, operator plane)
 
 Milestone progress: 5/7 phases [█████░░] 71%
 
@@ -66,6 +66,7 @@ Milestone progress: 5/7 phases [█████░░] 71%
 | Phase 5 P1 | 18min | 3 tasks | 4 files |
 | Phase 5 P2 | 12min | 2 tasks | 5 files |
 | Phase 06 P01 | 22min | 2 tasks | 17 files |
+| Phase 06 P03 | 5min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -103,6 +104,7 @@ Recent decisions affecting current work:
 - [05-01 / AGENT-01, AGENT-02]: solver/src/agent.ts is the AI Solver Agent — createAgent({client?, computeClearing, matchedAt}) DI factory → proposeClearing(views). Calls Claude (claude-haiku-4-5, temperature 0, max_tokens 1024) via client.messages.parse with output_config.format = jsonSchemaOutputFormat(jsonSchemaLiteral) → reads message.parsed_output; verify-don't-trust gate = proposalSchema.safeParse (zod 3) then priceEqual (Math.round(p*100), 2dp float-safe) AND allocationsEqual (set by desk|side→filledQty, order-insensitive). Agreement → deterministic NUMBERS + the model's rationale (verified:true, source:'claude'); EVERY other path (disagreement / malformed / null / SDK error|timeout / no key) → deterministic §4 fallback @100.00 + neutral rationale (verified:false, source:'deterministic-fallback'). proposeClearing NEVER throws. ANTHROPIC_API_KEY read once at module scope, module-private, never exported/returned/logged (mirrors ledger.ts _operatorToken); catch logs a fixed secret-free string + err.name only. 9 mocked-SDK agent tests + 30-total suite green; tsc clean; auction.ts byte-unchanged.
 - [05-01 / DEVIATION]: Used the SDK's jsonSchemaOutputFormat helper (from @anthropic-ai/sdk/helpers/json-schema, zod-v4-free) NOT zodOutputFormat — @anthropic-ai/sdk@0.106.0's helpers/zod hard-imports zod/v4 + z.toJSONSchema, which the CLAUDE.md-pinned zod@3.23.8 lacks. zod stays 3.23.8 and drives the verify-side safeParse only. Installed with --legacy-peer-deps (SDK peerOptional zod ^3.25||^4; same convention as @daml/react). The forced-tool-use fallback is documented in agent.ts as the locked alternative. PROMPT.md (05-02) must mirror SYSTEM_PROMPT verbatim.
 - [05-02 / AGENT-03, AGENT-04]: api.ts AppDeps gains proposeClearing: (views) => Promise<AgentResult>; solve-preview + GET /round/:id terminal branch call deps.proposeClearing(views) and emit rationale: agent.rationale (was null in P4) + an additive agent:{verified,source} block — the deterministic clearingPrice/matchedVolume/allocations/curve stay byte-unchanged (P4 backward-compatible). settle is UNCHANGED and never calls proposeClearing (AI off the settlement path). index.ts main() constructs the real agent once via createAgent({computeClearing, matchedAt}) (NO client arg — agent.ts owns the module-private ANTHROPIC_API_KEY, keyless-degrades; index.ts never reads the key) and threads proposeClearing through buildDeps/BuildDepsArgs. api.test.ts extended (verified-claude + deterministic-fallback + GET-terminal rationale tests; secret sweep extended with an ANTHROPIC_API_KEY sentinel asserted absent from both responses). solver/PROMPT.md (new, AGENT-04) documents the system prompt VERBATIM (byte-matched to agent.ts SYSTEM_PROMPT, keep-in-sync note), the user batch JSON shape, the required response JSON {clearingPrice, allocations:[{desk,side,filledQty}], rationale}, the §4 worked example (100.00, A=10/B=8/C=2), and the never-used-unverified guarantee. 33-test suite green; tsc clean. Phase 5 COMPLETE (2/2).
+- [06-03 / UI-04, UI-05]: 03 Auction Theatre on the operator plane (:4000) — CountdownRing (hand-rolled 280×280 SVG, CIRC=753.98, stroke-dashoffset=753.98*(1-s/60), red≤10s, 84px mono; pure presentation of `seconds`, the clock lives in TheatreView). TheatreView: 1s setInterval 60→0 auto-fires Close&Solve at 0; Close&Solve = closeRound then solvePreview (NOT GET — Pitfall 4); SOLVER OFFLINE caption on a SolverError 'OFFLINE'; interval cleaned up on unmount. CrossingChart (UI-05, no chart lib): viewBox 0 0 480 360, step supply (animate-umbra-draw, dasharray 640) + dashed demand derived from the LIVE solve-preview curve via lib/curve sx/sy (NOT hard-coded binding polylines), p* rule/dropline/marker positioned by crossingPoint(curve,price,vol)→(296,160) for §4. PriceReveal: lime #D6FB3C 120px hero slab + animate-umbra-slam + red skewX sliver, "1 for all" sub-stats. Solved state = COMPUTING (animate-umbra-pulse) → 2-col chart+reveal grid. No operator token/no @daml/react context in TheatreView/CountdownRing/CrossingChart/PriceReveal (grep-clean, T-06-01). web build + 11 vitest green. CrossingChart reused by 06-04 (AgentView).
 - [Phase ?]: [06-01]: web/src/solver.ts is the operator-plane :4000 fetch client (VITE_SOLVER_URL) mirroring solver/src/api.ts; SolverError throws OFFLINE on network reject — no operator token/no @daml/react context in the bundle. Pure lib helpers (curve crossing→296/160, deskBalancesFromAllocations→§4 finals, badgeLabel+parseSolvePreview) vitest@2.1.9-tested. tailwind: umbraLeg + fontSize literals + umbra-draw/pulse/caret/leg aliases (existing values byte-unchanged). Nav 5-tab; App routes 5 + lifts roundId(R1)/phase/preview/offline via operatorState.ts; 4 stub views; Privacy untouched. build+11 vitest green.
 
 ### Pending Todos

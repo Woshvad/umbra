@@ -49,8 +49,8 @@ Requirements for the hackathon MVP. Each maps to a roadmap phase.
 
 ### AI Solver Agent (AGENT)
 
-- [ ] **AGENT-01**: On round close, the Solver Agent ingests the sealed batch and **proposes** a clearing (price + allocation) by calling Claude with a structured prompt that returns strict JSON, temperature 0
-- [ ] **AGENT-02**: The service recomputes the deterministic result and only submits an allocation that passes verification; the AI's numbers are never used unverified (verify-don't-trust)
+- [x] **AGENT-01**: On round close, the Solver Agent ingests the sealed batch and **proposes** a clearing (price + allocation) by calling Claude with a structured prompt that returns strict JSON, temperature 0
+- [x] **AGENT-02**: The service recomputes the deterministic result and only submits an allocation that passes verification; the AI's numbers are never used unverified (verify-don't-trust)
 - [ ] **AGENT-03**: Claude returns a 2–3 sentence natural-language rationale for the clearing, rendered in the Solver Agent panel
 - [ ] **AGENT-04**: The prompt contract (system rules verbatim, batch JSON, required JSON response shape) is documented in `solver/PROMPT.md`
 
@@ -124,8 +124,8 @@ Which phases cover which requirements. Populated during roadmap creation.
 | SOLV-03 | Phase 4 | Complete |
 | SOLV-04 | Phase 4 | Complete (04-02) |
 | SOLV-05 | Phase 4 | Complete (04-01) |
-| AGENT-01 | Phase 5 | Pending |
-| AGENT-02 | Phase 5 | Pending |
+| AGENT-01 | Phase 5 | Complete |
+| AGENT-02 | Phase 5 | Complete |
 | AGENT-03 | Phase 5 | Pending |
 | AGENT-04 | Phase 5 | Pending |
 | UI-01 | Phase 3 | Complete |

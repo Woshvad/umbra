@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04-04-PLAN.md (solver/src/clock.ts in-memory ROUND_SECONDS auto-close + force-close clock; solver/src/index.ts boot — dotenv, rehydrate via queryAllRounds, buildDeps wiring POST /round → openRound + openRoundClock, listen on SOLVER_PORT, secret-free log; 21 vitest green incl. fake-timer clock + injected-dep wiring proof; tsc clean. Live-E2E Task 3 deferred to phase verification). Phase 4 autonomous portion complete 4/4.
-last_updated: "2026-06-26T00:06:21.567Z"
-last_activity: 2026-06-26 -- Completed 04-04 (solver clock + boot wiring)
+stopped_at: Completed 05-01-PLAN.md (solver/src/agent.ts — createAgent({client?, computeClearing, matchedAt}) DI factory → proposeClearing; Claude claude-haiku-4-5 temp 0 via messages.parse + jsonSchemaOutputFormat (zod-v4-free helper, since zodOutputFormat needs zod v4 vs pinned zod@3.23.8) → parsed_output; verify-don't-trust gate priceEqual 2dp + allocationsEqual set; agreement→deterministic numbers + model rationale (verified:true/source:claude), every other path→deterministic §4 fallback @100.00; ANTHROPIC_API_KEY module-private, never leaked; proposeClearing never throws. 9 agent tests + 30-total suite green; tsc clean; auction.ts byte-unchanged; @anthropic-ai/sdk@0.106.0 pinned). Plan 1 of 2 done.
+last_updated: "2026-06-26T01:14:00.000Z"
+last_activity: 2026-06-26 -- Completed 05-01 (AI solver agent + verify-don't-trust gate)
 progress:
   total_phases: 7
   completed_phases: 4
-  total_plans: 13
-  completed_plans: 13
-  percent: 57
+  total_plans: 15
+  completed_plans: 14
+  percent: 93
 ---
 
 # Project State
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-25)
 
 **Core value:** The privacy money shot — three desks submit sealed orders blind to each other, an AI solver clears them at one uniform price ($100.00 on the §4 fixture), and the whole batch settles atomically in a single Canton transaction.
-**Current focus:** Phase 4 — Solver Service
+**Current focus:** Phase 5 — AI Solver Agent
 
 ## Current Position
 
-Phase: 4 (Solver Service) — COMPLETE (autonomous portion; live-E2E deferred)
-Plan: 4 of 4
-Plans: 4 of 4 done (04-01, 04-02, 04-03, 04-04)
-Status: Ready to execute
-Last activity: 2026-06-26 -- Completed 04-04 (solver clock + boot wiring)
+Phase: 5 (AI Solver Agent) — EXECUTING
+Plan: 2 of 2
+Plans: 1 of 2 done (05-01)
+Status: Ready to execute 05-02
+Last activity: 2026-06-26 -- Completed 05-01 (AI solver agent + verify-don't-trust gate)
 
 Milestone progress: 4/7 phases [████░░░] 57%
 
@@ -63,6 +63,7 @@ Milestone progress: 4/7 phases [████░░░] 57%
 | Phase 04 P02 | 5 min | 2 tasks | 2 files |
 | Phase 04 P03 | 6min | 2 tasks | 2 files |
 | Phase 04 P04 | 5min | 2 tasks | 6 files |
+| Phase 5 P1 | 18min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -97,6 +98,8 @@ Recent decisions affecting current work:
 - [04-03 / SOLV-03, SOLV-04]: solver/src/api.ts is the §11 HTTP surface — createApp(deps) DI factory exposing 5 endpoints on :4000, cors(:5173) only (never *), zod-validated POST /round, secret-safe `{ error: { code, message } }` envelope that never echoes the token/key/process.env/headers. GET /round/:id calls refreshStats FIRST (BLOCKER fix → solver-maintained sealedOrderCount). solve-preview derives matchedVolume = matchedAt(views, pStar) (NOT a ClearingResult field), builds the {price,demand,supply} curve, returns rationale:null (the additive P5 seam) — computes but does NOT settle. settle returns 409 on a Cleared/Settled round (T-04-06). Tests stub the ledger deps + use real §8 helpers via Node fetch on app.listen(0); 14 vitest green, tsc clean.
 - [04-04 / SOLV-01]: solver/src/clock.ts is an in-memory Map<roundId, RoundState> clock — openRoundClock arms a single setTimeout(ROUND_SECONDS*1000) auto-close; forceClose cancels it (clearTimeout) and is idempotent; rehydrate seeds from a live query(Round) without arming a timer. The map is cache/clock state ONLY; the ledger Round.status is authoritative (T-04-10). Proven by fake-timer vitest.
 - [04-04 / SOLV-02]: solver/src/index.ts boots — dotenv.config() first, rehydrate via ledger.queryAllRounds, buildDeps(...) wiring POST /round → openRound + openRoundClock(roundId, ROUND_SECONDS) and POST /round/:id/close → clock.forceClose, createApp(deps).listen(SOLVER_PORT). Entrypoint-guarded main() + dynamic ledger import keeps index.test.ts ledger-free; injected-dep test asserts both openRound + openRoundClock fire (WARNING fix). Secret-free boot log ':<port> as <operatorParty>'. Thin adapters project ledger CreateEvent<Round>/ClearResult onto the API RoundView/SettleResult; settle allocations recomputed via computeClearing.
+- [05-01 / AGENT-01, AGENT-02]: solver/src/agent.ts is the AI Solver Agent — createAgent({client?, computeClearing, matchedAt}) DI factory → proposeClearing(views). Calls Claude (claude-haiku-4-5, temperature 0, max_tokens 1024) via client.messages.parse with output_config.format = jsonSchemaOutputFormat(jsonSchemaLiteral) → reads message.parsed_output; verify-don't-trust gate = proposalSchema.safeParse (zod 3) then priceEqual (Math.round(p*100), 2dp float-safe) AND allocationsEqual (set by desk|side→filledQty, order-insensitive). Agreement → deterministic NUMBERS + the model's rationale (verified:true, source:'claude'); EVERY other path (disagreement / malformed / null / SDK error|timeout / no key) → deterministic §4 fallback @100.00 + neutral rationale (verified:false, source:'deterministic-fallback'). proposeClearing NEVER throws. ANTHROPIC_API_KEY read once at module scope, module-private, never exported/returned/logged (mirrors ledger.ts _operatorToken); catch logs a fixed secret-free string + err.name only. 9 mocked-SDK agent tests + 30-total suite green; tsc clean; auction.ts byte-unchanged.
+- [05-01 / DEVIATION]: Used the SDK's jsonSchemaOutputFormat helper (from @anthropic-ai/sdk/helpers/json-schema, zod-v4-free) NOT zodOutputFormat — @anthropic-ai/sdk@0.106.0's helpers/zod hard-imports zod/v4 + z.toJSONSchema, which the CLAUDE.md-pinned zod@3.23.8 lacks. zod stays 3.23.8 and drives the verify-side safeParse only. Installed with --legacy-peer-deps (SDK peerOptional zod ^3.25||^4; same convention as @daml/react). The forced-tool-use fallback is documented in agent.ts as the locked alternative. PROMPT.md (05-02) must mirror SYSTEM_PROMPT verbatim.
 
 ### Pending Todos
 
@@ -122,6 +125,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-26T00:35:00.000Z
+Last session: 2026-06-26T00:15:25.218Z
 Stopped at: Completed 04-04-PLAN.md (solver/src/clock.ts in-memory ROUND_SECONDS auto-close + force-close clock; solver/src/index.ts boot — dotenv, rehydrate via queryAllRounds, buildDeps wiring POST /round → openRound + openRoundClock, listen on SOLVER_PORT, secret-free log; 21 vitest green incl. fake-timer clock + injected-dep wiring proof; tsc clean. Live-E2E Task 3 deferred to phase verification). Phase 4 autonomous portion complete 4/4.
 Resume file: None

@@ -149,7 +149,7 @@ Plans:
 
 **Wave 1**
 
-- [ ] 05-01-PLAN.md — Install @anthropic-ai/sdk@0.106.0 + agent.ts (createAgent DI factory, claude-haiku-4-5 structured output, verify-don't-trust equality gate, module-private ANTHROPIC_API_KEY) + mocked-SDK tests (agreement / disagreement / unavailable / keyless + sentinel-key sweep) [AGENT-01, AGENT-02]
+- [x] 05-01-PLAN.md — Install @anthropic-ai/sdk@0.106.0 + agent.ts (createAgent DI factory, claude-haiku-4-5 structured output, verify-don't-trust equality gate, module-private ANTHROPIC_API_KEY) + mocked-SDK tests (agreement / disagreement / unavailable / keyless + sentinel-key sweep) [AGENT-01, AGENT-02]
 
 **Wave 2** *(blocked on 05-01)*
 
@@ -196,6 +196,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 2. Clear & Settle On-Ledger | 3/3 | Complete   | 2026-06-25 |
 | 3. Privacy Proof (Vertical Slice) | 3/3 | Complete   | 2026-06-25 |
 | 4. Solver Service | 4/4 | Complete   | 2026-06-26 |
-| 5. AI Solver Agent | 0/TBD | Not started | - |
+| 5. AI Solver Agent | 1/2 | In Progress|  |
 | 6. Auction Theatre & Settlement Animation | 0/TBD | Not started | - |
 | 7. Polish, Demo & Acceptance | 0/TBD | Not started | - |

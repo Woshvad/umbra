@@ -144,7 +144,16 @@ Plans:
   3. Claude returns a 2–3 sentence natural-language rationale for the clearing, rendered in the Solver Agent panel.
   4. The prompt contract (system rules verbatim, batch JSON, required JSON response shape) is documented in `solver/PROMPT.md`.
 
-**Plans**: TBD
+**Plans**: 2 plans (2 waves)
+Plans:
+
+**Wave 1**
+
+- [ ] 05-01-PLAN.md — Install @anthropic-ai/sdk@0.106.0 + agent.ts (createAgent DI factory, claude-haiku-4-5 structured output, verify-don't-trust equality gate, module-private ANTHROPIC_API_KEY) + mocked-SDK tests (agreement / disagreement / unavailable / keyless + sentinel-key sweep) [AGENT-01, AGENT-02]
+
+**Wave 2** *(blocked on 05-01)*
+
+- [ ] 05-02-PLAN.md — Wire proposeClearing into api.ts (solve-preview + GET terminal: rationale + agent:{verified,source}; settle untouched) + index.ts boot + extend api.test.ts (ANTHROPIC_API_KEY sentinel) + solver/PROMPT.md prompt contract [AGENT-03, AGENT-04]
 
 ### Phase 6: Auction Theatre & Settlement Animation
 

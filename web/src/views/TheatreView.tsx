@@ -17,6 +17,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { OperatorViewState } from '../operatorState'
 import { closeRound, getRound, solvePreview, SolverError } from '../solver'
 import CountdownRing from '../components/CountdownRing'
+import CrossingChart from '../components/CrossingChart'
+import PriceReveal from '../components/PriceReveal'
 
 type Props = OperatorViewState
 
@@ -237,6 +239,8 @@ function SolvedStage({
   preview: OperatorViewState['preview']
 }) {
   if (phase === 'solving' || !preview) {
+    // Inline COMPUTING beat — flame square pulses via the Plan-01 animate-umbra-pulse
+    // alias, held for the real solve-preview round-trip.
     return (
       <div className="flex items-center" style={{ gap: '11px' }}>
         <span
@@ -249,10 +253,25 @@ function SolvedStage({
       </div>
     )
   }
-  // Placeholder until Task 2 wires CrossingChart + PriceReveal.
+  // CLEARED — the chart + the reveal (the money shot).
   return (
-    <div className="font-mono text-18 tabular-nums">
-      Cleared at {preview.clearingPrice.toFixed(2)} — matched {preview.matchedVolume}.
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'minmax(0,520px) 1fr',
+        gap: '56px',
+        alignItems: 'center',
+      }}
+    >
+      <CrossingChart
+        curve={preview.curve}
+        clearingPrice={preview.clearingPrice}
+        matchedVolume={preview.matchedVolume}
+      />
+      <PriceReveal
+        clearingPrice={preview.clearingPrice}
+        matchedVolume={preview.matchedVolume}
+      />
     </div>
   )
 }

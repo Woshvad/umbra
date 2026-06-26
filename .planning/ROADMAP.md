@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Clear & Settle On-Ledger** - `Round.Clear` re-verifies §8 and settles the batch as one atomic DvP transaction; §4 fixture clears at $100.00
 - [x] **Phase 3: Privacy Proof (Vertical Slice)** - Per-party JWT auth proven at the wire + the 3-up Privacy money shot; ship this even if everything after is rough (completed 2026-06-25)
 - [x] **Phase 4: Solver Service** - Node/TS Operator service: 60s window lifecycle, deterministic §8, Express API, ≥5 unit-test scenarios (autonomous portion completed 2026-06-26; live-`daml start` E2E deferred to phase verification)
-- [ ] **Phase 5: AI Solver Agent** - Claude proposes + narrates the clearing; verify-don't-trust gate; additive, off the settlement path
+- [x] **Phase 5: AI Solver Agent** - Claude proposes + narrates the clearing; verify-don't-trust gate; additive, off the settlement path (completed 2026-06-26)
 - [ ] **Phase 6: Auction Theatre & Settlement Animation** - Countdown + reveal, hand-rolled supply/demand crossing SVG, atomic-settle animation, Desk view
 - [ ] **Phase 7: Polish, Demo & Acceptance** - 100% design-comp fidelity, `make demo` + README, screenshots, live E2E acceptance flow
 
@@ -153,7 +153,7 @@ Plans:
 
 **Wave 2** *(blocked on 05-01)*
 
-- [ ] 05-02-PLAN.md — Wire proposeClearing into api.ts (solve-preview + GET terminal: rationale + agent:{verified,source}; settle untouched) + index.ts boot + extend api.test.ts (ANTHROPIC_API_KEY sentinel) + solver/PROMPT.md prompt contract [AGENT-03, AGENT-04]
+- [x] 05-02-PLAN.md — Wire proposeClearing into api.ts (solve-preview + GET terminal: rationale + agent:{verified,source}; settle untouched) + index.ts boot + extend api.test.ts (ANTHROPIC_API_KEY sentinel) + solver/PROMPT.md prompt contract [AGENT-03, AGENT-04]
 
 ### Phase 6: Auction Theatre & Settlement Animation
 
@@ -196,6 +196,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 2. Clear & Settle On-Ledger | 3/3 | Complete   | 2026-06-25 |
 | 3. Privacy Proof (Vertical Slice) | 3/3 | Complete   | 2026-06-25 |
 | 4. Solver Service | 4/4 | Complete   | 2026-06-26 |
-| 5. AI Solver Agent | 1/2 | In Progress|  |
+| 5. AI Solver Agent | 2/2 | Complete   | 2026-06-26 |
 | 6. Auction Theatre & Settlement Animation | 0/TBD | Not started | - |
 | 7. Polish, Demo & Acceptance | 0/TBD | Not started | - |

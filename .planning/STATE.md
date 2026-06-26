@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: "Completed 05-02-PLAN.md — wired the AI Solver Agent into the API (solve-preview + GET /round/:id terminal branch emit the agent rationale + an additive agent:{verified,source} block; deterministic numbers unchanged; settle untouched / AI off the settlement path), constructed the real keyless-safe agent at boot in index.ts, extended api.test.ts (verified/fallback/GET-terminal + ANTHROPIC_API_KEY sentinel), and wrote solver/PROMPT.md (the AGENT-04 contract, SYSTEM_PROMPT byte-matched). 33-test suite green; tsc clean. Phase 5 COMPLETE (2/2)."
-last_updated: "2026-06-26T01:14:21.521Z"
-last_activity: 2026-06-26 -- Completed 05-02 (agent wired into API + PROMPT.md); Phase 5 complete
+last_updated: "2026-06-26T01:25:06.408Z"
+last_activity: 2026-06-26 -- Phase 6 execution started
 progress:
   total_phases: 7
   completed_phases: 5
-  total_plans: 15
-  completed_plans: 15
-  percent: 100
+  total_plans: 19
+  completed_plans: 16
+  percent: 71
 ---
 
 # Project State
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-25)
 
 **Core value:** The privacy money shot — three desks submit sealed orders blind to each other, an AI solver clears them at one uniform price ($100.00 on the §4 fixture), and the whole batch settles atomically in a single Canton transaction.
-**Current focus:** Phase 5 — AI Solver Agent
+**Current focus:** Phase 6 — Auction Theatre & Settlement Animation
 
 ## Current Position
 
-Phase: 5 (AI Solver Agent) — COMPLETE
-Plan: 2 of 2
-Plans: 2 of 2 done (05-01, 05-02)
+Phase: 6 (Auction Theatre & Settlement Animation) — EXECUTING
+Plan: 2 of 4
+Plans: 1 of 4 done (06-01)
 Status: Ready to execute
-Last activity: 2026-06-26 -- Completed 05-02 (agent wired into API + PROMPT.md); Phase 5 complete
+Last activity: 2026-06-26 -- Completed 06-01 (Auction Theatre scaffold)
 
 Milestone progress: 5/7 phases [█████░░] 71%
 
@@ -65,6 +65,7 @@ Milestone progress: 5/7 phases [█████░░] 71%
 | Phase 04 P04 | 5min | 2 tasks | 6 files |
 | Phase 5 P1 | 18min | 3 tasks | 4 files |
 | Phase 5 P2 | 12min | 2 tasks | 5 files |
+| Phase 06 P01 | 22min | 2 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -102,6 +103,7 @@ Recent decisions affecting current work:
 - [05-01 / AGENT-01, AGENT-02]: solver/src/agent.ts is the AI Solver Agent — createAgent({client?, computeClearing, matchedAt}) DI factory → proposeClearing(views). Calls Claude (claude-haiku-4-5, temperature 0, max_tokens 1024) via client.messages.parse with output_config.format = jsonSchemaOutputFormat(jsonSchemaLiteral) → reads message.parsed_output; verify-don't-trust gate = proposalSchema.safeParse (zod 3) then priceEqual (Math.round(p*100), 2dp float-safe) AND allocationsEqual (set by desk|side→filledQty, order-insensitive). Agreement → deterministic NUMBERS + the model's rationale (verified:true, source:'claude'); EVERY other path (disagreement / malformed / null / SDK error|timeout / no key) → deterministic §4 fallback @100.00 + neutral rationale (verified:false, source:'deterministic-fallback'). proposeClearing NEVER throws. ANTHROPIC_API_KEY read once at module scope, module-private, never exported/returned/logged (mirrors ledger.ts _operatorToken); catch logs a fixed secret-free string + err.name only. 9 mocked-SDK agent tests + 30-total suite green; tsc clean; auction.ts byte-unchanged.
 - [05-01 / DEVIATION]: Used the SDK's jsonSchemaOutputFormat helper (from @anthropic-ai/sdk/helpers/json-schema, zod-v4-free) NOT zodOutputFormat — @anthropic-ai/sdk@0.106.0's helpers/zod hard-imports zod/v4 + z.toJSONSchema, which the CLAUDE.md-pinned zod@3.23.8 lacks. zod stays 3.23.8 and drives the verify-side safeParse only. Installed with --legacy-peer-deps (SDK peerOptional zod ^3.25||^4; same convention as @daml/react). The forced-tool-use fallback is documented in agent.ts as the locked alternative. PROMPT.md (05-02) must mirror SYSTEM_PROMPT verbatim.
 - [05-02 / AGENT-03, AGENT-04]: api.ts AppDeps gains proposeClearing: (views) => Promise<AgentResult>; solve-preview + GET /round/:id terminal branch call deps.proposeClearing(views) and emit rationale: agent.rationale (was null in P4) + an additive agent:{verified,source} block — the deterministic clearingPrice/matchedVolume/allocations/curve stay byte-unchanged (P4 backward-compatible). settle is UNCHANGED and never calls proposeClearing (AI off the settlement path). index.ts main() constructs the real agent once via createAgent({computeClearing, matchedAt}) (NO client arg — agent.ts owns the module-private ANTHROPIC_API_KEY, keyless-degrades; index.ts never reads the key) and threads proposeClearing through buildDeps/BuildDepsArgs. api.test.ts extended (verified-claude + deterministic-fallback + GET-terminal rationale tests; secret sweep extended with an ANTHROPIC_API_KEY sentinel asserted absent from both responses). solver/PROMPT.md (new, AGENT-04) documents the system prompt VERBATIM (byte-matched to agent.ts SYSTEM_PROMPT, keep-in-sync note), the user batch JSON shape, the required response JSON {clearingPrice, allocations:[{desk,side,filledQty}], rationale}, the §4 worked example (100.00, A=10/B=8/C=2), and the never-used-unverified guarantee. 33-test suite green; tsc clean. Phase 5 COMPLETE (2/2).
+- [Phase ?]: [06-01]: web/src/solver.ts is the operator-plane :4000 fetch client (VITE_SOLVER_URL) mirroring solver/src/api.ts; SolverError throws OFFLINE on network reject — no operator token/no @daml/react context in the bundle. Pure lib helpers (curve crossing→296/160, deskBalancesFromAllocations→§4 finals, badgeLabel+parseSolvePreview) vitest@2.1.9-tested. tailwind: umbraLeg + fontSize literals + umbra-draw/pulse/caret/leg aliases (existing values byte-unchanged). Nav 5-tab; App routes 5 + lifts roundId(R1)/phase/preview/offline via operatorState.ts; 4 stub views; Privacy untouched. build+11 vitest green.
 
 ### Pending Todos
 
@@ -127,6 +129,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-26T01:30:00.000Z
+Last session: 2026-06-26T01:24:55.388Z
 Stopped at: Completed 05-02-PLAN.md — wired the AI Solver Agent into the API (solve-preview + GET /round/:id terminal branch emit the agent rationale + an additive agent:{verified,source} block; deterministic numbers unchanged; settle untouched / AI off the settlement path), constructed the real keyless-safe agent at boot in index.ts, extended api.test.ts (verified/fallback/GET-terminal + ANTHROPIC_API_KEY sentinel), and wrote solver/PROMPT.md (the AGENT-04 contract, SYSTEM_PROMPT byte-matched). 33-test suite green; tsc clean. Phase 5 COMPLETE (2/2).
 Resume file: None

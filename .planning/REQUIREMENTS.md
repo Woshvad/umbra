@@ -57,11 +57,11 @@ Requirements for the hackathon MVP. Each maps to a roadmap phase.
 ### Frontend Views (UI)
 
 - [x] **UI-01**: A party switcher in the top bar impersonates BankA/BankB/BankC/Operator, each using that party's token; a round status indicator (Open · Closed · Cleared · Settled) + live countdown is shown
-- [ ] **UI-02**: Desk view (A/B/C) shows the order ticket (one order per round, with a "load demo order" affordance pre-filling the §4 values), your sealed order + status, your live BONDX/USDCx holdings, and — after settlement — your `TradeConfirmation`
+- [x] **UI-02**: Desk view (A/B/C) shows the order ticket (one order per round, with a "load demo order" affordance pre-filling the §4 values), your sealed order + status, your live BONDX/USDCx holdings, and — after settlement — your `TradeConfirmation`
 - [x] **UI-03**: Privacy view (the money shot) renders three desk panels side by side, **each with that desk's own credentials**, plus a center column showing the shared `RoundStats` count, with a redaction motif on the "other" columns
-- [ ] **UI-04**: Auction theatre (Operator) shows a 60s countdown ring + live `sealedOrderCount`, and a "Close & Solve" action that triggers `solve-preview` and reveals the uniform clearing price as a hero moment
-- [ ] **UI-05**: A hand-rolled SVG supply/demand crossing chart shows the step demand (down) and supply (up) curves and marks p\* where matched volume is maximized
-- [ ] **UI-06**: A "Settle atomically" action plays the atomic-settlement animation (all legs snap simultaneously) and shows before/after balances; the settlement ledger renders the DvP legs (A↔B 8@100, A↔C 2@100) with a single "one transaction" badge
+- [x] **UI-04**: Auction theatre (Operator) shows a 60s countdown ring + live `sealedOrderCount`, and a "Close & Solve" action that triggers `solve-preview` and reveals the uniform clearing price as a hero moment
+- [x] **UI-05**: A hand-rolled SVG supply/demand crossing chart shows the step demand (down) and supply (up) curves and marks p\* where matched volume is maximized
+- [x] **UI-06**: A "Settle atomically" action plays the atomic-settlement animation (all legs snap simultaneously) and shows before/after balances; the settlement ledger renders the DvP legs (A↔B 8@100, A↔C 2@100) with a single "one transaction" badge
 - [ ] **UI-07**: The frontend follows the binding design comp (`Umbra design/`) **100%** — color tokens, typography (Space Grotesk / IBM Plex Mono / Inter), layout, the redaction + draw-on motifs, and all five numbered views (01 Privacy · 02 Desk · 03 Theatre · 04 Agent · 05 Settlement)
 
 ### Demo & Acceptance (DEMO)
@@ -129,11 +129,11 @@ Which phases cover which requirements. Populated during roadmap creation.
 | AGENT-03 | Phase 5 | Complete |
 | AGENT-04 | Phase 5 | Complete |
 | UI-01 | Phase 3 | Complete |
-| UI-02 | Phase 6 | Pending |
+| UI-02 | Phase 6 | Complete |
 | UI-03 | Phase 3 | Complete |
-| UI-04 | Phase 6 | Pending |
-| UI-05 | Phase 6 | Pending |
-| UI-06 | Phase 6 | Pending |
+| UI-04 | Phase 6 | Complete |
+| UI-05 | Phase 6 | Complete |
+| UI-06 | Phase 6 | Complete |
 | UI-07 | Phase 7 | Pending |
 | DEMO-01 | Phase 7 | Pending |
 | DEMO-02 | Phase 7 | Pending |

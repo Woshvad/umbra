@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: paused
-stopped_at: "Phases 4–6 COMPLETE & VERIFIED. P4 Solver Service (deterministic §8 TS + Operator ledger client + Express :4000 API; 21 vitest green). P5 AI Solver Agent (Claude propose + verify-don't-trust equality gate, off the settlement path; 33 green). P6 Theatre/Desk/Settlement frontend (countdown→reveal 100.00 slam→hand-rolled SVG crossing chart→simultaneous atomic settle; web build green + 11 lib tests; UI-review 22/24). Paused before Phase 7 per user 'run phases 4-6, then stop'. Deferred to P7: live daml-start E2E (P4+P6 human gates) + UI-07 100%-fidelity polish (06-UI-REVIEW.md)."
-last_updated: "2026-06-26T03:10:00.000Z"
-last_activity: "2026-06-26 -- Phases 4-6 complete & verified (solver service + AI agent + theatre/settlement frontend)"
+status: executing
+stopped_at: "Completed 05-02-PLAN.md — wired the AI Solver Agent into the API (solve-preview + GET /round/:id terminal branch emit the agent rationale + an additive agent:{verified,source} block; deterministic numbers unchanged; settle untouched / AI off the settlement path), constructed the real keyless-safe agent at boot in index.ts, extended api.test.ts (verified/fallback/GET-terminal + ANTHROPIC_API_KEY sentinel), and wrote solver/PROMPT.md (the AGENT-04 contract, SYSTEM_PROMPT byte-matched). 33-test suite green; tsc clean. Phase 5 COMPLETE (2/2)."
+last_updated: "2026-06-27T20:58:16.279Z"
+last_activity: 2026-06-27 -- Phase null execution started
 progress:
   total_phases: 7
   completed_phases: 6
@@ -21,14 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-25)
 
 **Core value:** The privacy money shot — three desks submit sealed orders blind to each other, an AI solver clears them at one uniform price ($100.00 on the §4 fixture), and the whole batch settles atomically in a single Canton transaction.
-**Current focus:** Phase 6 — Auction Theatre & Settlement Animation
+**Current focus:** Phase null
 
 ## Current Position
 
-Phase: 6 (Auction Theatre & Settlement Animation) — COMPLETE & VERIFIED (22/22 must-haves; live visual E2E deferred to P7)
+Phase: null — EXECUTING
+Plan: 1 of ?
 Plans: 4 of 4 done (06-01, 06-02, 06-03, 06-04)
-Status: **Phases 1–6 done.** Privacy money shot + clear/settle + solver service + AI agent + the full theatre/desk/settlement frontend all built & verified. PAUSED before Phase 7 (Polish/Demo/Acceptance) per user "run phases 4-6, then stop".
-Last activity: 2026-06-26 -- Phases 4-6 complete & verified
+Status: Executing Phase null
+Last activity: 2026-06-27 -- Phase null execution started
 
 Milestone progress: 6/7 phases [██████░] 86%
 

@@ -66,7 +66,7 @@ Requirements for the hackathon MVP. Each maps to a roadmap phase.
 
 ### Demo & Acceptance (DEMO)
 
-- [ ] **DEMO-01**: `make demo` orchestrates ledger + setup + solver + web and opens the 3-up view; a `Makefile` + `README.md` document every command so a stranger can run it
+- [x] **DEMO-01**: `make demo` orchestrates ledger + setup + solver + web and opens the 3-up view; a `Makefile` + `README.md` document every command so a stranger can run it
 - [ ] **DEMO-02**: All Daml Script tests pass (`test_clears_at_100`, `test_settled_balances`, `test_atomicity`, `test_privacy_orders`, `test_privacy_confirmations`, `test_clear_rejects_bad_allocation`)
 - [ ] **DEMO-03**: The E2E acceptance flow runs live — three desks submit blind → 3-up proves no cross-visibility → solver reveals 100.00 with rationale → one-click atomic settle → each desk sees only its own fill, Operator sees the aggregate
 - [ ] **DEMO-04**: Screenshots of (a) the 3-up blindness and (b) the atomic settlement are captured into `docs/`, and a 3-minute demo script is written
@@ -135,7 +135,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | UI-05 | Phase 6 | Complete |
 | UI-06 | Phase 6 | Complete |
 | UI-07 | Phase 7 | Pending |
-| DEMO-01 | Phase 7 | Pending |
+| DEMO-01 | Phase 7 | Complete |
 | DEMO-02 | Phase 7 | Pending |
 | DEMO-03 | Phase 7 | Pending |
 | DEMO-04 | Phase 7 | Pending |

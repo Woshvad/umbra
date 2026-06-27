@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: "Completed 05-02-PLAN.md — wired the AI Solver Agent into the API (solve-preview + GET /round/:id terminal branch emit the agent rationale + an additive agent:{verified,source} block; deterministic numbers unchanged; settle untouched / AI off the settlement path), constructed the real keyless-safe agent at boot in index.ts, extended api.test.ts (verified/fallback/GET-terminal + ANTHROPIC_API_KEY sentinel), and wrote solver/PROMPT.md (the AGENT-04 contract, SYSTEM_PROMPT byte-matched). 33-test suite green; tsc clean. Phase 5 COMPLETE (2/2)."
-last_updated: "2026-06-27T20:58:16.279Z"
+last_updated: "2026-06-27T21:18:32.483Z"
 last_activity: 2026-06-27 -- Phase null execution started
 progress:
   total_phases: 7
   completed_phases: 6
-  total_plans: 19
-  completed_plans: 19
+  total_plans: 22
+  completed_plans: 20
   percent: 86
 ---
 
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-25)
 
 **Core value:** The privacy money shot — three desks submit sealed orders blind to each other, an AI solver clears them at one uniform price ($100.00 on the §4 fixture), and the whole batch settles atomically in a single Canton transaction.
-**Current focus:** Phase null
+**Current focus:** Phase 07 — polish-demo-acceptance
 
 ## Current Position
 
-Phase: null — EXECUTING
-Plan: 1 of ?
-Plans: 4 of 4 done (06-01, 06-02, 06-03, 06-04)
-Status: Executing Phase null
-Last activity: 2026-06-27 -- Phase null execution started
+Phase: 07 — EXECUTING
+Plan: 2 of 3
+Plans: 1 of 3 done (07-02)
+Status: Executing Phase 07
+Last activity: 2026-06-27 -- Completed 07-02-PLAN.md (Makefile + README + npm mirror)
 
 Milestone progress: 6/7 phases [██████░] 86%
 
@@ -68,6 +68,7 @@ Milestone progress: 6/7 phases [██████░] 86%
 | Phase 06 P01 | 22min | 2 tasks | 17 files |
 | Phase 06 P03 | 5min | 2 tasks | 4 files |
 | Phase 06 P04 | 4min | 2 tasks | 7 files |
+| Phase 07 P02 | 6 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -133,6 +134,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-26T01:52:11.656Z
+Last session: 2026-06-27T21:18:22.779Z
 Stopped at: Completed 05-02-PLAN.md — wired the AI Solver Agent into the API (solve-preview + GET /round/:id terminal branch emit the agent rationale + an additive agent:{verified,source} block; deterministic numbers unchanged; settle untouched / AI off the settlement path), constructed the real keyless-safe agent at boot in index.ts, extended api.test.ts (verified/fallback/GET-terminal + ANTHROPIC_API_KEY sentinel), and wrote solver/PROMPT.md (the AGENT-04 contract, SYSTEM_PROMPT byte-matched). 33-test suite green; tsc clean. Phase 5 COMPLETE (2/2).
 Resume file: None

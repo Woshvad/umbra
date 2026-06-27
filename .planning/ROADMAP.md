@@ -203,7 +203,7 @@ Plans:
 **Wave 1**
 
 - [ ] 07-01-PLAN.md — UI-07 comp fidelity: PriceReveal (CLEARS AT 4px / unit words 13px / CTA 30px·15px 28px) + CrossingChart (p*/q= fill-opacity .7) + TheatreView (headline 18px bottom + inline-baseline sealed-count) + AgentRationale (bind rank-1 row to live preview) + five-view comp sweep [UI-07]
-- [ ] 07-02-PLAN.md — DEMO-01: repo-root Makefile (granular + composite demo, .PHONY) + full README rewrite (two data planes, AI off critical path, run flow, ports, §4 reference) + root package.json npm-script mirror (Windows path) [DEMO-01]
+- [x] 07-02-PLAN.md — DEMO-01: repo-root Makefile (granular + composite demo, .PHONY) + full README rewrite (two data planes, AI off critical path, run flow, ports, §4 reference) + root package.json npm-script mirror (Windows path) [DEMO-01]
 
 **Wave 2** *(blocked on 07-01, 07-02)*
 
@@ -224,4 +224,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 4. Solver Service | 4/4 | Complete   | 2026-06-26 |
 | 5. AI Solver Agent | 2/2 | Complete   | 2026-06-26 |
 | 6. Auction Theatre & Settlement Animation | 4/4 | Complete   | 2026-06-26 |
-| 7. Polish, Demo & Acceptance | 0/TBD | Not started | - |
+| 7. Polish, Demo & Acceptance | 1/3 | In Progress|  |

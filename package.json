@@ -3,6 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "tokens": "node scripts/mint-tokens.mjs"
+    "install:all": "cd web && npm install --legacy-peer-deps && cd ../solver && npm install",
+    "ledger": "cd daml && daml start",
+    "tokens": "node scripts/mint-tokens.mjs",
+    "solver": "cd solver && npm run dev",
+    "web": "cd web && npm run dev",
+    "test": "cd daml && daml test",
+    "verify-privacy": "node scripts/verify-privacy.mjs"
   }
 }

@@ -19,7 +19,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: Solver Service** - Node/TS Operator service: 60s window lifecycle, deterministic §8, Express API, ≥5 unit-test scenarios (autonomous portion completed 2026-06-26; live-`daml start` E2E deferred to phase verification)
 - [x] **Phase 5: AI Solver Agent** - Claude proposes + narrates the clearing; verify-don't-trust gate; additive, off the settlement path (completed 2026-06-26)
 - [x] **Phase 6: Auction Theatre & Settlement Animation** - Countdown + reveal, hand-rolled supply/demand crossing SVG, atomic-settle animation, Desk view (completed 2026-06-26)
-- [ ] **Phase 7: Polish, Demo & Acceptance** - 100% design-comp fidelity, `make demo` + README, screenshots, live E2E acceptance flow
+- [x] **Phase 7: Polish, Demo & Acceptance** - 100% design-comp fidelity (UI-07 24/24), `make demo` + README, pitch frames + 3-min script, live E2E acceptance (2 wiring bugs surfaced & fixed) (completed 2026-06-27)
 
 ## Phase Details
 
@@ -207,7 +207,7 @@ Plans:
 
 **Wave 2** *(blocked on 07-01, 07-02)*
 
-- [ ] 07-03-PLAN.md — Acceptance (ORCHESTRATOR-RUN): daml test 6/6 (DEMO-02) + live E2E (solve-preview 100.00 / matched 10 / Settled / per-desk privacy / legs A↔B 8@100·A↔C 2@100 / 409) (DEMO-03) + two pitch screenshots + docs/DEMO.md 3-min script (DEMO-04) [DEMO-02, DEMO-03, DEMO-04]
+- [x] 07-03-PLAN.md — Acceptance (ORCHESTRATOR-RUN): daml test 6/6 (DEMO-02) + live E2E (solve-preview 100.00 / matched 10 / Settled / per-desk privacy / legs A↔B 8@100·A↔C 2@100 / 409; 2 wiring bugs surfaced & fixed) (DEMO-03) + two pitch frames + docs/DEMO.md 3-min script (DEMO-04) [DEMO-02, DEMO-03, DEMO-04]
 
 **UI hint**: yes
 
@@ -224,4 +224,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 4. Solver Service | 4/4 | Complete   | 2026-06-26 |
 | 5. AI Solver Agent | 2/2 | Complete   | 2026-06-26 |
 | 6. Auction Theatre & Settlement Animation | 4/4 | Complete   | 2026-06-26 |
-| 7. Polish, Demo & Acceptance | 2/3 | In Progress|  |
+| 7. Polish, Demo & Acceptance | 3/3 | Complete   | 2026-06-27 |

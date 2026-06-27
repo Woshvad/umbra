@@ -111,7 +111,7 @@ export default function CrossingChart({ curve, clearingPrice, matchedVolume }: P
         <text x={270} y={338} fill="#F4F1EA" fillOpacity={0.7} fontFamily='"IBM Plex Mono"' fontSize={11}>
           q={matchedVolume}
         </text>
-        <text x={14} y={cross.y + 4} fill="#F4F1EA" fontFamily='"IBM Plex Mono"' fontSize={11}>
+        <text x={14} y={cross.y + 4} fill="#F4F1EA" fillOpacity={0.7} fontFamily='"IBM Plex Mono"' fontSize={11}>
           p*
         </text>
         {/* Axis caps */}

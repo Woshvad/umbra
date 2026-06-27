@@ -18,7 +18,7 @@ export default function PriceReveal({ clearingPrice, matchedVolume, onViewSettle
     <div>
       <div
         className="font-display text-30b font-bold uppercase"
-        style={{ letterSpacing: '.04em', marginBottom: '14px' }}
+        style={{ letterSpacing: '.04em', marginBottom: '4px' }}
       >
         CLEARS AT
       </div>
@@ -64,7 +64,7 @@ export default function PriceReveal({ clearingPrice, matchedVolume, onViewSettle
             Matched Volume
           </div>
           <div className="font-mono text-34 font-semibold tabular-nums">
-            {matchedVolume} <span style={{ opacity: 0.5, fontSize: '18px' }}>units</span>
+            {matchedVolume} <span style={{ opacity: 0.6, fontSize: '13px' }}>units</span>
           </div>
         </div>
         <div>
@@ -75,13 +75,13 @@ export default function PriceReveal({ clearingPrice, matchedVolume, onViewSettle
             Uniform Price
           </div>
           <div className="font-mono text-34 font-semibold tabular-nums">
-            1 <span style={{ opacity: 0.5, fontSize: '18px' }}>for all</span>
+            1 <span style={{ opacity: 0.6, fontSize: '13px' }}>for all</span>
           </div>
         </div>
       </div>
 
       {/* CTA → 05 Settlement */}
-      <div style={{ marginTop: '34px' }}>
+      <div style={{ marginTop: '30px' }}>
         <button
           type="button"
           onClick={onViewSettlement}
@@ -89,7 +89,7 @@ export default function PriceReveal({ clearingPrice, matchedVolume, onViewSettle
           style={{
             background: '#F4F1EA',
             color: '#0A0A0A',
-            padding: '16px 30px',
+            padding: '15px 28px',
             letterSpacing: '.14em',
             border: 'none',
             cursor: onViewSettlement ? 'pointer' : 'default',

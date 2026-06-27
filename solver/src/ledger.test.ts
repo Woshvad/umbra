@@ -58,7 +58,9 @@ class FakeLedger {
   }
 }
 
-vi.mock('@daml/ledger', () => ({ default: FakeLedger }))
+// ledger.ts uses the NAMED `Ledger` import (the real @daml/ledger CJS exposes the
+// class as both `default` and a named `Ledger`); provide both so the mock matches.
+vi.mock('@daml/ledger', () => ({ default: FakeLedger, Ledger: FakeLedger }))
 
 // Force the credential read to use a sentinel token regardless of the on-disk file,
 // so the leak assertions are deterministic and self-contained.

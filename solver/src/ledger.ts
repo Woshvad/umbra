@@ -19,7 +19,14 @@
 
 import { readFileSync } from 'node:fs'
 import { createHmac } from 'node:crypto'
-import Ledger, { CreateEvent } from '@daml/ledger'
+// @daml/ledger is CJS and exposes the Ledger class as BOTH `default` and a named
+// `Ledger` export. Under tsx/esbuild ESM↔CJS interop a DEFAULT import binds to the
+// namespace object (not the class) → `new Ledger()` throws "Ledger is not a
+// constructor". Use the NAMED import (the recorded 04-01 decision) — it resolves to
+// the class. (This module-scope `new Ledger()` is only exercised on a real boot, so
+// the DI-stubbed unit tests never caught it; the live E2E did.)
+import { Ledger } from '@daml/ledger'
+import type { CreateEvent } from '@daml/ledger'
 import { ContractId } from '@daml/types'
 import { Round, RoundStats, Order, RoundStatus, ClearResult } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
 import { Asset } from '@daml.js/umbra-0.1.0/lib/Umbra/Asset/module'

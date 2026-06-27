@@ -131,7 +131,7 @@ export default function SettlementView({
 
       <h1
         className="font-display text-54 font-bold"
-        style={{ letterSpacing: '-.02em', margin: '26px 0 36px' }}
+        style={{ letterSpacing: '-.02em', margin: '26px 0 34px' }}
       >
         ONE TRANSACTION. ALL OR NOTHING.
       </h1>

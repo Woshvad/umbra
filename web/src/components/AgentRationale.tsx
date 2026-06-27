@@ -9,8 +9,9 @@
 // the rank-1 real SOLVER-AGENT-00 row; the grid markup is kept for the stretch §19 rows
 // but NO AGENT-01/02 is fabricated.
 import { useEffect, useRef, useState } from 'react'
+import type { SolvePreviewResponse } from '../solver'
 
-type Props = { rationale: string | null }
+type Props = { rationale: string | null; preview?: SolvePreviewResponse | null }
 
 const CHAR_MS = 26
 
@@ -23,7 +24,7 @@ function prefersReducedMotion(): boolean {
   )
 }
 
-export default function AgentRationale({ rationale }: Props) {
+export default function AgentRationale({ rationale, preview }: Props) {
   const text = rationale ?? ''
   const [typed, setTyped] = useState('')
   const intervalRef = useRef<ReturnType<typeof setInterval>>()
@@ -121,8 +122,8 @@ export default function AgentRationale({ rationale }: Props) {
           <span className="font-mono text-13 font-semibold" style={{ letterSpacing: '.06em' }}>
             SOLVER-AGENT-00
           </span>
-          <span className="font-mono text-13 tabular-nums">100.00</span>
-          <span className="font-mono text-13 tabular-nums opacity-70">10 u</span>
+          <span className="font-mono text-13 tabular-nums">{(preview?.clearingPrice ?? 100).toFixed(2)}</span>
+          <span className="font-mono text-13 tabular-nums opacity-70">{preview?.matchedVolume ?? 10} u</span>
         </div>
       </div>
     </div>

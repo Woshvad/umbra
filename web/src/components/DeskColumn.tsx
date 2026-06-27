@@ -90,7 +90,7 @@ function ActiveBody({ ctx, deskKey }: { ctx: Ctx; deskKey: DeskKey }) {
           </div>
           <div
             className="font-body text-10 uppercase opacity-55"
-            style={{ letterSpacing: '.14em' }}
+            style={{ letterSpacing: '.14em', marginTop: '3px' }}
           >
             {meta.role}
           </div>
@@ -166,7 +166,7 @@ function RedactedBody({ deskKey }: { deskKey: DeskKey }) {
           </div>
           <div
             className="font-body text-10 uppercase opacity-55"
-            style={{ letterSpacing: '.14em' }}
+            style={{ letterSpacing: '.14em', marginTop: '3px' }}
           >
             {meta.role}
           </div>

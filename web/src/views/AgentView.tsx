@@ -26,7 +26,7 @@ export default function AgentView({ preview, offline }: Props) {
 
       <h1
         className="font-display text-54 font-bold"
-        style={{ letterSpacing: '-.02em', margin: '26px 0 36px' }}
+        style={{ letterSpacing: '-.02em', margin: '26px 0 34px' }}
       >
         THE AGENT CLEARS THE BOOK
       </h1>
@@ -48,7 +48,7 @@ export default function AgentView({ preview, offline }: Props) {
           }}
         >
           <AgentProposal preview={preview} />
-          <AgentRationale rationale={preview.rationale} />
+          <AgentRationale rationale={preview.rationale} preview={preview} />
         </div>
       ) : (
         <p className="font-body text-14 opacity-65" style={{ lineHeight: 1.6, maxWidth: '560px' }}>

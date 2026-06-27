@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 780" font-family="'Inter',system-ui,sans-serif">
+  <!-- Umbra · 05 Settlement — the atomic DvP "money shot". Comp-faithful frame built
+       from the binding Umbra design/ comp tokens + the LIVE-VERIFIED §4 settlement
+       (captured this session: legs MERIDIAN 8 BONDX→BLUEROCK ←800 USDCx, HALWARD 2→
+       BLUEROCK ←200 USDCx; balances BLUEROCK 10/4000 · MERIDIAN 12/1800 · HALWARD
+       13/1200; one atomic tx). See docs/LIVE-EVIDENCE.md. -->
+  <rect width="1240" height="780" fill="#F4F1EA"/>
+
+  <!-- Header -->
+  <g>
+    <line x1="0" y1="64" x2="1240" y2="64" stroke="#0A0A0A" stroke-width="1.5"/>
+    <text x="40" y="40" font-family="'Space Grotesk',sans-serif" font-weight="700" font-size="22" fill="#0A0A0A" letter-spacing="1">UMBRA</text>
+    <text x="120" y="40" font-family="'IBM Plex Mono',monospace" font-size="10" fill="#0A0A0A" opacity="0.55" letter-spacing="2">SEALED-BID BATCH AUCTION</text>
+    <text x="1200" y="30" font-family="'Inter'" font-size="9" fill="#0A0A0A" opacity="0.5" letter-spacing="2" text-anchor="end">STATUS</text>
+    <text x="1200" y="46" font-family="'IBM Plex Mono',monospace" font-size="12" fill="#E2231A" font-weight="700" text-anchor="end">SETTLED</text>
+  </g>
+
+  <!-- Nav -->
+  <g font-family="'IBM Plex Mono',monospace" font-size="12" letter-spacing="1">
+    <text x="40" y="92" fill="#0A0A0A" opacity="0.45">01 PRIVACY</text>
+    <text x="150" y="92" fill="#0A0A0A" opacity="0.45">02 DESK</text>
+    <text x="240" y="92" fill="#0A0A0A" opacity="0.45">03 THEATRE</text>
+    <text x="350" y="92" fill="#0A0A0A" opacity="0.45">04 AGENT</text>
+    <text x="450" y="92" fill="#0A0A0A" font-weight="700">05 SETTLEMENT</text>
+    <rect x="450" y="100" width="104" height="2.5" fill="#D6FB3C"/>
+    <line x1="0" y1="116" x2="1240" y2="116" stroke="#0A0A0A" stroke-opacity="0.12"/>
+  </g>
+
+  <!-- Section label + headline -->
+  <text x="40" y="158" font-family="'IBM Plex Mono',monospace" font-size="12" fill="#0A0A0A" opacity="0.55" letter-spacing="2">05 · SETTLEMENT LEDGER</text>
+  <text x="40" y="210" font-family="'Space Grotesk',sans-serif" font-weight="700" font-size="44" fill="#0A0A0A" letter-spacing="-1">ONE TRANSACTION. ALL OR NOTHING.</text>
+
+  <!-- LEFT: DvP legs -->
+  <g>
+    <text x="40" y="268" font-family="'IBM Plex Mono',monospace" font-size="11" fill="#0A0A0A" opacity="0.55" letter-spacing="2">DELIVERY VS PAYMENT · 2 LEGS</text>
+
+    <!-- Leg 1: MERIDIAN 8 BONDX -> BLUEROCK <- 800 USDCx -->
+    <g>
+      <rect x="40" y="288" width="740" height="92" fill="#F4F1EA" stroke="#0A0A0A" stroke-width="1.5"/>
+      <text x="64" y="322" font-family="'IBM Plex Mono',monospace" font-size="15" font-weight="600" fill="#0A0A0A">MERIDIAN</text>
+      <text x="64" y="360" font-family="'IBM Plex Mono',monospace" font-size="13" fill="#0A0A0A">8 BONDX</text>
+      <!-- asset arrow -->
+      <line x1="200" y1="324" x2="560" y2="324" stroke="#0A0A0A" stroke-width="2"/>
+      <path d="M560 324 l-10 -5 v10 z" fill="#0A0A0A"/>
+      <text x="380" y="316" font-family="'IBM Plex Mono',monospace" font-size="10" fill="#0A0A0A" opacity="0.6" text-anchor="middle">8 BONDX →</text>
+      <!-- cash arrow (red, opposite) -->
+      <line x1="560" y1="348" x2="200" y2="348" stroke="#E2231A" stroke-width="2"/>
+      <path d="M200 348 l10 -5 v10 z" fill="#E2231A"/>
+      <text x="380" y="368" font-family="'IBM Plex Mono',monospace" font-size="10" fill="#E2231A" text-anchor="middle">← 800 USDCx</text>
+      <text x="756" y="322" font-family="'IBM Plex Mono',monospace" font-size="15" font-weight="600" fill="#0A0A0A" text-anchor="end">BLUEROCK</text>
+      <text x="756" y="360" font-family="'IBM Plex Mono',monospace" font-size="13" fill="#0A0A0A" text-anchor="end">@ 100.00</text>
+    </g>
+
+    <!-- Leg 2: HALWARD 2 BONDX -> BLUEROCK <- 200 USDCx -->
+    <g>
+      <rect x="40" y="392" width="740" height="92" fill="#F4F1EA" stroke="#0A0A0A" stroke-width="1.5"/>
+      <text x="64" y="426" font-family="'IBM Plex Mono',monospace" font-size="15" font-weight="600" fill="#0A0A0A">HALWARD</text>
+      <text x="64" y="464" font-family="'IBM Plex Mono',monospace" font-size="13" fill="#0A0A0A">2 BONDX</text>
+      <line x1="200" y1="428" x2="560" y2="428" stroke="#0A0A0A" stroke-width="2"/>
+      <path d="M560 428 l-10 -5 v10 z" fill="#0A0A0A"/>
+      <text x="380" y="420" font-family="'IBM Plex Mono',monospace" font-size="10" fill="#0A0A0A" opacity="0.6" text-anchor="middle">2 BONDX →</text>
+      <line x1="560" y1="452" x2="200" y2="452" stroke="#E2231A" stroke-width="2"/>
+      <path d="M200 452 l10 -5 v10 z" fill="#E2231A"/>
+      <text x="380" y="472" font-family="'IBM Plex Mono',monospace" font-size="10" fill="#E2231A" text-anchor="middle">← 200 USDCx</text>
+      <text x="756" y="426" font-family="'IBM Plex Mono',monospace" font-size="15" font-weight="600" fill="#0A0A0A" text-anchor="end">BLUEROCK</text>
+      <text x="756" y="464" font-family="'IBM Plex Mono',monospace" font-size="13" fill="#0A0A0A" text-anchor="end">@ 100.00</text>
+    </g>
+
+    <!-- atomic stamp -->
+    <g transform="rotate(-4 410 540)">
+      <rect x="300" y="514" width="220" height="48" fill="none" stroke="#E2231A" stroke-width="2"/>
+      <text x="410" y="544" font-family="'IBM Plex Mono',monospace" font-size="15" font-weight="700" fill="#E2231A" text-anchor="middle" letter-spacing="1">1 TRANSACTION · ATOMIC</text>
+    </g>
+    <!-- settled tag -->
+    <g>
+      <rect x="40" y="600" width="14" height="14" fill="#E2231A"/>
+      <text x="64" y="612" font-family="'IBM Plex Mono',monospace" font-size="13" font-weight="600" fill="#E2231A" letter-spacing="1">SETTLED — BOTH LEGS, ONE TX</text>
+    </g>
+  </g>
+
+  <!-- RIGHT: before -> after balances -->
+  <g>
+    <rect x="824" y="288" width="376" height="326" fill="#0A0A0A"/>
+    <text x="848" y="322" font-family="'Inter'" font-size="11" fill="#F4F1EA" opacity="0.7" letter-spacing="2">BALANCES · BEFORE → AFTER</text>
+    <!-- column heads -->
+    <text x="848" y="356" font-family="'Inter'" font-size="9" fill="#F4F1EA" opacity="0.5" letter-spacing="2">DESK</text>
+    <text x="1080" y="356" font-family="'Inter'" font-size="9" fill="#F4F1EA" opacity="0.5" letter-spacing="2" text-anchor="end">BONDX</text>
+    <text x="1176" y="356" font-family="'Inter'" font-size="9" fill="#F4F1EA" opacity="0.5" letter-spacing="2" text-anchor="end">USDCx</text>
+    <line x1="848" y1="366" x2="1176" y2="366" stroke="#F4F1EA" stroke-opacity="0.18"/>
+
+    <!-- BLUEROCK 0/5000 -> 10/4000 -->
+    <text x="848" y="410" font-family="'IBM Plex Mono',monospace" font-size="14" font-weight="600" fill="#F4F1EA">BLUEROCK</text>
+    <text x="1080" y="410" font-family="'IBM Plex Mono',monospace" font-size="18" font-weight="700" fill="#D6FB3C" text-anchor="end">10</text>
+    <text x="1176" y="410" font-family="'IBM Plex Mono',monospace" font-size="18" font-weight="700" fill="#D6FB3C" text-anchor="end">4000</text>
+    <text x="848" y="428" font-family="'IBM Plex Mono',monospace" font-size="9" fill="#F4F1EA" opacity="0.45">was 0 · 5000</text>
+    <line x1="848" y1="446" x2="1176" y2="446" stroke="#F4F1EA" stroke-opacity="0.12"/>
+
+    <!-- MERIDIAN 20/1000 -> 12/1800 -->
+    <text x="848" y="490" font-family="'IBM Plex Mono',monospace" font-size="14" font-weight="600" fill="#F4F1EA">MERIDIAN</text>
+    <text x="1080" y="490" font-family="'IBM Plex Mono',monospace" font-size="18" font-weight="700" fill="#D6FB3C" text-anchor="end">12</text>
+    <text x="1176" y="490" font-family="'IBM Plex Mono',monospace" font-size="18" font-weight="700" fill="#D6FB3C" text-anchor="end">1800</text>
+    <text x="848" y="508" font-family="'IBM Plex Mono',monospace" font-size="9" fill="#F4F1EA" opacity="0.45">was 20 · 1000</text>
+    <line x1="848" y1="526" x2="1176" y2="526" stroke="#F4F1EA" stroke-opacity="0.12"/>
+
+    <!-- HALWARD 15/1000 -> 13/1200 -->
+    <text x="848" y="570" font-family="'IBM Plex Mono',monospace" font-size="14" font-weight="600" fill="#F4F1EA">HALWARD</text>
+    <text x="1080" y="570" font-family="'IBM Plex Mono',monospace" font-size="18" font-weight="700" fill="#D6FB3C" text-anchor="end">13</text>
+    <text x="1176" y="570" font-family="'IBM Plex Mono',monospace" font-size="18" font-weight="700" fill="#D6FB3C" text-anchor="end">1200</text>
+    <text x="848" y="588" font-family="'IBM Plex Mono',monospace" font-size="9" fill="#F4F1EA" opacity="0.45">was 15 · 1000</text>
+  </g>
+
+  <text x="40" y="700" font-family="'IBM Plex Mono',monospace" font-size="11" fill="#0A0A0A" opacity="0.7">Cleared at $100.00 · matched 10 · both legs settle simultaneously in one Canton transaction (DvP).</text>
+  <text x="40" y="762" font-family="'IBM Plex Mono',monospace" font-size="9" fill="#0A0A0A" opacity="0.4">Live-verified frame · POST /round/R1/settle → Settled · second settle → 409 · each desk sees only its own TradeConfirmation</text>
+</svg>

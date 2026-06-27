@@ -19,6 +19,15 @@ export const DESKS: DeskMeta[] = [
   { key: 'bankC', code: 'HALWARD', role: 'Seller' },
 ]
 
+// Resolve a live desk PARTY id ("bankA::<fingerprint>") to its comp display CODE
+// (BLUEROCK/MERIDIAN/HALWARD). The solver returns allocations keyed by the full party
+// id; the comp + the BEFORE balances are keyed by code, and the party-id prefix before
+// "::" is exactly the DeskKey. Falls back to the raw value if unmatched (never throws).
+export const codeForParty = (party: string): string => {
+  const key = party.split('::')[0]
+  return DESKS.find((d) => d.key === key)?.code ?? party
+}
+
 // Same-origin base via the Vite proxy — but @daml/ledger's Ledger constructor
 // REQUIRES an absolute `http(s)://…/` URL (it throws "httpBaseUrl must start with
 // 'http://'…" on a bare '/'). So resolve the live same-origin absolute URL at the

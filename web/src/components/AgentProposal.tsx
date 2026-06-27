@@ -13,6 +13,7 @@
 // Operator-plane DISPLAY only: it reads the lifted SolvePreviewResponse (from :4000 via
 // web/src/solver.ts). No operator token, no @daml/react context here (threat T-06-01).
 import type { SolvePreviewResponse } from '../solver'
+import { codeForParty } from '../desks'
 import { badgeLabel } from '../lib/solverParse'
 
 type Props = { preview: SolvePreviewResponse }
@@ -75,7 +76,7 @@ export default function AgentProposal({ preview }: Props) {
             style={{ padding: '14px 0', borderBottom: '1px solid rgba(10,10,10,.16)' }}
           >
             <span className="font-mono text-13" style={{ letterSpacing: '.06em' }}>
-              {a.desk}
+              {codeForParty(a.desk)}
             </span>
             <span
               className="font-mono text-15 font-semibold tabular-nums"

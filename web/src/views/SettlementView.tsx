@@ -17,6 +17,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { OperatorViewState } from '../operatorState'
 import type { SolvePreviewResponse } from '../solver'
 import { settle, SolverError } from '../solver'
+import { codeForParty } from '../desks'
 import { deskBalancesFromAllocations, type DeskBalances } from '../lib/balance'
 import DvpLegs, { type DvpLeg } from '../components/DvpLegs'
 import BalanceTable, { type BalanceRow } from '../components/BalanceTable'
@@ -42,11 +43,20 @@ function prefersReducedMotion(): boolean {
   )
 }
 
+// Map an allocation list onto display-code desks (BLUEROCK/MERIDIAN/HALWARD) so the
+// BEFORE balances + leg labels line up — the solver keys allocations by the live party
+// id, which `codeForParty` (desks.ts) resolves to the comp code.
+function codeAllocations(preview: SolvePreviewResponse) {
+  return preview.allocations.map((a) => ({ ...a, desk: codeForParty(a.desk) }))
+}
+
 // Derive the DvP legs from the allocations: every Sell desk delivers filledQty BONDX to
 // the (single) Buy desk and is paid filledQty·clearingPrice USDCx. §4 → 2 legs.
+// Labels resolve to the comp desk codes (BLUEROCK/MERIDIAN/HALWARD), not raw party ids.
 function legsFromPreview(preview: SolvePreviewResponse): DvpLeg[] {
-  const buyer = preview.allocations.find((a) => a.side === 'Buy' && a.filledQty > 0)?.desk ?? '—'
-  return preview.allocations
+  const coded = codeAllocations(preview)
+  const buyer = coded.find((a) => a.side === 'Buy' && a.filledQty > 0)?.desk ?? '—'
+  return coded
     .filter((a) => a.side === 'Sell' && a.filledQty > 0)
     .map((a) => ({
       seller: a.desk,
@@ -58,7 +68,7 @@ function legsFromPreview(preview: SolvePreviewResponse): DvpLeg[] {
 
 // Build the before→after balance rows from the allocations (the aggregate via :4000).
 function balanceRowsFromPreview(preview: SolvePreviewResponse): BalanceRow[] {
-  const after = deskBalancesFromAllocations(preview.allocations, preview.clearingPrice, BEFORE)
+  const after = deskBalancesFromAllocations(codeAllocations(preview), preview.clearingPrice, BEFORE)
   return DESK_ORDER.map((code) => ({
     code,
     before: BEFORE[code] ?? { bondx: 0, usdcx: 0 },

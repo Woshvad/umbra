@@ -49,11 +49,12 @@ Stack: `daml start` (:7575, seeded **R1** Open + 3 sealed orders) → `mint-toke
    `codeForParty` (desks.ts) used by SettlementView + AgentProposal. Now balances → §4 finals, legs →
    comp codes (verified live). Build + 11 lib tests green.
 
-### Known non-blocker (documented, not fixed)
-`GET /round/:id` at *Settled* status recomputes §8 from the now-retired sealed orders, so its
-`clearingPrice`/`matchedVolume` read 0 post-settle. Nothing in the demo uses this path (UI drives off
-the cached `solve-preview` + the `POST /settle` result). Out of scope (frozen solver, zero
-money-shot impact). See LIVE-EVIDENCE.md.
+### Third bug — `GET /round/:id` read 0 post-settle — FIXED (commit `2f17e09`, follow-up)
+At *Settled* status the handler recomputed §8 from the sealed orders that `Round.Clear` retired → empty
+book → `clearingPrice`/`matchedVolume` read 0. Fixed by reconstructing from the persisted per-desk
+**TradeConfirmations** (`readTradeConfirmations`, ledger-truth/restart-proof) when the orders are gone;
+the pre-retire path is unchanged. **Verified live:** post-settle `GET /round/R1` → `100 / 10 / 3 fills`
++ a factual settled rationale. Unit test added (solver **34/34**).
 
 ## DEMO-04 — pitch frames + 3-min script
 - [`docs/01-privacy-3up.svg`](../../../docs/01-privacy-3up.svg) + [`docs/02-atomic-settlement.svg`](../../../docs/02-atomic-settlement.svg)
@@ -72,5 +73,6 @@ LIVE-EVIDENCE.md). To capture native PNGs for a deck, run the stack per the READ
 browser directly — the limitation is the headless tool, not the app.
 
 ## Status
-DEMO-02 ✅ · DEMO-03 ✅ (money shot live, 2 bugs fixed) · DEMO-04 ✅ (frames + script + evidence;
-raster capture env-blocked + documented). Phase-7 acceptance complete.
+DEMO-02 ✅ · DEMO-03 ✅ (money shot live, **3 bugs surfaced & fixed** — solver boot, settlement
+balances/legs, GET-post-settle) · DEMO-04 ✅ (frames + script + evidence; raster capture env-blocked +
+documented). Phase-7 acceptance complete.

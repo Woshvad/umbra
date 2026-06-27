@@ -38,12 +38,14 @@ with the **solver HTTP API** asserted in parallel as the authoritative numeric p
    (desks.ts) used by SettlementView + AgentProposal. Now: balances → §4 finals, legs → comp codes
    (verified live, table above).
 
-**Known non-blocker (documented, not fixed):** `GET /round/:id` at *Settled* status recomputes §8
-from the sealed orders, which `Round.Clear` has **retired**, so its `clearingPrice`/`matchedVolume`
-fields read **0** post-settle. Nothing in the demo uses this path — the UI drives off the cached
-`solve-preview` + the `POST /settle` result (both correct), and the authoritative clearing proof is
-captured pre-settle. A proper fix would reconstruct the result from the TradeConfirmations; out of
-scope for this polish phase (frozen solver, zero money-shot impact).
+**Third bug — `GET /round/:id` read 0 post-settle — now FIXED (commit `2f17e09`).** At *Settled*
+status the handler recomputed §8 from the sealed orders, which `Round.Clear` has **retired**, so the
+book was empty and `clearingPrice`/`matchedVolume` read **0**. Fixed by reconstructing the settled
+result from the persisted per-desk **TradeConfirmations** (`readTradeConfirmations` — ledger truth,
+restart-proof) when the sealed orders are gone; the pre-retire path is unchanged. **Verified live:**
+`GET /round/R1` post-settle now returns `clearingPrice 100`, `matchedVolume 10`, the 3 §4 fills
+(bankA Buy 10 / bankB Sell 8 / bankC Sell 2), and a factual settled rationale. Unit test added
+(solver 34/34 green).
 
 ---
 

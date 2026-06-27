@@ -197,7 +197,18 @@ Plans:
   3. The E2E acceptance flow runs live: three desks submit blind → 3-up proves no cross-visibility → solver reveals 100.00 with rationale → one-click atomic settle → each desk sees only its own fill, Operator sees the aggregate.
   4. Screenshots of (a) the 3-up blindness and (b) the atomic settlement are captured into `docs/`, and a 3-minute demo script is written.
 
-**Plans**: TBD
+**Plans**: 3 plans (2 waves)
+Plans:
+
+**Wave 1**
+
+- [ ] 07-01-PLAN.md — UI-07 comp fidelity: PriceReveal (CLEARS AT 4px / unit words 13px / CTA 30px·15px 28px) + CrossingChart (p*/q= fill-opacity .7) + TheatreView (headline 18px bottom + inline-baseline sealed-count) + AgentRationale (bind rank-1 row to live preview) + five-view comp sweep [UI-07]
+- [ ] 07-02-PLAN.md — DEMO-01: repo-root Makefile (granular + composite demo, .PHONY) + full README rewrite (two data planes, AI off critical path, run flow, ports, §4 reference) + root package.json npm-script mirror (Windows path) [DEMO-01]
+
+**Wave 2** *(blocked on 07-01, 07-02)*
+
+- [ ] 07-03-PLAN.md — Acceptance (ORCHESTRATOR-RUN): daml test 6/6 (DEMO-02) + live E2E (solve-preview 100.00 / matched 10 / Settled / per-desk privacy / legs A↔B 8@100·A↔C 2@100 / 409) (DEMO-03) + two pitch screenshots + docs/DEMO.md 3-min script (DEMO-04) [DEMO-02, DEMO-03, DEMO-04]
+
 **UI hint**: yes
 
 ## Progress

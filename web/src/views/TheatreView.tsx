@@ -171,26 +171,26 @@ function RunningStage({
 
         <h2
           className="font-display text-56 font-bold"
-          style={{ letterSpacing: '-.02em', margin: '14px 0 0' }}
+          style={{ letterSpacing: '-.02em', margin: '14px 0 18px' }}
         >
           ONE PRICE.
           <br />
           NO LEAKS.
         </h2>
 
-        <div style={{ marginTop: '34px' }}>
-          <div className="font-mono text-44 font-bold tabular-nums" style={{ lineHeight: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: '14px', marginBottom: '30px' }}>
+          <span className="font-mono text-44 font-bold tabular-nums" style={{ lineHeight: 1 }}>
             {sealedOrderCount}
-          </div>
-          <div
-            className="font-body text-10 uppercase"
-            style={{ letterSpacing: '.16em', opacity: 0.6, marginTop: '6px' }}
+          </span>
+          <span
+            className="font-body uppercase"
+            style={{ fontSize: '12px', letterSpacing: '.2em', opacity: 0.7 }}
           >
             Sealed orders in the book
-          </div>
+          </span>
         </div>
 
-        <div style={{ marginTop: '34px' }}>
+        <div style={{ display: 'flex', gap: '14px' }}>
           {open ? (
             <button
               type="button"

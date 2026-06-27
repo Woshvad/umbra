@@ -85,6 +85,8 @@ const makeDeps = (overrides: Partial<AppDeps>): AppDeps => ({
   refreshStats: vi.fn(async (): Promise<number> => 0),
   closeRound: vi.fn(async (): Promise<string> => 'Closed'),
   settle: vi.fn(async (): Promise<SettleResult> => ({ clearingPrice: 100, allocations: [] })),
+  // Post-settle reconstruction source — default empty; the settled-GET test overrides it.
+  readTradeConfirmations: vi.fn(async () => []),
   // Agent stub — defaults to the deterministic fallback (keyless degradation); tests
   // override per scenario to assert the verified-claude path.
   proposeClearing: vi.fn(async (): Promise<AgentResult> => FALLBACK_AGENT_RESULT()),
@@ -278,6 +280,39 @@ describe('solver §11 HTTP API', () => {
     // P5: rationale (non-null) + agent block.
     expect(body.rationale).toBe(rationale)
     expect(body.agent).toEqual({ verified: true, source: 'claude' })
+  })
+
+  it('GET /round/:id post-settle reconstructs from TradeConfirmations (orders retired — not a §8 recompute reading 0)', async () => {
+    // After settle, Round.Clear retires the sealed Orders, so readSealedOrders is empty;
+    // a §8 recompute on the empty book would read clearingPrice 0 (the bug). The result
+    // must instead come from the persisted per-desk TradeConfirmations.
+    const confs = [
+      { desk: 'bankA::x', side: 'Buy' as const, filledQty: 10, clearingPrice: 100 },
+      { desk: 'bankB::x', side: 'Sell' as const, filledQty: 8, clearingPrice: 100 },
+      { desk: 'bankC::x', side: 'Sell' as const, filledQty: 2, clearingPrice: 100 },
+    ]
+    const deps = makeDeps({
+      queryRound: vi.fn(async (roundId: string) => ({ roundId, status: 'Settled' })),
+      readSealedOrders: vi.fn(async (): Promise<SealedOrder[]> => []), // retired
+      refreshStats: vi.fn(async (): Promise<number> => 0),
+      readTradeConfirmations: vi.fn(async () => confs),
+    })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1`)
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    expect(body.status).toBe('Settled')
+    // Reconstructed settled facts — NOT 0.
+    expect(body.clearingPrice).toBe(100)
+    expect(body.matchedVolume).toBe(10) // sum of the Buy-side filledQty
+    expect(body.allocations).toHaveLength(3)
+    expect(body.curve).toEqual([]) // the curve needs the original orders (retired)
+    expect(typeof body.rationale).toBe('string')
+    expect(body.rationale).toContain('Settled at 100.00')
+    expect(body.agent).toEqual({ verified: true, source: 'deterministic-fallback' })
   })
 
   it('no secret in any response body — GET /round/:id nor solve-preview leak the operator token or ANTHROPIC_API_KEY', async () => {

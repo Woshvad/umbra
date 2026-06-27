@@ -28,7 +28,7 @@ import { createHmac } from 'node:crypto'
 import { Ledger } from '@daml/ledger'
 import type { CreateEvent } from '@daml/ledger'
 import { ContractId } from '@daml/types'
-import { Round, RoundStats, Order, RoundStatus, ClearResult } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
+import { Round, RoundStats, Order, RoundStatus, ClearResult, TradeConfirmation } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
 import { Asset } from '@daml.js/umbra-0.1.0/lib/Umbra/Asset/module'
 import { Side } from '@daml.js/umbra-0.1.0/lib/Umbra/Clearing/module'
 import { computeClearing, matchedAt, OrderView } from './auction.js'
@@ -168,6 +168,24 @@ export const readSealedOrders = async (
         quantity: Number(c.payload.quantity),
         limit: Number(c.payload.limit),
       },
+    }))
+}
+
+// ── Read ALL TradeConfirmations for a round (Operator is a stakeholder of each) ───
+// After settle, Round.Clear RETIRES the sealed Orders, so the settled result is
+// reconstructed from these per-desk fill receipts (ledger truth, survives a restart).
+// Int/Decimal cross the wire as STRINGS (Pitfall 5) → coerce to number.
+export const readTradeConfirmations = async (
+  roundId: string,
+): Promise<{ desk: string; side: Side; filledQty: number; clearingPrice: number }[]> => {
+  const confs = await ledger.query(TradeConfirmation)
+  return confs
+    .filter((c) => c.payload.roundId === roundId)
+    .map((c) => ({
+      desk: c.payload.desk,
+      side: c.payload.side as Side,
+      filledQty: Number(c.payload.filledQty),
+      clearingPrice: Number(c.payload.clearingPrice),
     }))
 }
 

@@ -34,6 +34,7 @@ export interface LedgerPort {
   refreshStats: AppDeps['refreshStats']
   closeRound: AppDeps['closeRound']
   settle: AppDeps['settle']
+  readTradeConfirmations: AppDeps['readTradeConfirmations']
 }
 
 // The pure §8 helpers (auction.ts) the API needs.
@@ -78,6 +79,7 @@ export const buildDeps = (args: BuildDepsArgs): AppDeps => {
     queryRound: ledger.queryRound,
     readSealedOrders: ledger.readSealedOrders,
     refreshStats: ledger.refreshStats,
+    readTradeConfirmations: ledger.readTradeConfirmations,
     // POST /round/:id/close → clock.forceClose (cancels the timer, calls ledger.closeRound).
     closeRound: async (roundId): Promise<string> => {
       await clock.forceClose(roundId)
@@ -181,6 +183,7 @@ const main = async (): Promise<void> => {
       refreshStats: ledger.refreshStats,
       closeRound: closeRoundStr,
       settle: settleResult,
+      readTradeConfirmations: ledger.readTradeConfirmations,
     },
     math: {
       computeClearing: auction.computeClearing,

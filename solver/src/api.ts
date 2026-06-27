@@ -52,6 +52,16 @@ export interface SettleResult {
   txConfirmations?: number
 }
 
+// A per-desk fill receipt (TradeConfirmation). After settle the sealed Orders are RETIRED
+// by Round.Clear, so the settled result at terminal status is reconstructed from these
+// (ledger truth, survives a solver restart — never a §8 recompute on the empty book).
+export interface SettledConfirmation {
+  desk: string
+  side: Allocation['side']
+  filledQty: number
+  clearingPrice: number
+}
+
 export interface AppDeps {
   // ledger.ts client functions
   openRound: (roundId: string, desks: string[], windowSeconds: number) => Promise<RoundView>
@@ -60,6 +70,9 @@ export interface AppDeps {
   refreshStats: (roundId: string) => Promise<number>
   closeRound: (roundId: string) => Promise<string>
   settle: (roundId: string) => Promise<SettleResult>
+  // Read the per-desk TradeConfirmations for a round — used to reconstruct the settled
+  // result at terminal status once the sealed orders have been retired by Round.Clear.
+  readTradeConfirmations: (roundId: string) => Promise<SettledConfirmation[]>
   // The AI Solver Agent (agent.ts) — proposes a clearing, VERIFIES it against the
   // deterministic core, and returns the deterministic NUMBERS + the model's rationale
   // (only on an exact match) + an additive {verified, source} provenance block. It
@@ -170,21 +183,50 @@ export const createApp = (deps: AppDeps): Express => {
         status: round.status,
         sealedOrderCount,
       }
-      // After clear/settle, surface the deterministic result + curve + (P5) rationale.
+      // After clear/settle, surface the result. Two sources, because Round.Clear RETIRES
+      // the sealed Orders on settle:
       if (TERMINAL_STATUSES.has(round.status)) {
         const sealed = await deps.readSealedOrders(id)
-        const views = sealed.map((s) => s.view)
-        const { clearingPrice, allocations } = deps.computeClearing(views)
-        body.clearingPrice = clearingPrice
-        body.matchedVolume = deps.matchedAt(views, clearingPrice)
-        body.allocations = allocations
-        body.curve = buildCurve(deps, views)
-        // Phase 5: surface the agent's rationale + an additive provenance block. The
-        // deterministic numbers above are UNCHANGED — the agent never throws (keyless /
-        // SDK-error → deterministic fallback) and is OFF the settlement path.
-        const agent = await deps.proposeClearing(views)
-        body.rationale = agent.rationale
-        body.agent = { verified: agent.verified, source: agent.source }
+        if (sealed.length > 0) {
+          // Pre-retire (Closed/Cleared, orders still live): recompute §8 + curve + the
+          // (P5) agent rationale from the live sealed orders. Deterministic numbers; the
+          // agent never throws and is OFF the settlement path.
+          const views = sealed.map((s) => s.view)
+          const { clearingPrice, allocations } = deps.computeClearing(views)
+          body.clearingPrice = clearingPrice
+          body.matchedVolume = deps.matchedAt(views, clearingPrice)
+          body.allocations = allocations
+          body.curve = buildCurve(deps, views)
+          const agent = await deps.proposeClearing(views)
+          body.rationale = agent.rationale
+          body.agent = { verified: agent.verified, source: agent.source }
+        } else {
+          // Post-settle: the sealed orders are retired, so a §8 recompute would read 0.
+          // Reconstruct the settled result from the persisted per-desk TradeConfirmations
+          // (ledger truth, restart-proof). The supply/demand curve needs the original
+          // limit orders (gone) — omit it.
+          const confs = await deps.readTradeConfirmations(id)
+          const allocations: Allocation[] = confs.map((c) => ({
+            desk: c.desk,
+            side: c.side,
+            filledQty: c.filledQty,
+          }))
+          const clearingPrice = confs[0]?.clearingPrice ?? 0
+          const matchedVolume = confs
+            .filter((c) => c.side === 'Buy')
+            .reduce((sum, c) => sum + c.filledQty, 0)
+          body.clearingPrice = clearingPrice
+          body.matchedVolume = matchedVolume
+          body.allocations = allocations
+          body.curve = []
+          // The settled numbers ARE the deterministic on-ledger result (Round.Clear
+          // re-verified §8 before settling) — surface a factual settled rationale + the
+          // deterministic provenance (no fresh AI call post-settle).
+          body.rationale = confs.length
+            ? `Settled at ${clearingPrice.toFixed(2)} — ${matchedVolume} units matched across ${allocations.length} desk fills in one atomic transaction.`
+            : null
+          body.agent = { verified: true, source: 'deterministic-fallback' }
+        }
       }
       res.json(body)
     }),

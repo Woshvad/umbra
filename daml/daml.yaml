@@ -1,51 +1,27 @@
-# Umbra — Daml project config (the version-gate driver for `daml start`)
-# Fields verified against github.com/digital-asset/daml v2.10.0
-#   (daml-helper Start.hs / Codegen.hs). See DECISIONS.md (LEDG-04) for the
-#   version-gate rationale and the Daml 2.x HTTP JSON API line decision.
-sdk-version: 2.10.4
+# Umbra — Daml project config, migrated to the Daml 3.4 line for deployment onto
+# a real Canton LocalNet (cn-quickstart) via the JSON Ledger API v2.
+#
+# The previous 2.10.4 `daml start` sandbox config (init-script / parties.json
+# export / codegen-js / navigator) is preserved in git history at tag
+# `sandbox-mvp`. To restore the one-command sandbox loop:
+#   git show sandbox-mvp:daml/daml.yaml > daml/daml.yaml
+#
+# Templates are LF-standard and compile UNCHANGED on both the 2.x and 3.x lines.
+# The only source delta for 3.x is the Daml.Script party allocation
+# (`allocatePartyWithHint <displayName> (PartyIdHint h)` → `allocatePartyByHint
+# (PartyIdHint h)` — display names were removed in Daml 3.x), in Setup.daml and
+# Tests.daml. Verified against cn-quickstart's own 3.4.11 sources
+# (Splice.Testing.Utils: `allocatePartyExact = allocatePartyByHint . PartyIdHint`).
+sdk-version: 3.4.11
 name: umbra
 version: 0.1.0
-# `source:` is relative to THIS daml.yaml. daml.yaml lives in `daml/` and the
-# package directory is `daml/Umbra/` (modules headered `module Umbra.Asset where`,
-# `Umbra.Auction`, `Umbra.Roles`, `Umbra.Setup`, `Umbra.Tests`). So `source:` must
-# point at the folder CONTAINING `Umbra/`, i.e. `.` (the `daml/` folder itself).
-# Do NOT use `source: Umbra` — that resolves `Umbra.Asset` to the nonexistent
-# `daml/Umbra/Umbra/Asset.daml` and `daml build` reports "no modules found".
+# `source: .` points at the folder CONTAINING `Umbra/` (this daml.yaml lives in
+# `daml/`, modules are headered `module Umbra.Asset where` etc.).
 source: .
-# init-script MUST be the fully module-qualified `Module:function` form. `daml start`
-# runs it after the Canton sandbox boots (`daml script ... --wall-clock-time`), and
-# `script-options: --output-file parties.json` exports its return value (Parties).
-# We seed the FULL money-shot state on boot: `seedOpenRound` = initialize (parties +
-# §4 holdings + Venue) + an Open Round + RoundStats{count=3} + the 3 §4 orders, then
-# returns Parties. One allocation pass → the exported parties.json IDs match the
-# seeded orders, so per-party tokens authenticate against live data (Phase-3 money
-# shot). `initialize` alone (parties/assets/Venue, no round) remains available for tests.
-init-script: Umbra.Setup:seedOpenRound
-# Skip Navigator — not needed for Umbra; speeds up `daml start`.
-start-navigator: false
 # Bundled with the SDK tarball; resolved automatically — no npm/registry install.
+# daml-script is still named `daml-script` on the 3.4 line (verified against
+# cn-quickstart/quickstart/daml/licensing-tests/daml.yaml).
 dependencies:
   - daml-prim
   - daml-stdlib
   - daml-script
-# parties.json export (LEDG-02, Plan 03). `script-options` are appended to the
-# init-script's `daml script` invocation, so `daml start` writes the init-script
-# return value (the Parties record) to parties.json on each boot (Option B). If
-# the write-directory under `daml start` is surprising on this machine, use the
-# guaranteed Option A documented in README.md (explicit `daml script ...
-# --output-file parties.json`). Either satisfies LEDG-02. parties.json is
-# gitignored — it holds per-boot `hint::<fingerprint>` IDs, never committed.
-script-options:
-  - --output-file
-  - parties.json
-# Codegen block (Phase 3) — `daml start` now regenerates the JS bindings on every
-# boot so @daml.js/umbra-0.1.0 stays in sync with template changes. `output-directory`
-# is relative to THIS daml.yaml (which lives in `daml/`), so `../web/daml.js` writes
-# to the repo-root `web/daml.js/`. The standalone command run once in Plan 03-02 was:
-#   daml codegen js daml/.daml/dist/umbra-0.1.0.dar -o web/daml.js
-# The generated npm package is @daml.js/umbra-0.1.0 (scope @daml.js, name umbra-0.1.0),
-# landing at web/daml.js/umbra-0.1.0/ with a `@daml/types` 2.10.4 peer-dep.
-codegen:
-  js:
-    output-directory: ../web/daml.js
-    npm-scope: daml.js

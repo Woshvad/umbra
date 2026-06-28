@@ -7,13 +7,10 @@
     "dev": "tsx watch src/index.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "smoke": "tsx src/ledger-smoke.ts"
+    "smoke": "node ../scripts/localnet/smoke.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.106.0",
-    "@daml.js/umbra-0.1.0": "file:../web/daml.js/umbra-0.1.0",
-    "@daml/ledger": "2.10.4",
-    "@daml/types": "2.10.4",
     "cors": "2.8.5",
     "dotenv": "16.6.1",
     "express": "4.19.2",

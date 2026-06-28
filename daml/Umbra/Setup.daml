@@ -28,10 +28,10 @@ data Parties = Parties with
 -- readable prefix (`bankA::<fp>`); the fingerprint suffix is still per-boot.
 allocateAll : Script Parties
 allocateAll = do
-  operator <- allocatePartyWithHint "Operator" (PartyIdHint "operator")
-  bankA    <- allocatePartyWithHint "BankA"    (PartyIdHint "bankA")
-  bankB    <- allocatePartyWithHint "BankB"    (PartyIdHint "bankB")
-  bankC    <- allocatePartyWithHint "BankC"    (PartyIdHint "bankC")
+  operator <- allocatePartyByHint (PartyIdHint "operator")
+  bankA    <- allocatePartyByHint (PartyIdHint "bankA")
+  bankB    <- allocatePartyByHint (PartyIdHint "bankB")
+  bankC    <- allocatePartyByHint (PartyIdHint "bankC")
   pure Parties with operator, bankA, bankB, bankC
 
 -- Mint one operator-custodied Asset for `owner`. All choices on Asset are

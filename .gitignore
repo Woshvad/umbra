@@ -29,6 +29,9 @@ web/daml.js/
 web/src/tokens.json
 # Operator dev token is minted OUT of the browser bundle (D6) — also never committed.
 scripts/.operator-token
+# LocalNet (Daml 3.x / cn-quickstart) deploy record — per-deploy party IDs, ephemeral.
+scripts/localnet/.deploy.json
+scripts/localnet/.tokens.json
 
 # --- SDK download temp / OS noise ---
 *.tar.gz

@@ -1,267 +1,306 @@
-// solver/src/ledger.ts — the Operator-authority @daml/ledger@2.10.4 client.
+// solver/src/ledger.ts — the Operator-authority client over the Canton JSON Ledger
+// API v2 (cn-quickstart LocalNet, Daml 3.4). This is the v2 successor to the
+// @daml/ledger@2.10.4 (HTTP JSON API v1) client: the SAME exported surface
+// (openRound / queryRound / readSealedOrders / refreshStats / closeRound / settle /
+// readTradeConfirmations / queryAllRounds / operatorParty), now driven by
+// POST /v2/commands/submit-and-wait + POST /v2/state/active-contracts.
 //
-// This is the ONLY component (besides the Daml Script tests) able to drive the
-// round lifecycle on-ledger: open a Round + RoundStats, read every desk's sealed
-// Order (the Operator is a stakeholder of every Order, so it sees them all),
-// maintain `sealedOrderCount` (archive+recreate via `updateStats`, recompute-and-
-// write via `refreshStats`), force-close, and run the Option-B `Round.Clear`
-// settle sequence.
-//
-// SECURITY (SOLV-04 / threat T-04-04): the Operator JWT is held STRICTLY module-
-// private. It is read from `scripts/.operator-token` (gitignored) — or minted as a
-// fallback from `daml/parties.json` + the empty dev secret — and is NEVER returned
-// by any exported function, never spread into a response object, and never logged.
-// Only party-level / contract-level data crosses out of this module.
+// SECURITY (SOLV-04 / threat T-04-04): the Operator JWT is module-private — read
+// from scripts/.operator-token (gitignored; written by scripts/localnet/deploy.mjs),
+// NEVER returned by an exported function, never spread into a response, never
+// logged. Only party-/contract-level data crosses out of this module. The token's
+// Canton user (ledger-api-user) is granted actAs+readAs the operator party.
 //
 // VERIFY-DON'T-TRUST (T-04-05): `settle` submits ONLY the deterministic §8
-// `computeClearing` output; `Round.Clear` re-verifies §8 on-ledger and rejects any
-// mismatch. There is NO skip-verification fast path.
+// `computeClearing` output; the on-ledger `Round.Clear` re-verifies §8 and rejects
+// any mismatch. There is NO skip-verification path.
+//
+// Wire encoding (proven against the live ledger): Daml Int/Decimal accept JSON
+// NUMBERS on input and come back as STRINGS on output → coerce reads with Number().
+// Enums (Side / RoundStatus) are strings; Time is ISO-8601; ContractId is a string;
+// a Daml (a, b) tuple is { _1, _2 }. Templates are addressed by the package-NAME
+// reference form `#umbra:Module:Entity` (package-id form is deprecated in 3.4).
 
 import { readFileSync } from 'node:fs'
-import { createHmac } from 'node:crypto'
-// @daml/ledger is CJS and exposes the Ledger class as BOTH `default` and a named
-// `Ledger` export. Under tsx/esbuild ESM↔CJS interop a DEFAULT import binds to the
-// namespace object (not the class) → `new Ledger()` throws "Ledger is not a
-// constructor". Use the NAMED import (the recorded 04-01 decision) — it resolves to
-// the class. (This module-scope `new Ledger()` is only exercised on a real boot, so
-// the DI-stubbed unit tests never caught it; the live E2E did.)
-import { Ledger } from '@daml/ledger'
-import type { CreateEvent } from '@daml/ledger'
-import { ContractId } from '@daml/types'
-import { Round, RoundStats, Order, RoundStatus, ClearResult, TradeConfirmation } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
-import { Asset } from '@daml.js/umbra-0.1.0/lib/Umbra/Asset/module'
-import { Side } from '@daml.js/umbra-0.1.0/lib/Umbra/Clearing/module'
-import { computeClearing, matchedAt, OrderView } from './auction.js'
+import type { OrderView, Side } from './auction.js'
+import { computeClearing, matchedAt } from './auction.js'
+
+export type RoundStatus = 'Open' | 'Closed' | 'Cleared' | 'Settled'
 
 const BOND_SYMBOL = 'BONDX'
 const CASH_SYMBOL = 'USDCx'
+const PKG = '#umbra' // package-name reference form for templateIds
 
-// ── Operator credential resolution (Pitfall 7: no __dirname under ESM) ──────────
-// Prefer scripts/.operator-token (minted by scripts/mint-tokens.mjs, gitignored).
-// If absent, fall back to minting the Operator JWT from daml/parties.json + the
-// empty dev secret with zero-dep node:crypto — the EXACT claim shape mint-tokens.mjs
-// uses (HS256 over '' under `daml start --allow-insecure-tokens`, D5).
-const LEDGER_ID = process.env.DAML_LEDGER_ID ?? 'sandbox'
-const APP_ID = 'umbra'
-const DEV_SECRET = ''
+// ── Participant base URL ─────────────────────────────────────────────────────────
+// The app-provider participant's JSON Ledger API v2 (LocalNet default :3975). Trailing
+// slashes are stripped because every call appends an absolute `/v2/...` path.
+const PARTICIPANT = (
+  process.env.JSON_API_URL ??
+  process.env.LOCALNET_JSON_API ??
+  'http://localhost:3975'
+).replace(/\/+$/, '')
 
-const b64url = (obj: unknown): string => Buffer.from(JSON.stringify(obj)).toString('base64url')
-
-const mintToken = (party: string): string => {
-  const header = b64url({ alg: 'HS256', typ: 'JWT' })
-  const payload = b64url({
-    'https://daml.com/ledger-api': {
-      ledgerId: LEDGER_ID,
-      applicationId: APP_ID,
-      actAs: [party],
-      readAs: [party],
-    },
-  })
-  const sig = createHmac('sha256', DEV_SECRET).update(`${header}.${payload}`).digest('base64url')
-  return `${header}.${payload}.${sig}`
-}
-
-const resolveOperatorCredential = (): { token: string; party: string } => {
-  // 1. The minted token file (CLI/service-only; gitignored).
+// ── Operator credential resolution (module-private) ──────────────────────────────
+const resolveOperator = (): { token: string; party: string } => {
   try {
     const raw = readFileSync(new URL('../../scripts/.operator-token', import.meta.url), 'utf8')
     const { token, party } = JSON.parse(raw) as { token: string; party: string }
     if (token && party) return { token, party }
   } catch {
-    // fall through to the mint path
-  }
-  // 2. Fallback-mint from parties.json (read fresh; never hard-code per-boot IDs, D4).
-  for (const rel of ['../../daml/parties.json', '../../parties.json']) {
-    try {
-      const raw = readFileSync(new URL(rel, import.meta.url), 'utf8')
-      const parties = JSON.parse(raw) as Record<string, string>
-      if (parties.operator) return { token: mintToken(parties.operator), party: parties.operator }
-    } catch {
-      // try the next candidate
-    }
+    // fall through to the explicit error
   }
   throw new Error(
-    'No Operator credential: scripts/.operator-token absent and daml/parties.json not found. ' +
-      'Run `daml start` then `node scripts/mint-tokens.mjs`.',
+    'No Operator credential: scripts/.operator-token absent. ' +
+      'Deploy to the LocalNet first: `node scripts/localnet/deploy.mjs`.',
   )
 }
 
-// Module-private credential. `_operatorToken` NEVER leaves this module.
-const { token: _operatorToken, party: _operatorParty } = resolveOperatorCredential()
+const { token: _operatorToken, party: _operatorParty } = resolveOperator()
 
-// Exported: the Operator PARTY string only (safe to surface; it is a public id).
-// The token is intentionally NOT exported and NOT part of any return value.
+// Exported: the Operator PARTY string only (a public id). The token is intentionally
+// NOT exported and NOT part of any return value.
 export const operatorParty: string = _operatorParty
 
-// ── JSON API base URL normalization ─────────────────────────────────────────────
-// @daml/ledger's Ledger REQUIRES httpBaseUrl to END WITH '/' and throws
-// "httpBaseUrl must end with '/'." otherwise — a slash-less JSON_API_URL (e.g. from a
-// copied .env / .env.example) would crash the boot. Append the slash if missing so
-// EITHER form works. (The solver has no Vite proxy, so the same-origin '/' the browser
-// uses is invalid here — an absolute http://…/ URL is required; Pitfall 2.)
-export const withTrailingSlash = (url: string): string => (url.endsWith('/') ? url : `${url}/`)
+// Default desks for a body-less POST /round (the §4 banks), read fresh from the
+// deploy's party map. openRound uses the caller's desks when provided.
+const resolveDesks = (): string[] => {
+  try {
+    const raw = readFileSync(new URL('../../daml/parties.json', import.meta.url), 'utf8')
+    const p = JSON.parse(raw) as Record<string, string>
+    return [p.bankA, p.bankB, p.bankC].filter(Boolean)
+  } catch {
+    return []
+  }
+}
+const DEFAULT_DESKS = resolveDesks()
 
-const ledger = new Ledger({
-  token: _operatorToken,
-  httpBaseUrl: withTrailingSlash(process.env.JSON_API_URL ?? 'http://localhost:7575/'),
+// ── v2 wire helpers (global fetch — mockable in tests) ───────────────────────────
+const authHeaders = (): Record<string, string> => ({
+  Authorization: `Bearer ${_operatorToken}`,
+  'Content-Type': 'application/json',
 })
 
-// ── Round lifecycle: open ───────────────────────────────────────────────────────
-// Neither Round nor RoundStats has an operator "open"/"update" choice (Auction.daml
-// 123-134 / 100-109; Operator is sole signatory) — create them directly. Int/Decimal
-// cross the wire as STRINGS (Pitfall 5): windowSeconds and sealedOrderCount are Int.
+let _cmdSeq = 0
+
+interface CreatedEvent {
+  contractId: string
+  templateId: string
+  createArgument: Record<string, any>
+  packageName: string
+  signatories: string[]
+  observers: string[]
+}
+
+const entityOf = (templateId: string): string => templateId.split(':').pop() ?? ''
+
+const ledgerEnd = async (): Promise<number> => {
+  const res = await fetch(`${PARTICIPANT}/v2/state/ledger-end`, { headers: authHeaders() })
+  if (!res.ok) throw new Error(`ledger-end HTTP ${res.status}`)
+  return (await (res.json() as Promise<{ offset: number }>)).offset
+}
+
+// Submit a command list as `actAs` and wait for completion. Throws a SECRET-FREE
+// error on non-200 (the request body carries only parties/templates/args; the token
+// lives in the Authorization header and is never echoed).
+const submitAndWait = async (commands: unknown[], actAs: string[]): Promise<void> => {
+  const res = await fetch(`${PARTICIPANT}/v2/commands/submit-and-wait`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ commandId: `umbra-solver-${Date.now()}-${_cmdSeq++}`, actAs, commands }),
+  })
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(`submit HTTP ${res.status}: ${body.slice(0, 400)}`)
+  }
+}
+
+const createContract = (
+  template: string,
+  createArguments: Record<string, unknown>,
+  actAs: string = operatorParty,
+): Promise<void> =>
+  submitAndWait([{ CreateCommand: { templateId: `${PKG}:${template}`, createArguments } }], [actAs])
+
+const exerciseChoice = (
+  template: string,
+  contractId: string,
+  choice: string,
+  choiceArgument: Record<string, unknown>,
+  actAs: string = operatorParty,
+): Promise<void> =>
+  submitAndWait([{ ExerciseCommand: { templateId: `${PKG}:${template}`, contractId, choice, choiceArgument } }], [actAs])
+
+// Read the Operator's active Umbra contracts of a given entity (e.g. 'Round').
+// The Operator is a stakeholder of every Umbra contract it needs, so one party
+// filter suffices; we client-filter to umbra + the requested entity.
+const queryByEntity = async (entity: string): Promise<CreatedEvent[]> => {
+  const activeAtOffset = await ledgerEnd()
+  const res = await fetch(`${PARTICIPANT}/v2/state/active-contracts`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      filter: { filtersByParty: { [operatorParty]: {} } },
+      verbose: true,
+      activeAtOffset,
+    }),
+  })
+  if (!res.ok) throw new Error(`active-contracts HTTP ${res.status}`)
+  const arr = (await res.json()) as any[]
+  return (Array.isArray(arr) ? arr : [])
+    .map((e) => e?.contractEntry?.JsActiveContract?.createdEvent)
+    .filter((c: any): c is CreatedEvent => c && c.packageName === 'umbra' && entityOf(c.templateId) === entity)
+}
+
+// ── Round lifecycle: open ────────────────────────────────────────────────────────
+// Create the Round (Open) + a RoundStats{0}. Int/Decimal go out as JSON numbers.
 export const openRound = async (
   roundId: string,
   desks: string[],
   windowSeconds: number,
 ): Promise<{ roundId: string; status: RoundStatus }> => {
-  const round = await ledger.create(Round, {
+  const deskList = desks.length ? desks : DEFAULT_DESKS
+  await createContract('Umbra.Auction:Round', {
     operator: operatorParty,
     roundId,
     symbol: BOND_SYMBOL,
-    desks,
+    desks: deskList,
     openedAt: new Date().toISOString(),
-    windowSeconds: String(windowSeconds),
+    windowSeconds,
     status: 'Open',
   })
-  await ledger.create(RoundStats, {
+  await createContract('Umbra.Auction:RoundStats', {
     operator: operatorParty,
     roundId,
-    desks,
-    sealedOrderCount: '0',
+    desks: deskList,
+    sealedOrderCount: 0,
   })
-  return { roundId, status: round.payload.status }
+  return { roundId, status: 'Open' }
 }
 
-// ── Query the CURRENT Round contract (never cache; CloseRound/Clear recreate it) ─
-// Callers MUST call this fresh before every exercise (Pitfall 4).
-export const queryRound = async (roundId: string): Promise<CreateEvent<Round> | null> => {
-  const rounds = await ledger.query(Round)
-  return rounds.find((c) => c.payload.roundId === roundId) ?? null
+// A CreateEvent-like projection of the current Round contract (carries the cid for
+// CloseRound/Clear; `.payload` mirrors the v1 shape the callers read).
+export interface RoundContract {
+  contractId: string
+  payload: {
+    roundId: string
+    symbol: string
+    desks: string[]
+    openedAt: string
+    windowSeconds: number
+    status: RoundStatus
+  }
 }
 
-// ── Query ALL live Rounds (for boot rehydrate; the ledger status is authoritative) ─
-// Returns a flat, secret-free view of every Round contract the Operator can see so
-// index.ts can seed the in-memory clock on boot (Plan 04-04). windowSeconds crosses
-// the wire as a STRING (Int, Pitfall 5) → coerced to number here.
+// ── Query the CURRENT Round (never cache; CloseRound/Clear recreate it) ──────────
+export const queryRound = async (roundId: string): Promise<RoundContract | null> => {
+  const c = (await queryByEntity('Round')).find((r) => r.createArgument.roundId === roundId)
+  if (!c) return null
+  const a = c.createArgument
+  return {
+    contractId: c.contractId,
+    payload: {
+      roundId: a.roundId,
+      symbol: a.symbol,
+      desks: a.desks,
+      openedAt: a.openedAt,
+      windowSeconds: Number(a.windowSeconds),
+      status: a.status as RoundStatus,
+    },
+  }
+}
+
+// ── Query ALL live Rounds (for boot rehydrate; ledger status is authoritative) ───
 export const queryAllRounds = async (): Promise<
   { roundId: string; status: RoundStatus; windowSeconds: number; openedAt: string }[]
-> => {
-  const rounds = await ledger.query(Round)
-  return rounds.map((c) => ({
-    roundId: c.payload.roundId,
-    status: c.payload.status,
-    windowSeconds: Number(c.payload.windowSeconds),
-    openedAt: c.payload.openedAt,
+> =>
+  (await queryByEntity('Round')).map((c) => ({
+    roundId: c.createArgument.roundId,
+    status: c.createArgument.status as RoundStatus,
+    windowSeconds: Number(c.createArgument.windowSeconds),
+    openedAt: c.createArgument.openedAt,
   }))
-}
 
 // ── Read ALL sealed orders for a round (Operator is a stakeholder of every Order) ─
-// Returns the live ContractId alongside an OrderView (quantity/limit coerced to
-// number for the pure §8 math). Filters to this round's Sealed orders only.
 export const readSealedOrders = async (
   roundId: string,
-): Promise<{ contractId: string; view: OrderView }[]> => {
-  const orders = await ledger.query(Order)
-  return orders
-    .filter((c) => c.payload.roundId === roundId && c.payload.status === 'Sealed')
+): Promise<{ contractId: string; view: OrderView }[]> =>
+  (await queryByEntity('Order'))
+    .filter((c) => c.createArgument.roundId === roundId && c.createArgument.status === 'Sealed')
     .map((c) => ({
       contractId: c.contractId,
       view: {
-        desk: c.payload.desk,
-        side: c.payload.side as Side,
-        quantity: Number(c.payload.quantity),
-        limit: Number(c.payload.limit),
+        desk: c.createArgument.desk,
+        side: c.createArgument.side as Side,
+        quantity: Number(c.createArgument.quantity),
+        limit: Number(c.createArgument.limit),
       },
     }))
-}
 
 // ── Read ALL TradeConfirmations for a round (Operator is a stakeholder of each) ───
-// After settle, Round.Clear RETIRES the sealed Orders, so the settled result is
-// reconstructed from these per-desk fill receipts (ledger truth, survives a restart).
-// Int/Decimal cross the wire as STRINGS (Pitfall 5) → coerce to number.
 export const readTradeConfirmations = async (
   roundId: string,
-): Promise<{ desk: string; side: Side; filledQty: number; clearingPrice: number }[]> => {
-  const confs = await ledger.query(TradeConfirmation)
-  return confs
-    .filter((c) => c.payload.roundId === roundId)
+): Promise<{ desk: string; side: Side; filledQty: number; clearingPrice: number }[]> =>
+  (await queryByEntity('TradeConfirmation'))
+    .filter((c) => c.createArgument.roundId === roundId)
     .map((c) => ({
-      desk: c.payload.desk,
-      side: c.payload.side as Side,
-      filledQty: Number(c.payload.filledQty),
-      clearingPrice: Number(c.payload.clearingPrice),
+      desk: c.createArgument.desk,
+      side: c.createArgument.side as Side,
+      filledQty: Number(c.createArgument.filledQty),
+      clearingPrice: Number(c.createArgument.clearingPrice),
     }))
-}
 
-// ── Find the CURRENT RoundStats contract for a round ────────────────────────────
-const queryStats = async (roundId: string): Promise<CreateEvent<RoundStats> | null> => {
-  const stats = await ledger.query(RoundStats)
-  return stats.find((c) => c.payload.roundId === roundId) ?? null
-}
+// ── Find the CURRENT RoundStats contract for a round ─────────────────────────────
+const queryStats = async (roundId: string): Promise<CreatedEvent | null> =>
+  (await queryByEntity('RoundStats')).find((c) => c.createArgument.roundId === roundId) ?? null
 
-// ── Maintain sealedOrderCount via archive+recreate (no update choice exists) ────
-// `count` is passed as a STRING on the wire (Int, Pitfall 5).
+// ── Maintain sealedOrderCount via archive+recreate (no update choice exists) ─────
 export const updateStats = async (roundId: string, count: number): Promise<number> => {
   const current = await queryStats(roundId)
   if (!current) throw new Error(`no RoundStats for round ${roundId} (open the round first)`)
-  await ledger.archive(RoundStats, current.contractId)
-  await ledger.create(RoundStats, {
-    operator: current.payload.operator,
-    roundId: current.payload.roundId,
-    desks: current.payload.desks,
-    sealedOrderCount: String(count),
+  await exerciseChoice('Umbra.Auction:RoundStats', current.contractId, 'Archive', {})
+  await createContract('Umbra.Auction:RoundStats', {
+    operator: operatorParty,
+    roundId: current.createArgument.roundId,
+    desks: current.createArgument.desks,
+    sealedOrderCount: count,
   })
   return count
 }
 
-// ── refreshStats: recompute-and-write — the live call site for updateStats ──────
-// (The BLOCKER fix: an exported-but-never-invoked `updateStats` does NOT satisfy
-// SOLV-01's "maintains sealedOrderCount".) Recompute the count from the live sealed
-// orders; if it differs from the current RoundStats, write it back via updateStats.
-// This is what the API (GET /round/:id, Plan 04-03) and the clock/poll (Plan 04-04)
-// invoke so a freshly-opened round's count ADVANCES off 0 as sealed orders appear.
+// ── refreshStats: recompute-and-write the live sealed-order count ────────────────
 export const refreshStats = async (roundId: string): Promise<number> => {
   const count = (await readSealedOrders(roundId)).length
   const current = await queryStats(roundId)
-  const recorded = current ? Number(current.payload.sealedOrderCount) : -1
+  const recorded = current ? Number(current.createArgument.sealedOrderCount) : -1
   if (recorded !== count) {
     await updateStats(roundId, count)
   }
   return count
 }
 
-// ── Force-close a round (operator-only CloseRound) ──────────────────────────────
-// Re-query the CURRENT Round cid first (Pitfall 4: CloseRound returns a NEW cid;
-// never reuse a cached one). Returns the new round status (Closed).
+// ── Force-close a round (operator-only CloseRound) ───────────────────────────────
 export const closeRound = async (roundId: string): Promise<RoundStatus> => {
   const round = await queryRound(roundId)
   if (!round) throw new Error(`round ${roundId} not found`)
-  await ledger.exercise(Round.CloseRound, round.contractId, {})
+  await exerciseChoice('Umbra.Auction:Round', round.contractId, 'CloseRound', {})
   const closed = await queryRound(roundId)
   return closed?.payload.status ?? 'Closed'
 }
 
-// ── The Option-B Round.Clear settle sequence (Pattern 2 / Auction.daml 151-158) ─
-// `Round.Clear` cannot query the ACS (D7), so the solver gathers every ContractId
-// the choice needs and passes them as additive args. The deterministic §8
-// `computeClearing` output is submitted and re-verified on-ledger (verify-don't-
-// trust, T-04-05) — there is NO skip-verification path.
+// ── The Option-B Round.Clear settle sequence ─────────────────────────────────────
+// `Round.Clear` cannot query the ACS, so the solver gathers every ContractId the
+// choice needs and passes them as additive args. The deterministic §8 output is
+// submitted and re-verified on-ledger (verify-don't-trust) — NO skip path.
 //
-// ASSET-SELECTION SCOPE (RESEARCH Assumption A2, documented P4 limitation, T-04-12):
-// `settle` assumes a single (owner, symbol) holding with sufficient quantity — true
-// for the §4 fixture (BankA 5000 USDCx, BankB 20 BONDX, BankC 15 BONDX). It does NOT
-// merge split holdings (Asset.Merge before settle is stretch). When no single holding
-// satisfies the sufficiency predicate — which can happen for a FRESH POST /round
-// round with unconstrained holdings — it throws a clean, secret-free
-// `insufficient or missing <symbol> holding for <party>` error rather than passing an
-// undefined cid into Clear.
+// ASSET-SELECTION SCOPE (documented MVP limitation): assumes a single (owner,symbol)
+// holding with sufficient quantity (true for the §4 fixture). Throws a clean,
+// secret-free `insufficient or missing <symbol> holding for <party>` otherwise.
 export const settle = async (
   roundId: string,
-): Promise<{ result: ClearResult; status: RoundStatus }> => {
-  // 1. Read the round's sealed orders → orderCids + the OrderView[] for the math.
+): Promise<{ result: { roundId: string; clearingPrice: number; totalMatched: number }; status: RoundStatus }> => {
+  // 1. Sealed orders → orderCids + the OrderView[] for the math.
   const sealed = await readSealedOrders(roundId)
-  const orderCids = sealed.map((o) => o.contractId as ContractId<Order>)
+  const orderCids = sealed.map((o) => o.contractId)
   const views: OrderView[] = sealed.map((o) => o.view)
 
   // 2. Compute §8 locally — the SAME result the on-ledger Clear re-verifies.
@@ -273,59 +312,53 @@ export const settle = async (
   if (!buyAlloc) throw new Error(`round ${roundId} has no Buy-side allocation (no cross)`)
   const buyer = buyAlloc.desk
 
-  // 4. The buyer's USDCx holding sufficient for the cash leg (matchedVolume × price).
-  const assets = await ledger.query(Asset)
+  // 4. Holdings: the buyer's USDCx (≥ matchedVolume×price) + each seller's BONDX.
+  const assets = await queryByEntity('Asset')
   const cashNeeded = matchedVolume * clearingPrice
   const buyerUsdc = assets.find(
     (c) =>
-      c.payload.owner === buyer &&
-      c.payload.symbol === CASH_SYMBOL &&
-      Number(c.payload.quantity) >= cashNeeded,
+      c.createArgument.owner === buyer &&
+      c.createArgument.symbol === CASH_SYMBOL &&
+      Number(c.createArgument.quantity) >= cashNeeded,
   )
   if (!buyerUsdc) {
-    throw new Error(
-      `insufficient or missing ${CASH_SYMBOL} holding for ${buyer} (need ${cashNeeded})`,
-    )
+    throw new Error(`insufficient or missing ${CASH_SYMBOL} holding for ${buyer} (need ${cashNeeded})`)
   }
   const buyerUsdcCid = buyerUsdc.contractId
 
-  // 5. Each seller's BONDX holding sufficient for its filledQty.
-  //    sellerBondCids crosses the wire as DA.Types.Tuple2 → { _1: party, _2: cid }.
-  const sellerBondCids: { _1: string; _2: ContractId<Asset> }[] = []
+  // 5. Each seller's BONDX holding sufficient for its filledQty (tuple → { _1, _2 }).
+  const sellerBondCids: { _1: string; _2: string }[] = []
   for (const a of allocations) {
     if (a.side !== 'Sell' || a.filledQty <= 0) continue
     const bond = assets.find(
       (c) =>
-        c.payload.owner === a.desk &&
-        c.payload.symbol === BOND_SYMBOL &&
-        Number(c.payload.quantity) >= a.filledQty,
+        c.createArgument.owner === a.desk &&
+        c.createArgument.symbol === BOND_SYMBOL &&
+        Number(c.createArgument.quantity) >= a.filledQty,
     )
     if (!bond) {
-      throw new Error(
-        `insufficient or missing ${BOND_SYMBOL} holding for ${a.desk} (need ${a.filledQty})`,
-      )
+      throw new Error(`insufficient or missing ${BOND_SYMBOL} holding for ${a.desk} (need ${a.filledQty})`)
     }
-    sellerBondCids.push({ _1: a.desk, _2: bond.contractId as ContractId<Asset> })
+    sellerBondCids.push({ _1: a.desk, _2: bond.contractId })
   }
 
-  // 6. Re-query the CURRENT Round cid (CloseRound recreated it; Pitfall 4), then
-  //    exercise Clear with all Int/Decimal as STRINGS (Pitfall 5). The on-ledger
-  //    guard (status == Closed || Cleared) rejects a non-settleable round.
+  // 6. Re-query the CURRENT Round cid, then exercise Clear. The on-ledger guard
+  //    (status == Closed || Cleared) rejects a non-settleable round.
   const round = await queryRound(roundId)
   if (!round) throw new Error(`round ${roundId} not found`)
-  const [result] = await ledger.exercise(Round.Clear, round.contractId, {
-    clearingPrice: String(clearingPrice),
-    allocations: allocations.map((a) => ({
-      desk: a.desk,
-      side: a.side as Side,
-      filledQty: String(a.filledQty),
-    })),
+  await exerciseChoice('Umbra.Auction:Round', round.contractId, 'Clear', {
+    clearingPrice,
+    allocations: allocations.map((a) => ({ desk: a.desk, side: a.side, filledQty: a.filledQty })),
     orderCids,
     buyerUsdcCid,
     sellerBondCids,
   })
 
-  // 7. The Round was recreated as Settled — return the verified result + new status.
+  // 7. The Round was recreated as Settled. The verified result is reconstructed
+  //    locally — the on-ledger Clear re-verified §8, so local == on-ledger.
   const settled = await queryRound(roundId)
-  return { result: result as ClearResult, status: settled?.payload.status ?? 'Settled' }
+  return {
+    result: { roundId, clearingPrice, totalMatched: matchedVolume },
+    status: settled?.payload.status ?? 'Settled',
+  }
 }

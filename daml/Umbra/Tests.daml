@@ -91,9 +91,9 @@ test_asset_split_merge = do
 test_clears_at_100 : Script ()
 test_clears_at_100 = do
   -- throwaway parties for the OrderView `desk` fields (the §4 desks).
-  bankA <- allocatePartyWithHint "BankA" (PartyIdHint "bankA")
-  bankB <- allocatePartyWithHint "BankB" (PartyIdHint "bankB")
-  bankC <- allocatePartyWithHint "BankC" (PartyIdHint "bankC")
+  bankA <- allocatePartyByHint (PartyIdHint "bankA")
+  bankB <- allocatePartyByHint (PartyIdHint "bankB")
+  bankC <- allocatePartyByHint (PartyIdHint "bankC")
 
   -- §4 fixture: A Buy 10 @101, B Sell 8 @99, C Sell 5 @100 (Decimal limits,
   -- Int quantities — never compare an Int fill against a Decimal).

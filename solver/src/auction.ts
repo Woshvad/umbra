@@ -80,9 +80,10 @@ export const choosePStar = (orders: OrderView[]): number => {
 
 // §8 step 4 — ration `traded` units across an already-price-ordered list,
 // most-aggressive-first, integer fills never exceeding each order's quantity nor
-// `traded` (Clearing.daml 114-118). The leftover-to-largest rule for fractional
-// pro-rata among equal-limit ties is subsumed by this greedy integer pass; §4 has
-// no equal-limit tie so the greedy answer (B=8, C=2) is exact.
+// `traded` (Clearing.daml 114-118). Equal-limit ties are filled in the (already
+// price-sorted, stable) input order — NOT pro-rata; strict pro-rata leftover-to-
+// largest is deferred (§4 has no equal-limit tie, so the greedy answer B=8, C=2 is
+// exact). Mirrors Clearing.daml's identical greedy rule bit-for-bit.
 export const rationByPriority = (
   ordered: OrderView[],
   remaining: number,

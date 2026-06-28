@@ -284,11 +284,13 @@ export const createApp = (deps: AppDeps): Express => {
         throw new ApiError(409, 'ALREADY_SETTLED', `round ${id} is already ${round.status}`)
       }
       const result = await deps.settle(id)
+      // matchedVolume is always set by the live settle path (Round.Clear's totalMatched);
+      // if a deps impl omits it, reconstruct from the verified Buy-side allocations.
+      // NEVER read the sealed book here — Round.Clear RETIRED those orders, so a recompute
+      // on the now-empty book would yield 0 (the same trap the GET post-settle branch avoids).
       const matchedVolume =
-        result.matchedVolume ?? deps.matchedAt(
-          (await deps.readSealedOrders(id)).map((s) => s.view),
-          result.clearingPrice,
-        )
+        result.matchedVolume ??
+        result.allocations.filter((a) => a.side === 'Buy').reduce((sum, a) => sum + a.filledQty, 0)
       res.json({
         roundId: id,
         status: 'Settled',

@@ -379,6 +379,57 @@ describe('solver §11 HTTP API', () => {
     expect(deps.settle).not.toHaveBeenCalled()
   })
 
+  it('POST /round/:id/settle settles a closed round and returns the verified §4 result', async () => {
+    const { allocations } = computeClearing(SECTION4_VIEWS)
+    const settle = vi.fn(async (): Promise<SettleResult> => ({
+      clearingPrice: 100,
+      allocations,
+      matchedVolume: 10,
+      txConfirmations: 1,
+    }))
+    const deps = makeDeps({
+      queryRound: vi.fn(async (roundId: string) => ({ roundId, status: 'Closed' })),
+      settle,
+    })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/settle`, { method: 'POST' })
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    expect(body.status).toBe('Settled')
+    expect(body.clearingPrice).toBe(100)
+    expect(body.matchedVolume).toBe(10)
+    expect(Array.isArray(body.allocations)).toBe(true)
+    expect(body.txConfirmations).toBe(1)
+    expect(settle).toHaveBeenCalledWith('R1')
+  })
+
+  it('POST /settle derives matchedVolume from Buy-side allocations when the result omits it (never reads the retired book)', async () => {
+    const { allocations } = computeClearing(SECTION4_VIEWS)
+    // The live settle ALWAYS sets matchedVolume; this stub omits it to exercise the
+    // fallback. readSealedOrders THROWS — the handler must NOT touch the (retired) book.
+    const deps = makeDeps({
+      queryRound: vi.fn(async (roundId: string) => ({ roundId, status: 'Closed' })),
+      settle: vi.fn(async (): Promise<SettleResult> => ({ clearingPrice: 100, allocations })),
+      readSealedOrders: vi.fn(async (): Promise<SealedOrder[]> => {
+        throw new Error('settle handler must not read the retired order book')
+      }),
+    })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/settle`, { method: 'POST' })
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    // Σ Buy-side filledQty = 10 — reconstructed from the verified allocations, NOT a
+    // recompute on the emptied book (which would read 0).
+    expect(body.matchedVolume).toBe(10)
+    expect(deps.readSealedOrders).not.toHaveBeenCalled()
+  })
+
   it('CORS is scoped to http://localhost:5173 and never wildcard for a foreign origin', async () => {
     const deps = makeDeps({ refreshStats: vi.fn(async (): Promise<number> => 0) })
     const started = await listen(deps)

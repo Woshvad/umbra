@@ -3,7 +3,7 @@
 // switcher desk) + `screen`. The shared Round/RoundStats that drive the status
 // indicator are read ONCE through a single desk context (ctxA) — observer = desks,
 // so no operator token is needed in the browser (D6).
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ctxA, type DeskKey } from './ledgerContexts'
 import { tokens, httpBaseUrl, wsBaseUrl } from './desks'
 import { Round, RoundStats } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
@@ -37,15 +37,15 @@ function RoundStateProbe({
   const sealedCount = rawCount != null ? Number(rawCount) : 0
   const phase = phaseFromStatus(status)
 
-  // Push derived state up on change (cheap; values are primitive).
-  const key = `${phase}:${sealedCount}`
-  if (RoundStateProbe.lastKey !== key) {
-    RoundStateProbe.lastKey = key
-    queueMicrotask(() => onState({ phase, sealedCount }))
-  }
+  // Lift derived state up whenever it changes — as a post-commit EFFECT, not a
+  // render-phase side effect (the prior version mutated cross-render module state and
+  // double-fired under React 18 StrictMode). `onState` is a stable setState dispatcher.
+  useEffect(() => {
+    onState({ phase, sealedCount })
+  }, [phase, sealedCount, onState])
+
   return null
 }
-RoundStateProbe.lastKey = ''
 
 export default function App() {
   const [activeDesk, setActiveDesk] = useState<DeskKey>('bankA')

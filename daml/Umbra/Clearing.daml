@@ -104,11 +104,12 @@ choosePStar orders =
 -- already-price-ordered list, most-aggressive-first, integer fills, never
 -- exceeding each order's quantity nor `traded`.
 --
--- Leftover-to-largest rule: when a pro-rata split among EQUAL-limit ties would
--- produce a fractional unit, the leftover unit(s) go to the largest order. The
--- §4 fixture has no equal-limit tie, so this greedy price-priority pass alone
--- gives the exact answer (B=8, C=2); the rule is documented here so the future
--- TypeScript impl (P4) matches bit-for-bit (02-RESEARCH A3).
+-- MVP tie behavior (accurate to the code below): equal-limit orders are filled in
+-- the order the caller already sorted them (price-priority, stable) — NOT a pro-rata
+-- split. Strict pro-rata with "leftover unit(s) to the largest order" is deferred:
+-- it is not needed for the §4 fixture (which has no equal-limit tie), so this greedy
+-- pass alone gives the exact answer (B=8, C=2). The TypeScript mirror (auction.ts)
+-- uses the IDENTICAL greedy rule, so the two match bit-for-bit (02-RESEARCH A3).
 -- (Daml-LF forbids recursive LOCAL bindings — recursion must be top-level, so
 -- `rationByPriority` is itself the recursive function rather than a local `go`.)
 rationByPriority : [OrderView] -> Int -> [(OrderView, Int)]

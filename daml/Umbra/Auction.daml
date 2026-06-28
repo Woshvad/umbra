@@ -15,7 +15,7 @@ module Umbra.Auction
 
 import DA.Action (when, foldlA)
 import DA.Foldable (forA_)
-import DA.List (sortOn, head)
+import DA.List (sortOn, dedup)
 import Umbra.Asset (Asset(..), Split(..), Reassign(..))
 import Umbra.Clearing (Side(..), Allocation(..), OrderView(..), computeClearing)
 
@@ -133,13 +133,16 @@ template Round
     signatory operator
     observer desks                -- desks see the round + status + (later) count, never contents
 
-    -- PHASE-1 MINIMAL PLACEHOLDER: spec §7.4 shows CloseRound without an explicit
-    -- controller/body, so freeze it as operator-only with a minimal recreating body
-    -- that flips status = Closed purely so the template compiles. NOT real lifecycle
-    -- logic — the Open→Closed→Cleared→Settled lifecycle (timing, guards) is Phase 2.
+    -- spec §7.4 shows CloseRound without an explicit controller/body. Operator-only,
+    -- recreates the round as Closed, with a minimal lifecycle guard (below). Full
+    -- window-timing enforcement (deadline checks) remains Phase 2.
     choice CloseRound : ContractId Round            -- after the window
       controller operator
       do
+        -- Lifecycle guard: never close an already-settled/cleared round — recreating
+        -- it as Closed would re-open the settle path (a latent re-settle vector).
+        -- Open→Closed is the normal path; Closed→Closed is an idempotent no-op.
+        assertMsg "cannot close an already-settled round" (status /= Settled && status /= Cleared)
         create this with status = Closed
 
     -- §10 — THE atomic settlement choice. The named frozen fields
@@ -194,13 +197,28 @@ template Round
         --    authority flows automatically; no counterparty submit). Any failing
         --    leg rolls back the whole transaction (atomicity, SETL-03).
         let priceDec = roundBankers 2 clearingPrice
-        -- The buyer is the (single) desk on the Buy side of the verified allocation.
-        let buyer = head [ a.desk | a <- allocations, a.side == Buy ]
+        -- The buyer is the SINGLE funded desk on the Buy side of the verified
+        -- allocation. Filter to filledQty > 0 so a 0-fill eligible buy never binds
+        -- the settlement counterparty, and FAIL LOUDLY (not via a partial `head`,
+        -- which would crash on an all-sell allocation) if the allocation is not
+        -- single-buyer — the operator-custody DvP legs below assume exactly one
+        -- buyer (spec §10 MVP single-buyer invariant).
+        let fundedBuyers = dedup [ a.desk | a <- allocations, a.side == Buy, a.filledQty > 0 ]
+        buyer <- case fundedBuyers of
+          [b] -> pure b
+          _   -> abort "Clear: settlement requires exactly one funded buyer (MVP single-buyer invariant)"
 
         -- BONDX leg: each seller delivers `filledQty` BONDX to the buyer.
         forA_ sellerBondCids $ \(seller, bondCid) -> do
           let filled = fillFor allocations seller Sell
           when (filled > 0) $ do
+            -- DvP integrity: the supplied holding must be THIS seller's own BONDX.
+            -- The recompute above verifies the allocation, not that the caller
+            -- passed each seller's own holding — a wrong/mismatched cid would
+            -- otherwise under-deliver while the round still reports Settled.
+            bond <- fetch bondCid
+            assertMsg "Clear: seller BONDX holding owner/symbol mismatch"
+              (bond.owner == seller && bond.symbol == symbol)
             _ <- moveExact bondCid (intToDecimal filled) buyer
             pure ()
 
@@ -208,6 +226,11 @@ template Round
         -- Thread the buyer's USDCx ContractId through the per-seller splits so each
         -- slice comes off the running remainder (the final remainder stays with the
         -- buyer). The buyer's net debit is Σ(sellerFill * p*) = totalSell * p*.
+        -- DvP integrity: the supplied USDCx holding to debit must be the buyer's own
+        -- cash holding (symbol USDCx) — guards against debiting a wrong/foreign cid.
+        buyerCash <- fetch buyerUsdcCid
+        assertMsg "Clear: buyer USDCx holding owner/symbol mismatch"
+          (buyerCash.owner == buyer && buyerCash.symbol == "USDCx")
         let creditCash usdcCid (seller, _) = do
               let filled = fillFor allocations seller Sell
               if filled <= 0

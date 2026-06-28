@@ -70,15 +70,31 @@ const end = await api('GET', '/v2/state/ledger-end')
 if (!end.ok) fail(`participant ${PARTICIPANT} not reachable/authorized (HTTP ${end.status})`, end.body)
 console.log(`✓ participant ${PARTICIPANT} reachable, ledger-end offset=${end.body.offset}`)
 
-// ── 1. upload DAR ─────────────────────────────────────────────────────────────────
+// ── 1. upload DAR to ALL participants ──────────────────────────────────────────────
+// The app-provider participant is required (the operator's node); app-user + sv are
+// best-effort so the package is VETTED everywhere — a prerequisite for §19 cross-node
+// transactions (Canton refuses to route a tx whose package a stakeholder hasn't vetted).
 if (existsSync(DAR_PATH)) {
   const dar = readFileSync(DAR_PATH)
+  const others = ['http://localhost:2975', 'http://localhost:4975']
   const up = await api('POST', '/v2/packages', dar, {
     Authorization: `Bearer ${adminToken}`,
     'Content-Type': 'application/octet-stream',
   })
-  if (!up.ok) fail(`DAR upload failed (HTTP ${up.status})`, up.body)
-  console.log(`✓ uploaded DAR (${(dar.length / 1024).toFixed(0)} KiB): ${DAR_PATH}`)
+  if (!up.ok) fail(`DAR upload failed on ${PARTICIPANT} (HTTP ${up.status})`, up.body)
+  console.log(`✓ vetted DAR (${(dar.length / 1024).toFixed(0)} KiB) on ${PARTICIPANT}`)
+  for (const base of others.filter((b) => b !== PARTICIPANT)) {
+    try {
+      const res = await fetch(`${base}/v2/packages`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/octet-stream' },
+        body: dar,
+      })
+      console.log(res.ok ? `✓ vetted DAR on ${base} (cross-node)` : `… ${base} -> HTTP ${res.status} (cross-node skipped)`)
+    } catch {
+      console.log(`… ${base} unreachable — cross-node vetting skipped`)
+    }
+  }
 } else {
   console.log(`… DAR not found (${DAR_PATH}) — skipping upload (build it, then re-run)`)
 }

@@ -188,3 +188,13 @@ describe('ledger.refreshStats (stubbed ledger — no live sandbox)', () => {
     errSpy.mockRestore()
   })
 })
+
+describe('withTrailingSlash (JSON_API_URL normalization)', () => {
+  it('appends a trailing slash when missing and leaves an existing one untouched', () => {
+    // @daml/ledger requires httpBaseUrl to END WITH '/'; a slash-less JSON_API_URL
+    // (e.g. from a copied .env.example) would otherwise crash the boot.
+    expect(ledgerMod.withTrailingSlash('http://localhost:7575')).toBe('http://localhost:7575/')
+    expect(ledgerMod.withTrailingSlash('http://localhost:7575/')).toBe('http://localhost:7575/')
+    expect(ledgerMod.withTrailingSlash('https://host/v1')).toBe('https://host/v1/')
+  })
+})

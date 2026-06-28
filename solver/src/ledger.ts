@@ -93,12 +93,17 @@ const { token: _operatorToken, party: _operatorParty } = resolveOperatorCredenti
 // The token is intentionally NOT exported and NOT part of any return value.
 export const operatorParty: string = _operatorParty
 
-// ── One Ledger, absolute base URL (Pitfall 2: bare '/' / scheme-less throws) ────
-// The solver has no Vite proxy, so the same-origin '/' the browser uses is invalid
-// here. Use an absolute http://…/ URL with a trailing slash.
+// ── JSON API base URL normalization ─────────────────────────────────────────────
+// @daml/ledger's Ledger REQUIRES httpBaseUrl to END WITH '/' and throws
+// "httpBaseUrl must end with '/'." otherwise — a slash-less JSON_API_URL (e.g. from a
+// copied .env / .env.example) would crash the boot. Append the slash if missing so
+// EITHER form works. (The solver has no Vite proxy, so the same-origin '/' the browser
+// uses is invalid here — an absolute http://…/ URL is required; Pitfall 2.)
+export const withTrailingSlash = (url: string): string => (url.endsWith('/') ? url : `${url}/`)
+
 const ledger = new Ledger({
   token: _operatorToken,
-  httpBaseUrl: process.env.JSON_API_URL ?? 'http://localhost:7575/',
+  httpBaseUrl: withTrailingSlash(process.env.JSON_API_URL ?? 'http://localhost:7575/'),
 })
 
 // ── Round lifecycle: open ───────────────────────────────────────────────────────

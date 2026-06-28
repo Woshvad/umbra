@@ -5,29 +5,18 @@
 // one panel can never read another panel's connection — a rival column genuinely
 // fetches zero contracts (the redaction stripe is HONEST, not a render-time filter).
 //
-// VERIFIED: @daml/react@2.10.4 `createLedgerContext(name)` — "where one needs to be
-// able to nest ledger interactions, by different parties or connections, within one
-// React application." (package createLedgerContext.d.ts)
-import type { FC, PropsWithChildren } from 'react'
-import { createLedgerContext, type LedgerContext } from '@daml/react'
+// MIGRATED TO CANTON JSON LEDGER API v2: `createLedgerContext` now comes from the
+// local v2 shim (web/src/ledger/v2react.tsx), which polls /v2/state/active-contracts
+// with each desk's token instead of the Daml 2.x WS stream. The hook surface
+// (DamlLedger / useStreamQueries / useLedger) is byte-identical, so every desk
+// component is unchanged.
+import { createLedgerContext, type LedgerContext } from './ledger/v2react'
 
-// @daml/react@2.10.4 types `LedgerContext.DamlLedger` as `React.FC<LedgerProps>`,
-// which under React 18's stricter `FC` no longer implies `children`. The provider
-// DOES render its children at runtime — retype it locally to accept them. (The
-// `LedgerProps` shape is { token, party, httpBaseUrl?, wsBaseUrl?, ... }.)
-type LedgerProviderProps = PropsWithChildren<{
-  token: string
-  party: string
-  httpBaseUrl?: string
-  wsBaseUrl?: string
-  reconnectThreshold?: number
-}>
+// The v2 shim's DamlLedger already accepts children (PropsWithChildren), so no
+// retyping is needed (the v1 @daml/react FC dropped `children` under React 18).
+export type Ctx = LedgerContext
 
-export type Ctx = Omit<LedgerContext, 'DamlLedger'> & {
-  DamlLedger: FC<LedgerProviderProps>
-}
-
-const make = (name: string): Ctx => createLedgerContext(name) as unknown as Ctx
+const make = (name: string): Ctx => createLedgerContext(name)
 
 export const ctxA = make('bankA')
 export const ctxB = make('bankB')

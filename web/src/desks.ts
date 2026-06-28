@@ -28,11 +28,11 @@ export const codeForParty = (party: string): string => {
   return DESKS.find((d) => d.key === key)?.code ?? party
 }
 
-// Same-origin base via the Vite proxy — but @daml/ledger's Ledger constructor
-// REQUIRES an absolute `http(s)://…/` URL (it throws "httpBaseUrl must start with
-// 'http://'…" on a bare '/'). So resolve the live same-origin absolute URL at the
-// call site: the browser still talks to Vite (:5173), which proxies /v1 -> :7575.
-// (config.JSON_API_URL='/' is kept as the documented same-origin marker.)
+// Same-origin absolute base for the v2 shim (web/src/ledger/v2react.tsx), which
+// appends /v2/... paths. The browser talks to Vite (:5173), which proxies /v2 ->
+// the LocalNet app-provider participant (:3975), forwarding each desk's JWT.
+// (config.JSON_API_URL='/' is kept as the documented same-origin marker; wsBaseUrl
+// is retained for the DamlLedger prop but unused — the v2 shim polls, not streams.)
 void JSON_API_URL
 export const httpBaseUrl =
   typeof window !== 'undefined'

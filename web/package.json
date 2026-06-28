@@ -8,12 +8,11 @@
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "preview": "vite preview",
-    "tokens": "node ../scripts/mint-tokens.mjs"
+    "tokens": "node ../scripts/localnet/deploy.mjs"
   },
   "dependencies": {
     "@daml.js/umbra-0.1.0": "file:./daml.js/umbra-0.1.0",
     "@daml/ledger": "2.10.4",
-    "@daml/react": "2.10.4",
     "@daml/types": "2.10.4",
     "react": "18.3.1",
     "react-dom": "18.3.1"

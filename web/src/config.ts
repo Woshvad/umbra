@@ -1,9 +1,9 @@
-// Single drift constants for the JSON API wiring (RESEARCH Pitfall 2).
+// JSON Ledger API v2 wiring constant.
 //
-// JSON_API_URL is '/' because the Vite dev server proxies /v1 -> :7575
-// (web/vite.config.ts), so the browser talks same-origin to Vite. Pass this as
-// `httpBaseUrl` to @daml/ledger / @daml/react; derive the WS base from it at the
-// call site (`ws://${location.host}/`).
+// JSON_API_URL stays '/' as the same-origin marker: the Vite dev server proxies
+// /v2 -> :3975 (web/vite.config.ts), so the browser talks same-origin to Vite. The
+// v2 shim (web/src/ledger/v2react.tsx) builds requests from the live absolute
+// same-origin base in web/src/desks.ts (httpBaseUrl) + /v2/... paths.
 export const JSON_API_URL = '/'
 
 // The Canton sandbox ledger/participant id baked into every per-party JWT claim.

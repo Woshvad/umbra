@@ -1,97 +1,80 @@
-# Umbra — dev/run orchestration (macOS/Linux).
+# Umbra — dev/run orchestration on real Canton (Daml 3.4 + LocalNet + JSON Ledger API v2).
 #
-# `make` is NOT installed on the Windows dev box. Every target below is mirrored
-# as a root npm script — Windows users run `npm run <target>` (see package.json),
-# or follow the manual 4-terminal flow documented in the README. The manual flow
-# is the always-works, cross-platform contract; this Makefile is the convenience
-# layer for macOS/Linux.
+# `make` is NOT installed on the Windows dev box; every target is mirrored as a root
+# npm script (`npm run <target>`) — and the real work lives in cross-platform Node
+# scripts under scripts/localnet/, so `node scripts/localnet/up.mjs` works anywhere.
 #
-# PRIVACY INVARIANT (hard): no target writes/copies the operator token or the
-# Anthropic key anywhere near web/. Desk tokens live ONLY in web/src/tokens.json;
-# the operator token ONLY in scripts/.operator-token (CLI/solver, never web/src);
-# ANTHROPIC_API_KEY is read ONLY by solver/. All three are gitignored — never
-# committed. `clean` removes the per-boot ephemera; it commits nothing.
+# PRIVACY INVARIANT (hard): no target writes/copies the operator token or the Anthropic
+# key near web/. Desk tokens live ONLY in web/src/tokens.json; the operator token ONLY
+# in scripts/.operator-token; ANTHROPIC_API_KEY is read ONLY by solver/. All gitignored.
 
 .DEFAULT_GOAL := help
 
-# ─────────────────────────────────────────────────────────────────────────────
 .PHONY: help
 help: ## List the available targets
-	@echo "Umbra — make targets"
+	@echo "Umbra — make targets (Canton LocalNet + JSON Ledger API v2)"
 	@echo ""
-	@echo "  make install         Install web + solver deps (web uses --legacy-peer-deps)"
-	@echo "  make ledger          Boot Canton sandbox + JSON API :7575 (long-running; exports parties.json)"
-	@echo "  make tokens          Mint per-party dev tokens (needs parties.json; run AFTER ledger is up)"
-	@echo "  make solver          Run the AI solver HTTP service :4000 (needs scripts/.operator-token)"
-	@echo "  make web             Run the Vite dev server :5173 (proxies /v1 -> :7575)"
-	@echo "  make test            Run the Daml Script tests (self-contained; no daml start needed)"
-	@echo "  make verify-privacy  Live per-party /v1/query wire check (needs ledger up + tokens minted)"
-	@echo "  make clean           Remove per-boot ephemera + the Daml dist (keeps node_modules)"
-	@echo "  make demo            Print the canonical 4-terminal flow (the always-works path)"
+	@echo "  make up           One-command bring-up: LocalNet + DAR + deploy + seed + solver + web"
+	@echo "  make up-xnode     Same, with the three desks on SEPARATE participant nodes (§19)"
+	@echo "  make down         Stop solver + web (LocalNet kept; augur on :4000 untouched)"
+	@echo "  make down-localnet  Also stop the Canton LocalNet (ledger state kept)"
 	@echo ""
-	@echo "Ports: JSON API 7575 · solver 4000 · Vite 5173.   Canonical fixture clears at \$$100.00."
+	@echo "  make deploy       Upload the DAR to all participants + allocate parties/users/tokens"
+	@echo "  make seed         Seed the §4 Round R1 (single-node) + prove per-desk privacy"
+	@echo "  make xnode        Distribute desks across nodes + seed R1 cross-node (browser)"
+	@echo ""
+	@echo "  make verify       On-ledger §4 balances + conservation + confirmation privacy"
+	@echo "  make verify-live  Bulletproof the browser paths: live submit + close->settle"
+	@echo "  make moneyshot    Headless proof of the full §4 flow across three nodes"
+	@echo "  make test         Daml model tests (daml build && daml test, via Git Bash)"
+	@echo "  make solver-test  Solver unit tests (36)"
+	@echo "  make web-build    Frontend typecheck + production build"
+	@echo ""
+	@echo "  make install      Install web (--legacy-peer-deps) + solver deps"
+	@echo "  make clean        Remove gitignored per-deploy ephemera + the Daml dist"
+	@echo ""
+	@echo "Ports: Canton v2 3975/2975/4975 · solver 4100 · web 5173 · swagger 9090.  Clears at \$$100.00."
 
-# ── Setup ────────────────────────────────────────────────────────────────────
-.PHONY: install
+# ── Bring-up / teardown ──────────────────────────────────────────────────────
+.PHONY: up up-xnode down down-localnet
+up: ## One-command bring-up (single-node desks)
+	node scripts/localnet/up.mjs
+up-xnode: ## Bring-up with desks on three separate participant nodes (§19)
+	node scripts/localnet/up.mjs --xnode
+down: ## Stop solver + web (LocalNet kept)
+	node scripts/localnet/down.mjs
+down-localnet: ## Stop solver + web AND the Canton LocalNet (state kept)
+	node scripts/localnet/down.mjs --localnet
+
+# ── Deploy / seed ────────────────────────────────────────────────────────────
+.PHONY: deploy seed xnode
+deploy: ## Upload DAR to all participants + allocate parties/users/tokens
+	node scripts/localnet/deploy.mjs
+seed: ## Seed the canonical §4 Round R1 (single-node) + privacy proof
+	node scripts/localnet/seed.mjs
+xnode: ## Distribute desks across nodes + seed R1 cross-node + write the browser config
+	node scripts/localnet/xnode-up.mjs
+
+# ── Verify / test ────────────────────────────────────────────────────────────
+.PHONY: verify verify-live moneyshot test solver-test web-build
+verify: ## On-ledger §4 balances + conservation + confirmation privacy
+	node scripts/localnet/verify-settlement.mjs
+verify-live: ## Bulletproof the browser paths (live submit + close->settle)
+	node scripts/localnet/verify-live-flow.mjs
+moneyshot: ## Headless proof of the full §4 flow across three nodes
+	node scripts/localnet/xnode-moneyshot.mjs
+test: ## Daml model tests (run via Git Bash — daml is on the Bash PATH)
+	cd daml && daml build && daml test
+solver-test: ## Solver unit tests
+	cd solver && npm test
+web-build: ## Frontend typecheck + production build
+	cd web && npm run build
+
+# ── Setup / housekeeping ─────────────────────────────────────────────────────
+.PHONY: install clean
 install: ## Install web (--legacy-peer-deps) + solver dependencies
 	cd web && npm install --legacy-peer-deps
 	cd solver && npm install
-
-# ── The four run processes (each in its own terminal) ────────────────────────
-.PHONY: ledger
-ledger: ## Boot the Canton sandbox + HTTP JSON API on :7575 (long-running)
-	cd daml && daml start
-
-.PHONY: tokens
-tokens: ## Mint desk tokens -> web/src/tokens.json + operator token -> scripts/.operator-token
-	node scripts/mint-tokens.mjs
-
-.PHONY: solver
-solver: ## Run the AI solver HTTP service on :4000
-	cd solver && npm run dev
-
-.PHONY: web
-web: ## Run the Vite frontend dev server on :5173
-	cd web && npm run dev
-
-# ── Tests / verification ─────────────────────────────────────────────────────
-.PHONY: test
-test: ## Run the Daml Script tests (self-contained — no daml start needed)
-	cd daml && daml test
-
-.PHONY: verify-privacy
-verify-privacy: ## Live wire-level per-party privacy check (ledger up + tokens minted)
-	node scripts/verify-privacy.mjs
-
-# ── Housekeeping ─────────────────────────────────────────────────────────────
-# Conservative clean: only gitignored per-boot ephemera + the Daml dist.
-# NEVER removes node_modules. All four removed paths are gitignored and re-created
-# on the next boot/mint; nothing here is committed.
-.PHONY: clean
-clean: ## Remove per-boot ephemera (parties.json, tokens, operator token) + the Daml dist
+clean: ## Remove gitignored per-deploy ephemera + the Daml dist (keeps node_modules)
 	rm -rf daml/.daml/dist
-	rm -f daml/parties.json
-	rm -f web/src/tokens.json
-	rm -f scripts/.operator-token
-
-# ── Composite one-liner ──────────────────────────────────────────────────────
-# Per 07-RESEARCH (open-question 1, chosen): document-the-flow + best-effort.
-# `daml start` blocks and tokens depend on parties.json, so demo CANNOT naively
-# &&-chain four long-running processes. The manual 4-terminal flow IS the contract;
-# this target prints it (the always-works path). Robust cross-platform background-
-# PID juggling on a JVM boot is intentionally NOT the documented contract.
-.PHONY: demo
-demo: ## Print the canonical 4-terminal demo flow (the always-works path)
-	@echo "════════════════════════════════════════════════════════════════════"
-	@echo " Umbra demo — the canonical 4-terminal flow (recommended, always works)"
-	@echo "════════════════════════════════════════════════════════════════════"
-	@echo ""
-	@echo "  Terminal 1   cd daml && daml start          # wait for :7575 + daml/parties.json"
-	@echo "  Terminal 2   node scripts/mint-tokens.mjs   # after the ledger is up"
-	@echo "  Terminal 3   cd solver && npm run dev        # Express :4000"
-	@echo "  Terminal 4   cd web && npm run dev           # Vite  :5173"
-	@echo ""
-	@echo "  Then open http://localhost:5173  → the 3-up Privacy view → clear at \$$100.00 → atomic settle."
-	@echo ""
-	@echo "  (Windows / no make: run each line, or use 'npm run ledger|tokens|solver|web'.)"
-	@echo "════════════════════════════════════════════════════════════════════"
+	rm -f daml/parties.json web/src/tokens.json scripts/.operator-token scripts/localnet/.deploy.json

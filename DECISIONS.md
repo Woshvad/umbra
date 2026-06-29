@@ -143,3 +143,79 @@ credit is `Merge`d back to one-per-key, adding avoidable complexity. Option B ke
 the frozen template intact and matches spec §9's "solver output, verified
 on-ledger" framing. (Per 02-CONTEXT phase_critical_constraint 2; 02-RESEARCH
 Open Question 1 / Assumptions A1–A2.)
+
+---
+
+## D8 — Migrated to Daml 3.4.11 + Canton LocalNet + JSON Ledger API v2 (supersedes D2)
+
+**Decision:** after the 2.10.4 vertical slice worked, **migrate the live stack to
+real multi-node Canton** — the §19 stretch D2 deferred. Daml **3.4.11**, the
+cn-quickstart **Canton LocalNet** (Canton 3.4.8: 3 participants + global
+synchronizer + Splice), and the **JSON Ledger API v2**.
+
+- **Daml port:** the templates are LF-standard and compiled **unchanged** on the
+  3.x line; the only source delta was the Script party allocation
+  (`allocatePartyWithHint <name> (PartyIdHint h)` → `allocatePartyByHint
+  (PartyIdHint h)` — display names were removed in Daml 3.x). `daml test` is green
+  on 3.4.11; the §4 fixture still clears at $100.00. The 2.x build is preserved at
+  git tag `sandbox-mvp` (restore `daml/daml.yaml` from there).
+- **v2 wire encoding** (proven live): Int/Decimal accept JSON numbers on input and
+  return as **strings** on output (Numeric zero-padded to scale, e.g.
+  `"101.0000000000"` → coerce with `Number()`; the web shim trims trailing zeros
+  for display); enums are strings; Time is ISO-8601; a Daml tuple is `{_1,_2}`;
+  templateIds use the package-name form `#umbra:Module:Entity`.
+
+This **supersedes D2** (which chose the 2.x HTTP JSON API v1 and explicitly deferred
+3.x). D1/D3/D4 (the 2.x SDK pin, the `@daml/react` peer-dep, `daml start`
+parties.json) apply only to the `sandbox-mvp` tag now.
+
+---
+
+## D9 — LocalNet auth: unsafe-jwt-hmac-256, dev-only (extends D5)
+
+The cn-quickstart participants run the ledger API in **`unsafe-jwt-hmac-256`** mode:
+an **audience-based** dev JWT `{ sub, aud }`, HS256-signed with the shared secret
+**`unsafe`**, audience **`https://canton.network.global`**. `sub` is a Canton user
+id; party rights (`actAs`/`readAs`) come from **user management**, not token claims —
+so every party needs a user with granted rights (`POST /v2/users/{id}/rights`). The
+per-participant admin user is `ledger-api-user`. Minted by
+`scripts/localnet/mint-jwt.mjs`. As with D5, this is **dev-only** — the unsafe HMAC
+secret must never be used outside the LocalNet.
+
+---
+
+## D10 — Solver + frontend rewired to the v2 API (the @daml/react shim)
+
+**Solver:** `solver/src/ledger.ts` was rewritten from `@daml/ledger` (HTTP JSON API
+v1) to the v2 API (`POST /v2/commands/submit-and-wait` + `POST
+/v2/state/active-contracts`), **keeping the same exported surface** so `api.ts` /
+`index.ts` are unchanged. Verify-don't-trust is intact (the on-ledger `Round.Clear`
+re-verifies §8). 36/36 solver tests green.
+
+**Frontend:** `@daml/react` has no v2 equivalent, so `web/src/ledger/v2react.tsx` is
+a **drop-in shim** — `createLedgerContext` with the identical hook surface
+(`DamlLedger` / `useStreamQueries` / `useLedger`), backed by v2 polling. All nine
+desk components (and the pixel-accurate design) are **byte-unchanged**; only
+`ledgerContexts.ts` swaps its import. The `@daml.js` bindings are kept as the typed
+Daml schema (template/choice companions + the `Side` enum). The Vite proxy sends
+`/v2` to the participant; each desk forwards its own JWT.
+
+---
+
+## D11 — §19 true cross-node privacy: desks on separate participants
+
+Desks can be hosted on **different participant nodes** (`bankA` → app-user :2975,
+`bankB` → sv :4975, `bankC` → app-provider :3975). Each desk submits its sealed
+order **from its own node** (a two-participant Canton transaction co-signed by the
+operator); the order then physically lives **only on its stakeholders' nodes** — a
+rival desk's node never stores it. The operator co-signs every contract, so
+**`Round.Clear` settles from the operator's node unchanged** (the solver needs no
+cross-node logic). The browser routes per-desk via Vite proxies (`/cn/app-user` →
+:2975, `/cn/sv` → :4975) selected by a `base` field in `tokens.json`
+(`httpBaseUrlFor`); backward-compatible (no `base` → single-node).
+
+**One prerequisite this surfaced:** the DAR must be **vetted on every participant
+hosting a stakeholder**, or Canton refuses to route the transaction
+(`PACKAGE_SELECTION_FAILED`). `deploy.mjs` uploads to all three. Driven by
+`scripts/localnet/xnode-up.mjs` (browser) and `xnode-moneyshot.mjs` (headless full
+flow); both verified settling to the exact §4 balances across nodes.

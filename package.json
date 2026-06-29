@@ -4,11 +4,19 @@
   "type": "module",
   "scripts": {
     "install:all": "cd web && npm install --legacy-peer-deps && cd ../solver && npm install",
-    "ledger": "cd daml && daml start",
-    "tokens": "node scripts/mint-tokens.mjs",
+    "up": "node scripts/localnet/up.mjs",
+    "up:xnode": "node scripts/localnet/up.mjs --xnode",
+    "down": "node scripts/localnet/down.mjs",
+    "deploy": "node scripts/localnet/deploy.mjs",
+    "seed": "node scripts/localnet/seed.mjs",
+    "xnode": "node scripts/localnet/xnode-up.mjs",
+    "verify": "node scripts/localnet/verify-settlement.mjs",
+    "verify:live": "node scripts/localnet/verify-live-flow.mjs",
+    "moneyshot": "node scripts/localnet/xnode-moneyshot.mjs",
     "solver": "cd solver && npm run dev",
     "web": "cd web && npm run dev",
     "test": "cd daml && daml test",
-    "verify-privacy": "node scripts/verify-privacy.mjs"
+    "solver:test": "cd solver && npm test",
+    "web:build": "cd web && npm run build"
   }
 }

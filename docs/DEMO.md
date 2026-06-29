@@ -6,10 +6,10 @@
 > one price → the batch settles in a single atomic transaction, each desk seeing only its
 > own fill.** The canonical §4 fixture clears at exactly **$100.00**.
 
-**Setup (one line):** `make demo` (macOS/Linux) or the 4-terminal flow in the
-[README](../README.md) — `daml start` (:7575) · `node scripts/mint-tokens.mjs` ·
-`cd solver && npm run dev` (:4000) · `cd web && npm run dev` (:5173). Open
-`http://localhost:5173`.
+**Setup (one command):** `node scripts/localnet/up.mjs` (add `--xnode` to host the
+three desks on three separate Canton nodes) boots the Canton LocalNet, vets the DAR,
+seeds the §4 round, and launches the solver (:4100) + web (:5173). Open
+`http://localhost:5173`. (See the [README](../README.md).)
 
 ---
 
@@ -27,9 +27,10 @@ batch. Use the desk switcher (top bar) to show it's **BLUEROCK's** own browser s
 - The venue itself sees only a **count: 03 sealed orders** — never contents.
 
 > "This isn't redaction in the UI — it's enforced at the wire. Each desk authenticates with
-> **its own JSON-API token**, so it's structurally impossible to fetch a rival's order.
-> (`node scripts/verify-privacy.mjs` proves it: each desk's query returns only its own order,
-> zero rivals.)"
+> **its own JSON Ledger API v2 token**, so it's structurally impossible to fetch a rival's
+> order. (`node scripts/localnet/seed.mjs` proves it: each desk's token returns only its own
+> order, zero rivals — and with `--xnode`, that order physically lives on a different Canton
+> participant node entirely.)"
 
 *Screenshot: [`01-privacy-3up.svg`](./01-privacy-3up.svg).*
 

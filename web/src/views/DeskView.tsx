@@ -1,5 +1,5 @@
 // Desk View (view 02) — the desk-side half of the money shot (UI-SPEC "02 — DESK
-// VIEW", lines 148-168). Per-party plane (:7575) via the ACTIVE desk's own ctx: the
+// VIEW", lines 148-168). Per-party plane (JSON Ledger API v2) via the ACTIVE desk's own ctx: the
 // whole body mounts inside `ctxFor[activeDesk].DamlLedger` carrying that desk's own
 // token (DeskColumn lines 212-227), so every hook streams ONLY this desk's contracts.
 // A rival desk's Order / Asset / TradeConfirmation genuinely never reach this view —

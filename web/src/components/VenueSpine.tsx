@@ -5,7 +5,7 @@
 // (D6 / threat T-03-06). Two flex rules (opacity .25) flank a center stack with the
 // 108px tabular-nums numeral, zero-padded to 2 digits.
 import { ctxA } from '../ledgerContexts'
-import { tokens, httpBaseUrl, wsBaseUrl } from '../desks'
+import { tokens, httpBaseUrlFor, wsBaseUrl } from '../desks'
 import { RoundStats } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
 
 function SpineBody({ fallback }: { fallback: number }) {
@@ -50,7 +50,7 @@ type Props = { sealedCount: number }
 export default function VenueSpine({ sealedCount }: Props) {
   const a = tokens.bankA
   return (
-    <ctxA.DamlLedger token={a.token} party={a.party} httpBaseUrl={httpBaseUrl} wsBaseUrl={wsBaseUrl}>
+    <ctxA.DamlLedger token={a.token} party={a.party} httpBaseUrl={httpBaseUrlFor('bankA')} wsBaseUrl={wsBaseUrl}>
       <SpineBody fallback={sealedCount} />
     </ctxA.DamlLedger>
   )

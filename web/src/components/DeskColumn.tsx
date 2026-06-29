@@ -16,7 +16,7 @@
 // minimal affordance only on the active column — not a full Desk ticket (Phase 6).
 import { useState } from 'react'
 import type { Ctx, DeskKey } from '../ledgerContexts'
-import { tokens, httpBaseUrl, wsBaseUrl, DESKS } from '../desks'
+import { tokens, httpBaseUrlFor, wsBaseUrl, DESKS } from '../desks'
 import { Order } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
 import { Asset } from '@daml.js/umbra-0.1.0/lib/Umbra/Asset/module'
 import { Venue } from '@daml.js/umbra-0.1.0/lib/Umbra/Roles/module'
@@ -212,7 +212,7 @@ function RedactedBody({ deskKey }: { deskKey: DeskKey }) {
 export default function DeskColumn({ deskKey, ctx, isActive, isLast }: Props) {
   const { party, token } = tokens[deskKey]
   return (
-    <ctx.DamlLedger token={token} party={party} httpBaseUrl={httpBaseUrl} wsBaseUrl={wsBaseUrl}>
+    <ctx.DamlLedger token={token} party={party} httpBaseUrl={httpBaseUrlFor(deskKey)} wsBaseUrl={wsBaseUrl}>
       <div
         className="animate-umbra-fade"
         style={{

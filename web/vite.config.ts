@@ -11,6 +11,21 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      // §19 cross-node: each desk routes to its OWN participant via a path prefix
+      // (from tokens.json `base`); the v2 shim appends /v2/... . Default /v2 →
+      // app-provider. Each desk's JWT (Authorization header) is forwarded as-is.
+      '/cn/app-user': {
+        target: 'http://localhost:2975',
+        changeOrigin: true,
+        ws: true,
+        rewrite: (p) => p.replace(/^\/cn\/app-user/, ''),
+      },
+      '/cn/sv': {
+        target: 'http://localhost:4975',
+        changeOrigin: true,
+        ws: true,
+        rewrite: (p) => p.replace(/^\/cn\/sv/, ''),
+      },
       '/v2': { target: 'http://localhost:3975', changeOrigin: true, ws: true },
     },
   },

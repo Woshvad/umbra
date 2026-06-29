@@ -6,7 +6,7 @@ import tokensJson from './tokens.json'
 import { JSON_API_URL } from './config'
 import type { DeskKey } from './ledgerContexts'
 
-export type DeskToken = { party: string; token: string }
+export type DeskToken = { party: string; token: string; base?: string }
 export const tokens = tokensJson as Record<DeskKey, DeskToken>
 
 // Column code + role + book side, transcribed from the binding comp (BLUEROCK Buyer /
@@ -28,16 +28,24 @@ export const codeForParty = (party: string): string => {
   return DESKS.find((d) => d.key === key)?.code ?? party
 }
 
-// Same-origin absolute base for the v2 shim (web/src/ledger/v2react.tsx), which
-// appends /v2/... paths. The browser talks to Vite (:5173), which proxies /v2 ->
-// the LocalNet app-provider participant (:3975), forwarding each desk's JWT.
-// (config.JSON_API_URL='/' is kept as the documented same-origin marker; wsBaseUrl
-// is retained for the DamlLedger prop but unused — the v2 shim polls, not streams.)
+// Same-origin base for the v2 shim (web/src/ledger/v2react.tsx), which appends
+// /v2/... paths. The browser talks to Vite (:5173), which proxies to a Canton
+// participant. For §19 cross-node, EACH desk routes to its OWN node via a per-desk
+// proxy path from tokens.json `base`: '/cn/app-user' → :2975, '/cn/sv' → :4975,
+// '' → app-provider :3975 (the single-node default). Each desk's JWT is forwarded.
+// (config.JSON_API_URL='/' stays the same-origin marker; wsBaseUrl is retained for
+// the DamlLedger prop but unused — the v2 shim polls, not streams.)
 void JSON_API_URL
-export const httpBaseUrl =
+const ORIGIN =
   typeof window !== 'undefined'
-    ? `${window.location.protocol}//${window.location.host}/`
-    : 'http://localhost:5173/'
+    ? `${window.location.protocol}//${window.location.host}`
+    : 'http://localhost:5173'
+
+// Per-desk participant base (the v2 shim appends /v2/...). Defaults to app-provider.
+export const httpBaseUrlFor = (key: DeskKey): string => `${ORIGIN}${tokens[key]?.base ?? ''}/`
+
+// Back-compat single base (app-provider) for non-desk-specific callers.
+export const httpBaseUrl = `${ORIGIN}/`
 export const wsBaseUrl =
   typeof window !== 'undefined'
     ? `ws://${window.location.host}/`

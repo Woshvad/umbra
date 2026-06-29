@@ -6,7 +6,7 @@
 // privacy is structural, not a render-time filter (threat T-06-01 / T-06-04). This view
 // holds only the desk's own credential — no privileged venue token / context anywhere.
 import { ctxFor, type Ctx, type DeskKey } from '../ledgerContexts'
-import { tokens, httpBaseUrl, wsBaseUrl, DESKS } from '../desks'
+import { tokens, httpBaseUrlFor, wsBaseUrl, DESKS } from '../desks'
 import { Order, TradeConfirmation } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
 import { Asset } from '@daml.js/umbra-0.1.0/lib/Umbra/Asset/module'
 import OrderTicket from '../components/OrderTicket'
@@ -100,7 +100,7 @@ export default function DeskView({ activeDesk }: Props) {
       </h1>
 
       {/* Per-party provider — the body reads/exercises on THIS desk's own connection */}
-      <ctx.DamlLedger token={token} party={party} httpBaseUrl={httpBaseUrl} wsBaseUrl={wsBaseUrl}>
+      <ctx.DamlLedger token={token} party={party} httpBaseUrl={httpBaseUrlFor(activeDesk)} wsBaseUrl={wsBaseUrl}>
         <DeskBody ctx={ctx} deskKey={activeDesk} />
       </ctx.DamlLedger>
     </main>

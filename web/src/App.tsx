@@ -5,7 +5,7 @@
 // so no operator token is needed in the browser (D6).
 import { useEffect, useState } from 'react'
 import { ctxA, type DeskKey } from './ledgerContexts'
-import { tokens, httpBaseUrl, wsBaseUrl } from './desks'
+import { tokens, httpBaseUrlFor, wsBaseUrl } from './desks'
 import { Round, RoundStats } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
 import Header from './components/Header'
 import Nav, { type Screen } from './components/Nav'
@@ -85,7 +85,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-paper text-ink">
       {/* Hidden probe: one desk context streaming Round/RoundStats for the status bar. */}
-      <ctxA.DamlLedger token={a.token} party={a.party} httpBaseUrl={httpBaseUrl} wsBaseUrl={wsBaseUrl}>
+      <ctxA.DamlLedger token={a.token} party={a.party} httpBaseUrl={httpBaseUrlFor('bankA')} wsBaseUrl={wsBaseUrl}>
         <RoundStateProbe onState={setRoundState} />
       </ctxA.DamlLedger>
 

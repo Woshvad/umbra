@@ -149,6 +149,10 @@ node scripts/localnet/verify-live-flow.mjs    # live submit + close→settle
 node scripts/localnet/xnode-moneyshot.mjs     # full §4 flow across three nodes
 ```
 
+> The generated Daml→TS bindings under `web/daml.js/` are committed to the repo, so
+> `cd web && npm install && npm run build` works on a fresh clone **without** the Daml SDK.
+> They come from `daml codegen js`; regenerate them only when the Daml templates change.
+
 ## Configuration & secrets boundary
 
 ```bash

@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Umbra — Pitch Deck</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --paper:#F4F1EA; --ink:#0A0A0A; --lime:#D6FB3C; --red:#E2231A;
+    --display:'Space Grotesk',system-ui,sans-serif;
+    --mono:'IBM Plex Mono',ui-monospace,monospace;
+    --body:'Inter',system-ui,sans-serif;
+  }
+  @page{ size:1280px 720px; margin:0; }
+  *{ box-sizing:border-box; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  html,body{ margin:0; padding:0; background:var(--paper); }
+  .slide{
+    position:relative; width:1280px; height:720px; padding:74px 92px;
+    background:var(--paper); color:var(--ink); overflow:hidden;
+    display:flex; flex-direction:column; page-break-after:always;
+  }
+  .slide:last-child{ page-break-after:auto; }
+
+  /* Section label + rule */
+  .label{ display:flex; align-items:baseline; gap:18px; font-family:var(--mono); }
+  .label .n{ font-weight:600; font-size:14px; color:var(--ink); letter-spacing:.04em; }
+  .label .t{ font-size:12px; letter-spacing:.34em; text-transform:uppercase; opacity:.55; }
+  .rule{ height:1px; background:var(--ink); margin-top:16px; }
+
+  .h{ font-family:var(--display); font-weight:700; letter-spacing:-.025em; line-height:1.0; margin:46px 0 0; }
+  .h.big{ font-size:66px; max-width:18ch; }
+  .h.mid{ font-size:52px; max-width:20ch; }
+  .lime{ color:var(--ink); box-shadow:inset 0 -.34em 0 var(--lime); }
+  .dot{ color:var(--lime); }
+  .body{ font-family:var(--body); font-size:21px; line-height:1.58; max-width:60ch; margin-top:30px; opacity:.84; }
+  .page{ position:absolute; right:92px; bottom:46px; font-family:var(--mono); font-size:11px; letter-spacing:.18em; opacity:.4; }
+
+  /* Cover + brand mark */
+  .cover{ align-items:center; justify-content:center; text-align:center; }
+  .mark{ display:block; }
+  .mark.big{ width:190px; height:190px; margin-bottom:32px; }
+  .mark.small{ width:62px; height:62px; margin-bottom:30px; }
+  .wordmark{ font-family:var(--display); font-weight:500; font-size:62px; letter-spacing:.2em; line-height:1; padding-left:.2em; }
+  .tag{ font-family:var(--display); font-weight:600; font-size:31px; letter-spacing:-.01em; margin-top:28px; }
+  .sub{ font-family:var(--body); font-size:18.5px; opacity:.68; margin-top:13px; }
+  .cover .meta{ position:absolute; left:0; right:0; bottom:46px; text-align:center; font-family:var(--mono); font-size:12px; letter-spacing:.26em; text-transform:uppercase; opacity:.55; }
+
+  /* Steps */
+  .steps{ margin-top:40px; display:flex; flex-direction:column; gap:26px; }
+  .step{ display:grid; grid-template-columns:84px 1fr; align-items:start; gap:8px; }
+  .step .sn{ font-family:var(--mono); font-weight:600; font-size:30px; color:var(--lime); -webkit-text-stroke:.6px var(--ink); }
+  .step .st{ font-family:var(--display); font-weight:600; font-size:27px; letter-spacing:-.01em; }
+  .step .sd{ font-family:var(--body); font-size:18.5px; line-height:1.5; opacity:.82; margin-top:5px; max-width:64ch; }
+
+  /* Points (two columns of title + desc) */
+  .points{ margin-top:40px; display:flex; flex-direction:column; gap:24px; max-width:none; }
+  .pt{ display:grid; grid-template-columns:16px 1fr; gap:18px; align-items:start; }
+  .pt .mark{ width:11px; height:11px; background:var(--lime); margin-top:9px; }
+  .pt .ptt{ font-family:var(--display); font-weight:600; font-size:24px; letter-spacing:-.01em; }
+  .pt .ptd{ font-family:var(--body); font-size:18px; line-height:1.5; opacity:.82; margin-top:5px; max-width:78ch; }
+
+  /* Edge slide layout with redaction visual */
+  .split{ display:grid; grid-template-columns:1fr 300px; gap:54px; margin-top:36px; align-items:start; }
+  .redact{ font-family:var(--mono); font-size:13px; }
+  .redact .cap{ font-size:11px; letter-spacing:.24em; text-transform:uppercase; opacity:.5; margin-bottom:16px; }
+  .row{ display:flex; justify-content:space-between; align-items:center; padding:13px 0; border-bottom:1px solid rgba(10,10,10,.16); }
+  .row .who{ font-weight:600; letter-spacing:.06em; }
+  .bar{ height:13px; background:var(--ink); }
+  .you .val{ color:var(--ink); }
+  .you .who::after{ content:' YOU'; color:var(--lime); -webkit-text-stroke:.5px var(--ink); font-size:10px; letter-spacing:.1em; }
+
+  /* Close */
+  .close{ align-items:center; justify-content:center; text-align:center; }
+  .close .line{ font-family:var(--display); font-weight:700; font-size:58px; letter-spacing:-.02em; line-height:1.08; max-width:20ch; }
+  .close .mk{ font-family:var(--mono); font-size:16px; letter-spacing:.5em; margin-top:36px; opacity:.7; }
+
+  /* Proof slide (07) */
+  .proof{ margin-top:38px; display:grid; grid-template-columns:300px 1fr; gap:50px; align-items:center; }
+  .clear{ border:2px solid var(--ink); padding:24px 28px 26px; }
+  .clear .ck{ font-family:var(--mono); font-size:11px; letter-spacing:.22em; text-transform:uppercase; opacity:.55; }
+  .clear .cp{ font-family:var(--display); font-weight:700; font-size:70px; line-height:1; letter-spacing:-.03em; margin-top:10px; width:max-content; box-shadow:inset 0 -.15em 0 var(--lime); }
+  .clear .cm{ font-family:var(--mono); font-size:13px; letter-spacing:.03em; margin-top:18px; opacity:.7; }
+  .btable{ font-family:var(--mono); font-size:17px; }
+  .btable .bhead, .btable .brow{ display:grid; grid-template-columns:1.1fr 1fr 1fr; align-items:center; }
+  .btable .bhead{ font-size:11px; letter-spacing:.22em; text-transform:uppercase; opacity:.5; padding-bottom:11px; border-bottom:1px solid var(--ink); }
+  .btable .brow{ padding:13px 0; border-bottom:1px solid rgba(10,10,10,.16); }
+  .btable .brow .who{ font-weight:600; letter-spacing:.05em; }
+  .btable .brow i{ font-style:normal; color:var(--lime); -webkit-text-stroke:.5px var(--ink); padding:0 5px; }
+  .foot{ font-family:var(--body); font-size:18px; line-height:1.5; opacity:.82; margin-top:36px; max-width:72ch; }
+
+  /* Credit strip (08) */
+  .credit{ position:absolute; left:92px; bottom:50px; font-family:var(--mono); font-size:12.5px; letter-spacing:.1em; opacity:.62; }
+</style>
+</head>
+<body>
+
+<!-- 01 COVER -->
+<section class="slide cover">
+  <svg class="mark big" viewBox="0 0 220 220" xmlns="http://www.w3.org/2000/svg" aria-label="Umbra mark">
+    <circle cx="116" cy="110" r="84" fill="none" stroke="#0A0A0A" stroke-width="2.5"/>
+    <circle cx="104" cy="110" r="84" fill="#0A0A0A"/>
+    <line x1="16" y1="110" x2="206" y2="110" stroke="#D6FB3C" stroke-width="5"/>
+  </svg>
+  <div class="wordmark">UMBRA</div>
+  <div class="tag">Trade size without showing your hand.</div>
+  <div class="sub">A private batch auction for tokenized bonds, settled on Canton.</div>
+  <div class="meta">Sealed bids · One fair price · Atomic DvP</div>
+</section>
+
+<!-- 02 PROBLEM -->
+<section class="slide">
+  <div class="label"><span class="n">02</span><span class="t">The Problem</span></div>
+  <div class="rule"></div>
+  <h1 class="h big">The order book is the <span class="lime">leak</span>.</h1>
+  <p class="body">A desk that wants to move a large position has nowhere to hide. The public book shows the intent, the market moves against it, and the cost lands in the fill. For decades, size and privacy have pulled in opposite directions. You trade small and slow, or you trade big and pay to be seen.</p>
+  <div class="page">02 / 09</div>
+</section>
+
+<!-- 03 PRODUCT -->
+<section class="slide">
+  <div class="label"><span class="n">03</span><span class="t">The Product</span></div>
+  <div class="rule"></div>
+  <h1 class="h big">One window. One price. No <span class="lime">leaks</span>.</h1>
+  <p class="body">Desks submit sealed orders for a tokenized bond during a short window. Nobody sees anyone else's order. When the window closes, an AI solver finds the single price that matches the most volume, and the whole batch settles in one transaction. Each desk learns only its own fill.</p>
+  <div class="page">03 / 09</div>
+</section>
+
+<!-- 04 FLOW -->
+<section class="slide">
+  <div class="label"><span class="n">04</span><span class="t">The Flow</span></div>
+  <div class="rule"></div>
+  <h1 class="h mid">Bid, clear, settle<span class="dot">.</span></h1>
+  <div class="steps">
+    <div class="step"><div class="sn">01</div><div><div class="st">Bid blind</div><div class="sd">Three desks submit into one batch. Each sees its own ticket and none of its rivals.</div></div></div>
+    <div class="step"><div class="sn">02</div><div><div class="st">Clear once</div><div class="sd">The solver computes one uniform price for everyone. A separate calculation and the ledger itself confirm it before anything moves.</div></div></div>
+    <div class="step"><div class="sn">03</div><div><div class="st">Settle as one</div><div class="sd">Bond and cash change hands in a single Canton transaction. All of it, or none of it.</div></div></div>
+  </div>
+  <div class="page">04 / 09</div>
+</section>
+
+<!-- 05 EDGE -->
+<section class="slide">
+  <div class="label"><span class="n">05</span><span class="t">The Edge</span></div>
+  <div class="rule"></div>
+  <div class="split">
+    <div>
+      <h1 class="h mid" style="font-size:38px;max-width:22ch;margin-top:34px">Three things a public market cannot give you.</h1>
+      <div class="points">
+        <div class="pt"><div class="mark"></div><div><div class="ptt">Privacy that holds at the wire</div><div class="ptd">Each desk speaks to the ledger as itself, so the ledger will not hand it a rival's order. Put each desk on its own node and the orders are never even stored in the same place.</div></div></div>
+        <div class="pt"><div class="mark"></div><div><div class="ptt">An AI you do not have to trust</div><div class="ptd">The model proposes the price and writes the reasoning. A plain algorithm and the contract on the ledger both recompute it. The trade settles only when all three agree.</div></div></div>
+        <div class="pt"><div class="mark"></div><div><div class="ptt">Settlement with no gap</div><div class="ptd">Two legs, one transaction. There is never a moment where one side has paid and the other has not delivered.</div></div></div>
+      </div>
+    </div>
+    <div class="redact">
+      <div class="cap">What a rival sees</div>
+      <div class="row you"><span class="who">BLUEROCK</span><span class="val">BUY 10 at 101</span></div>
+      <div class="row"><span class="who">MERIDIAN</span><span class="bar" style="width:118px"></span></div>
+      <div class="row"><span class="who">HALWARD</span><span class="bar" style="width:96px"></span></div>
+      <div style="margin-top:16px;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--red)">Redacted at the ledger</div>
+    </div>
+  </div>
+  <div class="page">05 / 09</div>
+</section>
+
+<!-- 06 CANTON -->
+<section class="slide">
+  <div class="label"><span class="n">06</span><span class="t">The Foundation</span></div>
+  <div class="rule"></div>
+  <h1 class="h mid">Canton is the <span class="lime">unlock</span>.</h1>
+  <div class="points" style="margin-top:34px">
+    <div class="pt"><div class="mark"></div><div><div class="ptt">Privacy is the default, not a feature</div><div class="ptd">Canton shows each party only the parts of a deal they belong to. The guarantee comes from the network, not from a promise in our code.</div></div></div>
+    <div class="pt"><div class="mark"></div><div><div class="ptt">One transaction moves everything</div><div class="ptd">The bond and the cash settle together, with finality. No clearing house in the middle, no waiting for the next day.</div></div></div>
+    <div class="pt"><div class="mark"></div><div><div class="ptt">The assets are real and the books are already true</div><div class="ptd">When the batch clears on the ledger, settlement has happened. There is nothing left to reconcile.</div></div></div>
+  </div>
+  <div class="page">06 / 09</div>
+</section>
+
+<!-- 07 DEMO -->
+<section class="slide">
+  <div class="label"><span class="n">07</span><span class="t">The Proof</span></div>
+  <div class="rule"></div>
+  <h1 class="h mid">One batch, <span class="lime">cleared</span>.</h1>
+  <div class="proof">
+    <div class="clear">
+      <div class="ck">Uniform clearing price</div>
+      <div class="cp">$100.00</div>
+      <div class="cm">Matched 10 at 100.00</div>
+    </div>
+    <div class="btable">
+      <div class="bhead"><span>Desk</span><span>BONDX</span><span>USDCx</span></div>
+      <div class="brow"><span class="who">BLUEROCK</span><span>0 <i>&rarr;</i> 10</span><span>5000 <i>&rarr;</i> 4000</span></div>
+      <div class="brow"><span class="who">MERIDIAN</span><span>20 <i>&rarr;</i> 12</span><span>1000 <i>&rarr;</i> 1800</span></div>
+      <div class="brow"><span class="who">HALWARD</span><span>15 <i>&rarr;</i> 13</span><span>1000 <i>&rarr;</i> 1200</span></div>
+    </div>
+  </div>
+  <p class="foot">Every desk saw only its own fill. The batch settled in one Canton transaction, all of it at once.</p>
+  <div class="page">07 / 09</div>
+</section>
+
+<!-- 08 WHERE IT GOES -->
+<section class="slide">
+  <div class="label"><span class="n">08</span><span class="t">Where It Goes</span></div>
+  <div class="rule"></div>
+  <h1 class="h mid">One bond today. The whole <span class="lime">desk</span> next.</h1>
+  <div class="points" style="margin-top:34px">
+    <div class="pt"><div class="mark"></div><div><div class="ptt">Real desks, real nodes</div><div class="ptd">Each institution runs on its own Canton participant. This build already proves it, with orders that never share a database.</div></div></div>
+    <div class="pt"><div class="mark"></div><div><div class="ptt">Any tokenized asset</div><div class="ptd">The same sealed auction clears more than one bond. Point it at any instrument and the same privacy and atomic settlement come with it.</div></div></div>
+    <div class="pt"><div class="mark"></div><div><div class="ptt">Custody institutions accept</div><div class="ptd">Swap the demo asset for Daml Finance holdings and the venue speaks the language real desks already settle in.</div></div></div>
+  </div>
+  <div class="credit">HackCanton · Track 1 · github.com/Woshvad/umbra</div>
+  <div class="page">08 / 09</div>
+</section>
+
+<!-- 09 CLOSE -->
+<section class="slide close">
+  <svg class="mark small" viewBox="0 0 220 220" xmlns="http://www.w3.org/2000/svg" aria-label="Umbra mark">
+    <circle cx="116" cy="110" r="84" fill="none" stroke="#0A0A0A" stroke-width="2.5"/>
+    <circle cx="104" cy="110" r="84" fill="#0A0A0A"/>
+    <line x1="16" y1="110" x2="206" y2="110" stroke="#D6FB3C" stroke-width="5"/>
+  </svg>
+  <div class="line">Sealed bids. One fair price.<br/>Settled in full, on <span class="lime">Canton</span>.</div>
+  <div class="mk">UMBRA</div>
+</section>
+
+</body>
+</html>

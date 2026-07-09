@@ -363,7 +363,7 @@ Plans:
 
 **Wave 5** *(blocked on 10-07; 10-08/10-10 also on 10-05)*
 
-- [ ] 10-08-PLAN.md — CRYP-01/02 OrderTicket commit→committed→timelocked→revealed/forfeited lifecycle (desk plane, T1/T2/T3 honest labeling) [CRYP-01, CRYP-02]
+- [x] 10-08-PLAN.md — CRYP-01/02 OrderTicket commit→committed→timelocked→revealed/forfeited lifecycle (desk plane, T1/T2/T3 honest labeling) [CRYP-01, CRYP-02]
 - [ ] 10-09-PLAN.md — CRYP-03 ProofOfClearingPanel in SettlementView (T2 proof / T3 off-ledger verify / T1 anchor / tamper-reject / export) [CRYP-03]
 - [ ] 10-10-PLAN.md — VIZ-02 TimeMachineView (view 06) + Nav + App route + per-party redaction test [VIZ-02]
 
@@ -417,7 +417,7 @@ Build waves run in numeric order 8 → 9 → 10 → 11. Track A (Phase 12) runs 
 |-------|----------------|--------|-----------|
 | 8. Demo Hardening | 7/7 | Built · live UAT pending | 2026-07-09 |
 | 9. Auction Depth & Live Viz | 7/7 | Built · live UAT pending | 2026-07-09 |
-| 10. Cryptographic Privacy | 7/10 | In Progress|  |
+| 10. Cryptographic Privacy | 8/10 | In Progress|  |
 | 11. Settlement & Institutional Grade | 0/— | Not started | — |
 | 12. Real On-Chain (Canton DevNet) | 0/— | Not started (external gate) | — |
 | 13. Platform Baseline & Adjacent | 0/— | Not started (ongoing) | — |

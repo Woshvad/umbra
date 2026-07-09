@@ -210,24 +210,30 @@ export const coreClear = (orders: OrderView[]): ClearingResult => {
   return { clearingPrice: Math.round(best.p * 100) / 100, allocations }
 }
 
+// CONDITIONAL auto-firming (AUCT-01, 09-03) — byte-mirror of
+// Clearing.daml::qualifies. A conditional order firms iff its `firmIf` band passes
+// vs the PROVISIONAL p*: a BUY firms when `provP <= firmIf`, a SELL when
+// `provP >= firmIf`; an absent `firmIf` never firms.
+const qualifies = (side: Side, provP: number, firmIf?: number): boolean =>
+  firmIf === undefined ? false : side === 'Buy' ? provP <= firmIf : provP >= firmIf
+
 // §8 public entry point — a deterministic TWO-PASS wrapper over `coreClear`,
-// byte-identical to Clearing.daml::computeClearing (09-02 scaffold; Round.Clear
-// re-verifies via the Daml twin, so on-ledger and solver agree). PASS 1 computes
-// a provisional clear over the FIRM (non-conditional) orders; PASS 2 firms each
-// conditional whose firmIf qualifies vs the PROVISIONAL p*, then re-clears
-// firm ++ firmed.
+// byte-identical to Clearing.daml::computeClearing (Round.Clear re-verifies via
+// the Daml twin, so on-ledger and solver agree).
+//   PASS 1: provisional clear over the FIRM (non-conditional) orders → provP.
+//   PASS 2: firm each conditional whose firmIf qualifies vs provP, DROP the rest,
+//           and re-clear firm ++ firmed.
 //
-// The firming rule is not yet implemented (09-03): `qualifies` is a TOTAL
-// pass-through, so firmed == conditional, final == orders, and the wrapper
-// reduces to a single coreClear — no behavior change, §4 stays $100.00. Note
-// `orderType` is optional in TS, so an undefined orderType (existing Limit
-// literals) is never 'Conditional' → always firm (parity with Daml).
+// Exactly TWO passes — NOT a fixpoint. provP is the firming reference even if the
+// final p* moves past it (accepted, no re-iteration). §4 reduction: no conditional
+// ⇒ firmed == [] ⇒ final == orders ⇒ one coreClear ⇒ $100.00. Note `orderType` is
+// optional in TS, so an undefined orderType (existing Limit literals) is never
+// 'Conditional' → always firm (parity with Daml).
 export const computeClearing = (orders: OrderView[]): ClearingResult => {
   const firm = orders.filter((o) => o.orderType !== 'Conditional')
   const conditional = orders.filter((o) => o.orderType === 'Conditional')
   const { clearingPrice: provP } = coreClear(firm) // PASS 1: provisional over firm
-  const qualifies = (_v: OrderView, _p: number): boolean => true // 09-03 hook (inert)
-  const firmed = conditional.filter((v) => qualifies(v, provP)) // PASS 2 (inert now)
-  const final = [...firm, ...firmed] // == orders while no conditional firms
+  const firmed = conditional.filter((v) => qualifies(v.side, provP, v.firmIf)) // PASS 2
+  const final = [...firm, ...firmed]
   return coreClear(final)
 }

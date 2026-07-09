@@ -249,24 +249,35 @@ coreClear orders =
          (p, [ Allocation with desk = o.desk; side = o.side; filledQty = f | (o, f) <- fills ])
        [] -> (0.0, [])
 
+-- CONDITIONAL auto-firming (AUCT-01, 09-03) — the firming predicate. A conditional
+-- order firms iff its `firmIf` band passes versus the PROVISIONAL p*: a BUY firms
+-- when `provP <= firmIf` (it wanted to transact only at/under a ceiling), a SELL
+-- firms when `provP >= firmIf` (only at/over a floor). An absent `firmIf` never
+-- firms (`optional False …`). This is a pure function of `(side, provP, firmIf)` —
+-- byte-mirrored by auction.ts::qualifies.
+qualifies : Side -> Decimal -> Optional Decimal -> Bool
+qualifies side provP mFirmIf = case side of
+  Buy  -> optional False (provP <=) mFirmIf
+  Sell -> optional False (provP >=) mFirmIf
+
 -- §8 public entry point — a deterministic TWO-PASS wrapper over `coreClear`
--- (09-02 scaffold; `Round.Clear` re-verifies via THIS function, so on-ledger and
--- solver agree). PASS 1 computes a provisional clear over the FIRM (non-conditional)
--- orders; PASS 2 firms each conditional whose `firmIf` qualifies versus the
--- PROVISIONAL p*, drops the rest, and re-clears `firm ++ firmed`.
+-- (`Round.Clear` re-verifies via THIS function, so on-ledger and solver agree).
+--   PASS 1: provisional clear over the FIRM (non-conditional) orders → `provP`.
+--   PASS 2: firm each conditional whose `firmIf` `qualifies` versus `provP`, DROP
+--           the rest, and re-clear `firm ++ firmed`.
 --
--- In THIS plan the firming rule is not yet implemented: `qualifies` is a TOTAL
--- pass-through (True for every conditional against any provisional price), so
--- `firmed == conditional`, `final == firm ++ conditional == orders`, and the
--- wrapper reduces to a single `coreClear` — i.e. no observable behavior change
--- (the §4 canary stays $100.00 / A=10 / B=8 / C=2). The real `firmIf` test lands
--- in 09-03; the provisional p* it fires against is `provP` here.
+-- This is exactly TWO passes — NOT a fixpoint. `provP` (the provisional clear over
+-- firm orders) is the firming reference EVEN IF the final p* moves past it: a
+-- pathological book may firm a conditional against a `provP` the final clear then
+-- crosses; that is accepted, with no re-iteration.
+--
+-- §4 reduction: no conditional order ⇒ `conditional == []` ⇒ `firmed == []` ⇒
+-- `final == firm == orders` ⇒ one `coreClear` ⇒ still $100.00 / A=10 / B=8 / C=2.
 computeClearing : [OrderView] -> (Decimal, [Allocation])
 computeClearing orders =
   let firm        = [ v | v <- orders, v.orderType /= Conditional ]
       conditional = [ v | v <- orders, v.orderType == Conditional ]
-      (provP, _)  = coreClear firm          -- PASS 1: provisional over firm only
-      qualifies _v _p = True                -- 09-03 hook: total pass-through today
-      firmed      = [ v | v <- conditional, qualifies v provP ]  -- PASS 2 (inert now)
-      final       = firm ++ firmed          -- == orders while no conditional firms
+      (provP, _)  = coreClear firm                                     -- PASS 1
+      firmed      = [ v | v <- conditional, qualifies v.side provP v.firmIf ]  -- PASS 2
+      final       = firm ++ firmed
   in coreClear final

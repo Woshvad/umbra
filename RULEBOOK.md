@@ -1,11 +1,11 @@
 # Umbra Clearing Rulebook
 
-**Status:** skeleton (Phase 9 / 09-01, AUCT-02 doc anchor). The per-order-type
-sections marked _PLACEHOLDER_ are filled by plans **09-02** (Noncompetitive,
-AllOrNone / MAQ) and **09-03** (Conditional auto-firming). This document is the
-sovereign, human-readable statement of the deterministic uniform-price
-batch-clearing rules. It is authoritative for **intent**; the code is
-authoritative for **behavior**, and the two are pinned together by the
+**Status:** complete (Phase 9 / 09-03, AUCT-02). All four order-type sections —
+Limit, Noncompetitive (09-02), AllOrNone / MAQ (09-03), and Conditional
+auto-firming (09-03) — are filled and cite their exact symbols in both planes.
+This document is the sovereign, human-readable statement of the deterministic
+uniform-price batch-clearing rules. It is authoritative for **intent**; the code
+is authoritative for **behavior**, and the two are pinned together by the
 golden-eval suite (see [Enforcement](#enforcement)).
 
 Umbra is a sealed-bid, uniform-price batch auction: every matched order settles
@@ -103,18 +103,22 @@ it (the seam conditional auto-firming rides on, 09-03):
    `coreClear`. The provisional `p*` is the firming reference even if the final
    `p*` moves (single pass, NOT a fixpoint).
 
-As of 09-02 the firming test (`qualifies`) is a **total pass-through** — no
-order type firms or drops yet — so `firmed == conditional`, `final == the whole
-book`, and `computeClearing` reduces to exactly one `coreClear`. The canonical §4
-book (all `Limit`, no conditional) therefore clears **byte-identically** to the
-pre-refactor single-pass form ($100.00 / A=10 / B=8 / C=2). The real `firmIf`
-rule lands in 09-03; `Round.Clear` auto-covers it because it re-verifies through
-this same two-pass `computeClearing`.
+As of 09-03 the firming test (`qualifies`) is **live** (see
+[Conditional (auto-firming)](#conditional-auto-firming-shipped--09-03)): a
+conditional firms or drops versus `provP`. The canonical §4 book (all `Limit`, no
+conditional) still has `firmed == []`, `final == the whole book`, so
+`computeClearing` reduces to exactly one `coreClear` and clears
+**byte-identically** to the single-pass form ($100.00 / A=10 / B=8 / C=2).
+`Round.Clear` auto-covers every firming decision because it re-verifies through
+this same two-pass `computeClearing`. Note the `coreClear` kernel itself is also a
+**bounded `(price × subset)` enumeration** (see
+[AllOrNone / MAQ](#allornone--maq-shipped--09-03)) that reduces to the plain
+candidate-price ranking when no order carries a `minQty`.
 
 - Kernel + wrapper: `Clearing.daml::coreClear` / `computeClearing` ⇄
   `auction.ts::coreClear` / `computeClearing`. The partition (`firm` /
-  `conditional`), the PASS-1 `provP = coreClear firm`, and the pass-through
-  `qualifies` are mirrored function-for-function in both planes.
+  `conditional`), the PASS-1 `provP = coreClear firm`, and the `qualifies` firming
+  test are mirrored function-for-function in both planes.
 
 ## Worked example — the canonical §4 fixture (the continuous canary)
 
@@ -159,9 +163,10 @@ formula now so both planes converge on it.
 
 Umbra supports four order types, discriminated by the additive `orderType` field
 on `Order` / `OrderView` (`data OrderType = Limit | Noncompetitive | AllOrNone |
-Conditional`). As of 09-01 the discriminator and its parameters (`minQty`,
-`firmIf`) exist across both planes but are **inert** — every order is a plain
-`Limit` and the clearing reduces exactly to the objective above.
+Conditional`). All four are **live** as of 09-03 (Noncompetitive in 09-02;
+AllOrNone / MAQ and Conditional in 09-03). The §4 canonical book is all plain
+`Limit` (`minQty = None`, `firmIf = None`), so it reduces exactly to the objective
+above — every non-Limit rule is inert when no order carries that type.
 
 - Type + fields: `Clearing.daml::OrderType` / `OrderView` (re-exported by
   `Umbra.Auction`) ⇄ `auction.ts::OrderType` / `OrderView`.
@@ -289,18 +294,52 @@ ranking the candidate prices exactly as `choosePStar` does ⇒ still
   (A=3/B=3/C=0) ⇄ the `maq excluded` / `maq included` / `aon fills` / `aon drops`
   scenarios in `solver/src/auction.test.ts`.
 
-### Conditional (auto-firming) — _PLACEHOLDER (09-03)_
+### Conditional (auto-firming) (shipped — 09-03)
 
-An order that firms or drops deterministically at close based on a `firmIf`
-price threshold, evaluated by a single **two-pass** rule (NOT a fixpoint):
-(1) provisionally clear over the firm orders; (2) firm each conditional whose
-`firmIf` qualifies versus the **provisional** `p*` (buy firms if clearing ≤
-threshold, sell firms if clearing ≥ threshold), drop the rest, and recompute the
-final clear. The provisional `p*` is the firming reference even if the final
-`p*` differs (accepted; no re-iteration). To be filled by **09-03**, cited here
-as the two-pass wrapper + `qualifies` inside `Clearing.daml::computeClearing` ⇄
-`auction.ts::computeClearing`. `Round.Clear` auto-covers it by recomputing the
-same two-pass `computeClearing`.
+A conditional order **firms or drops deterministically at close** based on a
+`firmIf` price threshold, evaluated by a single **two-pass** rule — **NOT a
+fixpoint / no re-iteration**. The two passes live **entirely inside**
+`computeClearing`; the solver, the golden tests, and the on-ledger `Round.Clear`
+recompute all call that one function (one implementation, three callers), so the
+firming reference cannot diverge between the solver and the ledger (Pitfall 7).
+
+1. **PASS 1 — provisional.** Partition the book into `firm` (non-conditional) and
+   `conditional`; clear the **firm** orders with `coreClear` to obtain the
+   **provisional** clearing price `provP`.
+2. **PASS 2 — final.** Firm each conditional whose `firmIf` band passes versus
+   **`provP`**, drop the rest, and re-clear `firm ++ firmed` with `coreClear`.
+
+**Firming direction (`qualifies`).** A **buy** firms iff `provP <= firmIf` (it
+wanted to transact only at or under a ceiling); a **sell** firms iff
+`provP >= firmIf` (only at or over a floor). An absent `firmIf` never firms.
+
+**Exactly two passes — the provisional `p*` is the firming reference even if the
+final `p*` moves.** A pathological book may firm a conditional against a `provP`
+that the final clear then crosses; that outcome is **accepted, with no
+re-iteration**. This is what makes the rule deterministic and on-ledger
+reproducible — a fixpoint would depend on iteration order and could fail to
+converge identically in both planes.
+
+**§4 reduction.** No conditional order ⇒ `conditional == []` ⇒ `firmed == []` ⇒
+`final == firm == the whole book` ⇒ one `coreClear` ⇒ still `p* = 100.00`,
+A=10 / B=8 / C=2. Conditional demo orders are kept on the **sell** side for any
+settle-path scenario (single funded buyer — Pitfall 3).
+
+- Firming predicate: `Clearing.daml::qualifies` (`optional False (provP <=)` for
+  Buy / `optional False (provP >=)` for Sell) ⇄ `auction.ts::qualifies`
+  (`side === 'Buy' ? provP <= firmIf : provP >= firmIf`).
+- Two-pass wrapper: `Clearing.daml::computeClearing` (the `firm` / `conditional`
+  partition, `provP = coreClear firm`, `firmed = [ v | … qualifies … ]`,
+  `coreClear (firm ++ firmed)`) ⇄ `auction.ts::computeClearing` (identical
+  partition + `provP` + `.filter(qualifies …)` + `coreClear([...firm, ...firmed])`).
+- On-ledger: `daml/Umbra/Auction.daml`'s `Round.Clear` re-verifies by recomputing
+  this same two-pass `computeClearing` — a conditional firmed by the solver but not
+  by the ledger recompute (or vice versa) cannot settle.
+- Golden fixtures (identical numbers = parity):
+  `daml/Umbra/Tests.daml::test_conditional_firms` (firmIf 99 firms → A=10/B=8/C=2) /
+  `test_conditional_drops` (firmIf 101 drops → A=8/B=8/C=0) ⇄ the
+  `conditional firms` / `conditional drops` scenarios in
+  `solver/src/auction.test.ts`.
 
 ## Determinism and parity notes
 

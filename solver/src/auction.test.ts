@@ -292,6 +292,49 @@ describe('computeClearing — §8 clearing port', () => {
     expect(fillOf(allocations, 'BankB')).toBe(3)
   })
 
+  // 8. CONDITIONAL auto-firming (AUCT-01, 09-03) — the TS twins of the Daml
+  //    test_conditional_* fixtures (identical numbers = parity). Two passes:
+  //    PASS 1 clears the firm book → provisional p*; PASS 2 firms each conditional
+  //    whose firmIf passes vs provP (sell firms iff provP >= firmIf), drops the
+  //    rest. Conditionals kept SELL-side (single funded buyer — Pitfall 3).
+  it('conditional firms: a conditional sell whose firmIf passes vs provisional p* is included (A=10/B=8/C=2)', () => {
+    // firm {A Buy 10 @100, B Sell 8 @100} → provP = 100. C Sell 5 @100 firmIf=99:
+    // 100 >= 99 → FIRMS → final {A,B,C} → A=10 / B=8 / C=2.
+    const views: OrderView[] = [
+      { desk: 'BankA', side: 'Buy', quantity: 10, limit: 100.0, orderType: 'Limit' },
+      { desk: 'BankB', side: 'Sell', quantity: 8, limit: 100.0, orderType: 'Limit' },
+      { desk: 'BankC', side: 'Sell', quantity: 5, limit: 100.0, orderType: 'Conditional', firmIf: 99 },
+    ]
+    const { clearingPrice, allocations } = computeClearing(views)
+    expect(clearingPrice).toBe(100)
+    expect(fillOf(allocations, 'BankC')).toBe(2) // firmed then rationed to 2
+    expect(fillOf(allocations, 'BankA')).toBe(10)
+    expect(fillOf(allocations, 'BankB')).toBe(8)
+    // Full multiset parity with the Daml test_conditional_firms fixture.
+    expect(sortAllocs(allocations)).toEqual(
+      sortAllocs([
+        { desk: 'BankA', side: 'Buy', filledQty: 10 },
+        { desk: 'BankB', side: 'Sell', filledQty: 8 },
+        { desk: 'BankC', side: 'Sell', filledQty: 2 },
+      ]),
+    )
+  })
+
+  it('conditional drops: a conditional sell whose firmIf fails vs provisional p* is dropped (A=8/B=8/C=0)', () => {
+    // Same book, firmIf=101 fails (provP 100 < 101) → C DROPS → firm book clears
+    // alone → A=8 / B=8 (C=0).
+    const views: OrderView[] = [
+      { desk: 'BankA', side: 'Buy', quantity: 10, limit: 100.0, orderType: 'Limit' },
+      { desk: 'BankB', side: 'Sell', quantity: 8, limit: 100.0, orderType: 'Limit' },
+      { desk: 'BankC', side: 'Sell', quantity: 5, limit: 100.0, orderType: 'Conditional', firmIf: 101 },
+    ]
+    const { clearingPrice, allocations } = computeClearing(views)
+    expect(clearingPrice).toBe(100)
+    expect(fillOf(allocations, 'BankC')).toBe(0) // dropped: provP 100 < firmIf 101
+    expect(fillOf(allocations, 'BankA')).toBe(8)
+    expect(fillOf(allocations, 'BankB')).toBe(8)
+  })
+
   // 4b. Genuinely empty batch → choosePStar hits the empty-`ranked` branch and
   //     returns 0.0 (the documented foldl-max-0 / no-candidate seed).
   it('no-cross: an empty order book has pStar 0.0 and no allocations', () => {

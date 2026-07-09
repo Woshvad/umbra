@@ -254,6 +254,54 @@ test_aon_all_or_none_drops = do
   fillOf bankA === 3
   fillOf bankB === 3
 
+-- AUCT-01 (09-03) — CONDITIONAL auto-firming golden fixtures, the Daml twins of
+-- the `conditional` scenarios in solver/src/auction.test.ts (identical numbers =
+-- parity). The two-pass rule: PASS 1 clears the FIRM book → provisional p*; PASS 2
+-- firms each conditional whose firmIf passes vs that provP (sell firms iff
+-- provP >= firmIf), drops the rest, and re-clears. Conditionals are kept on the
+-- SELL side (single funded buyer — Pitfall 3).
+
+-- CONDITIONAL FIRMS — a conditional sell with firmIf=99 firms because the
+-- provisional p* (100, over the firm book A+B) is ≥ 99; the final clear then
+-- includes it (§4-shaped A=10 / B=8 / C=2).
+--   firm = {A Buy 10 @100, B Sell 8 @100} → provP = 100.
+--   C Sell 5 @100 (Conditional firmIf=99): 100 >= 99 → FIRMS. final {A,B,C} → A=10/B=8/C=2.
+test_conditional_firms : Script ()
+test_conditional_firms = do
+  bankA <- allocatePartyByHint (PartyIdHint "condFA")
+  bankB <- allocatePartyByHint (PartyIdHint "condFB")
+  bankC <- allocatePartyByHint (PartyIdHint "condFC")
+  let views =
+        [ OrderView with desk = bankA; side = Buy;  quantity = 10; limit = 100.0; orderType = Limit;       minQty = None; firmIf = None
+        , OrderView with desk = bankB; side = Sell; quantity = 8;  limit = 100.0; orderType = Limit;       minQty = None; firmIf = None
+        , OrderView with desk = bankC; side = Sell; quantity = 5;  limit = 100.0; orderType = Conditional; minQty = None; firmIf = Some 99.0
+        ]
+      (pStar, allocs) = computeClearing views
+      fillOf d = sum [ a.filledQty | a <- allocs, a.desk == d ]
+  pStar === 100.0
+  fillOf bankC === 2   -- firmed (provP 100 >= firmIf 99), then rationed to 2
+  fillOf bankA === 10
+  fillOf bankB === 8
+
+-- CONDITIONAL DROPS — same book but firmIf=101 fails (provisional p* 100 < 101),
+-- so the conditional sell DROPS and the firm book clears alone (A=8 / B=8, C=0).
+test_conditional_drops : Script ()
+test_conditional_drops = do
+  bankA <- allocatePartyByHint (PartyIdHint "condDA")
+  bankB <- allocatePartyByHint (PartyIdHint "condDB")
+  bankC <- allocatePartyByHint (PartyIdHint "condDC")
+  let views =
+        [ OrderView with desk = bankA; side = Buy;  quantity = 10; limit = 100.0; orderType = Limit;       minQty = None; firmIf = None
+        , OrderView with desk = bankB; side = Sell; quantity = 8;  limit = 100.0; orderType = Limit;       minQty = None; firmIf = None
+        , OrderView with desk = bankC; side = Sell; quantity = 5;  limit = 100.0; orderType = Conditional; minQty = None; firmIf = Some 101.0
+        ]
+      (pStar, allocs) = computeClearing views
+      fillOf d = sum [ a.filledQty | a <- allocs, a.desk == d ]
+  pStar === 100.0
+  fillOf bankC === 0   -- dropped: provP 100 < firmIf 101
+  fillOf bankA === 8
+  fillOf bankB === 8
+
 -- ===========================================================================
 -- Phase-2 settlement seed helpers (RESEARCH A5 + Pitfall 5).
 --

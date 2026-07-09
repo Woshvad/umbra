@@ -236,3 +236,146 @@ export const getBrief = async (id: string): Promise<string | null> => {
   const round = await getRound(id)
   return round.brief ?? null
 }
+
+// ══ Phase-10 crypto operator-plane types (mirror solver/src/{tlock,zk/prove,zk/verify,timemachine}.ts) ══
+// CRYP-02 / CRYP-03 / VIZ-02. The browser NEVER holds the tlock held-key, operator token, or
+// ANTHROPIC_API_KEY: these types mirror the SECRET-SAFE response envelopes the solver already strips
+// down to (booleans / hashes / offsets / ciphertext + PUBLIC beacon metadata) — never a witness, salt,
+// beacon private share, or key. Every endpoint rides the single SOLVER_BASE_URL (no second port literal).
+// Honest-labeling grammar (10-UI-SPEC): the seal mode 'offline' warning is a T3 (weaker-than-drand)
+// disclosure; verify (off-ledger, T3) and anchor (on-ledger hash, T1) are DISTINCT shapes on purpose.
+
+// CRYP-02 timelock seal mode — 'drand' (real threshold beacon, a T2 real-crypto-external-trust surface)
+// vs 'offline' (labeled weaker AES-256-GCM fallback, a T3 surface). Mirrors tlock.ts SealMode.
+export type SealMode = 'drand' | 'offline'
+
+// POST /round/:id/timelock-encrypt response — ciphertext + PUBLIC round metadata ONLY (mirrors tlock.ts
+// SealResult spread + the best-effort drand beacon fields api.ts folds in). `warning` is present ONLY on
+// mode:'offline' (the weaker-than-drand disclosure — render it as the T3 red tag); `chainHash`/
+// `timeToBeaconMs` are best-effort drand-mode metadata. No key/held-secret ever crosses out.
+export type TimelockSealResponse = {
+  roundId: string
+  ciphertext: string
+  targetRound: number
+  mode: SealMode
+  warning?: string // offline mode only — the mandatory weaker-than-drand disclosure (T3 tag)
+  chainHash?: string // drand mode only — the PUBLIC beacon chain hash
+  timeToBeaconMs?: number // drand mode only — ms until the target beacon publishes (UI countdown)
+}
+
+// POST /timelock-decrypt response — the recovered plaintext. A not-yet-due drand ciphertext maps to a
+// SolverError(425,'TOO_EARLY'); the solver never echoes the raw beacon error text (T-10-17).
+export type TimelockPlaintext = { plaintext: string }
+
+// Public drand round metadata (mirrors tlock.ts DrandRoundInfo) — surfaced within the encrypt response's
+// best-effort beacon fields. No secret at all (the beacon is public).
+export type DrandRoundInfo = { targetRound: number; timeToBeaconMs: number; chainHash: string }
+
+// CRYP-03 opaque Groth16 artifacts (mirror zk/prove.ts) — proof/vkey are opaque JSON to the client;
+// publicSignals are decimal-string field elements ([pStar, matched, comm…]). The PRIVATE witness
+// (every order's side/qty/limit/salt/fill) NEVER appears in any of these shapes (T-10-11).
+export type Groth16Proof = Record<string, unknown>
+export type PublicSignals = string[]
+export type VKey = Record<string, unknown>
+
+// POST /round/:id/prove response — the proof artifact (mirrors zk/prove.ts ClearingProof + roundId).
+// Only { proof, publicSignals, sizeBytes, ms } cross out — the witness stays server-side. This is a
+// T2 real-crypto artifact (ZK PROOF · GROTH16 ink tag).
+export type ProofArtifact = {
+  roundId: string
+  proof: Groth16Proof
+  publicSignals: PublicSignals
+  sizeBytes: number
+  ms: number
+}
+
+// The proof envelope POSTed to verify-proof / anchor-proof — vkey + publicSignals + proof (the artifact
+// minus the sizes). Carries NO witness; vkey/proof are opaque JSON. Mirrors api.ts proofEnvelopeBody.
+export type ProofEnvelope = { vkey: VKey; publicSignals: PublicSignals; proof: Groth16Proof }
+
+// POST /round/:id/verify-proof response — the OFF-LEDGER (T3) Groth16 verdict. ONLY a boolean: a forged
+// public signal → { verified:false }. DISTINCT from the anchor (Canton has no zk precompile), so this
+// verdict renders on a DASHED T3 surface (OFF-LEDGER VERIFY · POC) — never conflated with the anchor.
+export type VerifyVerdict = { roundId: string; verified: boolean }
+
+// POST /round/:id/anchor-proof response — the ON-LEDGER (T1) hash anchor: sha256(proof‖publicSignals) +
+// sha256(vkey). Hashes ONLY — no proof bytes, no witness. A hash anchored on-ledger is NOT a verify claim
+// (the SOLID-T1-anchor vs DASHED-T3-verify split IS the "off-ledger verify + on-ledger hash anchor"
+// statement — 10-UI-SPEC Reconciliation Note 3). Mirrors zk/verify.ts ProofAnchor + roundId.
+export type AnchorResult = { roundId: string; proofHash: string; vkeyHash: string }
+
+// POST /round/:id/tamper-proof response — the "break the proof" demo (mirrors tamperClear): the solver
+// perturbs a PUBLIC input, re-verifies → false. Verbatim (secret-free) rejection; `verified` is ALWAYS
+// false here (a T3 tamper-rejection surface — render `error` verbatim, never summarize it).
+export type TamperProofResponse = { rejected: boolean; verified: false; error: string }
+
+// VIZ-02 lifecycle stages (mirror timemachine.ts Stage) — the recorded ledger-offset bookmarks the Time
+// Machine replays per-party. A derived/reconstructed replay is a T3 surface (RECONSTRUCTED), the raw
+// authentic ledger-event cells are T1.
+export type Stage = 'open' | 'committed' | 'sealed' | 'cleared' | 'settled'
+// The recorded stage→ledger-offset map (mirrors timemachine.ts StageOffsets) — numeric bookmarks only;
+// an un-recorded stage is simply absent (never a secret, never a token).
+export type StageOffsets = Partial<Record<Stage, number>>
+
+// GET /round/:id/stage-offsets response — the offsets map under a roundId envelope.
+export type StageOffsetsResponse = { roundId: string; offsets: StageOffsets }
+
+// ── CRYP-02 / CRYP-03 / VIZ-02 operator-plane client fns (:4100, NO credential) ───────────────────────
+// Mirror the 10-06 solver endpoints via the shipped call<T>() — NO auth header (the solver serves the
+// operator plane open, RESEARCH Pitfall 5); a network reject throws SolverError(0,'OFFLINE',OFFLINE_CAPTION)
+// exactly like the shipped five. Every path is built off the SINGLE SOLVER_BASE_URL source — no :4000, no
+// port literal — and NO operator token / ANTHROPIC_API_KEY / tlock held-key ever lives in these.
+
+// CRYP-02 — seal a payload to a FUTURE drand round. Undecryptable (by ANYONE, incl. the solver holding
+// the ciphertext) until that beacon publishes. `mode:'offline'` carries the weaker-than-drand `warning`
+// (the UI MUST surface it as the T3 tag). `windowMs` is optional — omitted uses the solver default.
+export const timelockEncrypt = (
+  id: string,
+  payload: string,
+  windowMs?: number,
+): Promise<TimelockSealResponse> =>
+  call<TimelockSealResponse>(`/round/${id}/timelock-encrypt`, {
+    method: 'POST',
+    body: JSON.stringify(windowMs === undefined ? { payload } : { payload, windowMs }),
+  })
+
+// CRYP-02 — recover a sealed payload. A not-yet-due drand ciphertext throws SolverError code 'TOO_EARLY'
+// (status 425); the caller maps it to the countdown / too-early state (no raw beacon error is echoed).
+export const timelockDecrypt = (ciphertext: string): Promise<TimelockPlaintext> =>
+  call<TimelockPlaintext>('/timelock-decrypt', {
+    method: 'POST',
+    body: JSON.stringify({ ciphertext }),
+  })
+
+// CRYP-03 — generate the round's REAL Groth16 proof of correct clearing. Only the artifact (proof +
+// public signals + sizes) returns; the private witness stays inside the solver's zk/prove.ts (T-10-11).
+export const generateProof = (id: string): Promise<ProofArtifact> =>
+  call<ProofArtifact>(`/round/${id}/prove`, { method: 'POST' })
+
+// CRYP-03 — OFF-LEDGER (T3) Groth16 verification → a boolean verdict ONLY. Post the proof envelope; a
+// forged public signal → { verified:false }. DISTINCT from anchorProof (this never touches the ledger).
+export const verifyProof = (id: string, envelope: ProofEnvelope): Promise<VerifyVerdict> =>
+  call<VerifyVerdict>(`/round/${id}/verify-proof`, {
+    method: 'POST',
+    body: JSON.stringify(envelope),
+  })
+
+// CRYP-03 — ON-LEDGER (T1) hash anchor → { proofHash, vkeyHash }. Post the SAME proof envelope; only the
+// hashes are recorded on-ledger (no proof bytes / witness). Anchoring a hash is NOT a verify claim — the
+// deliberate solid-T1-anchor vs dashed-T3-verify split (10-UI-SPEC Note 3).
+export const anchorProof = (id: string, envelope: ProofEnvelope): Promise<AnchorResult> =>
+  call<AnchorResult>(`/round/${id}/anchor-proof`, {
+    method: 'POST',
+    body: JSON.stringify(envelope),
+  })
+
+// CRYP-03 — "break the proof" demo. The solver perturbs a PUBLIC input, re-verifies → false. Verbatim
+// (secret-free) rejection; NEVER anchors. Mirrors tamperClear's never-throw contract (render `error` raw).
+export const tamperProof = (id: string): Promise<TamperProofResponse> =>
+  call<TamperProofResponse>(`/round/${id}/tamper-proof`, { method: 'POST' })
+
+// VIZ-02 — the recorded stage→ledger-offset map for a round. Numeric bookmarks only (open/committed/
+// sealed/cleared/settled); the Time Machine replays them per-party. An un-recorded stage is simply absent
+// (never a secret, never a token). GET, so no body.
+export const getStageOffsets = (id: string): Promise<StageOffsetsResponse> =>
+  call<StageOffsetsResponse>(`/round/${id}/stage-offsets`)

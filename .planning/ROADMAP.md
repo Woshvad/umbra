@@ -355,7 +355,7 @@ Plans:
 
 **Wave 3** *(blocked on 10-03, 10-04, 10-05)*
 
-- [ ] 10-06-PLAN.md — Solver crypto API + index wiring: timelock / prove-verify-anchor-tamper / stage-offsets endpoints (zod + secret-safe) + api.test.ts secret sweep [CRYP-02, CRYP-03, VIZ-02]
+- [x] 10-06-PLAN.md — Solver crypto API + index wiring: timelock / prove-verify-anchor-tamper / stage-offsets endpoints (zod + secret-safe) + api.test.ts secret sweep [CRYP-02, CRYP-03, VIZ-02]
 
 **Wave 4** *(blocked on 10-06)*
 
@@ -417,7 +417,7 @@ Build waves run in numeric order 8 → 9 → 10 → 11. Track A (Phase 12) runs 
 |-------|----------------|--------|-----------|
 | 8. Demo Hardening | 7/7 | Built · live UAT pending | 2026-07-09 |
 | 9. Auction Depth & Live Viz | 7/7 | Built · live UAT pending | 2026-07-09 |
-| 10. Cryptographic Privacy | 5/10 | In Progress|  |
+| 10. Cryptographic Privacy | 6/10 | In Progress|  |
 | 11. Settlement & Institutional Grade | 0/— | Not started | — |
 | 12. Real On-Chain (Canton DevNet) | 0/— | Not started (external gate) | — |
 | 13. Platform Baseline & Adjacent | 0/— | Not started (ongoing) | — |

@@ -50,7 +50,10 @@ export default function AgentView({ roundId, preview, offline }: Props) {
           }}
         >
           <AgentProposal preview={preview} />
-          <AgentRationale rationale={preview.rationale} preview={preview} />
+          {/* WOW-04: pass roundId to swap the rationale source to the live SSE token
+              stream; AgentRationale gracefully falls back to preview.rationale (single-shot
+              typewriter) if the stream is unavailable — identical appearance. */}
+          <AgentRationale rationale={preview.rationale} preview={preview} roundId={roundId} />
         </div>
       ) : (
         <p className="font-body text-14 opacity-65" style={{ lineHeight: 1.6, maxWidth: '560px' }}>

@@ -1,17 +1,29 @@
 // AgentRationale (UI-SPEC "04 — SOLVER AGENT", lines 206-208) — the rationale column.
-// An ink panel renders the solver `rationale` text TYPEWRITER-revealed (~26ms/char,
-// comp startType) + a flame caret consuming the Plan-01 `animate-umbra-caret` alias.
-// Robust to a keyless solver: `rationale` is always present (deterministic fallback —
-// CONTEXT), so the panel always has text. Reduced-motion → render the full text instantly
-// (RESEARCH Pitfall 7); the interval is cleared on unmount (RESEARCH Pitfall 6).
+// WOW-04 (08-07): the SOURCE is now a LIVE SSE token stream. When a `roundId` is passed
+// and EventSource is available, we open `GET /round/:id/rationale-stream` (no auth header —
+// operator plane, RESEARCH Pitfall 5) and APPEND each `data:` delta into the SAME ink
+// panel, the flame caret riding the live insertion point; the `done` event closes it.
+// GRACEFUL FALLBACK (UI-SPEC Reconciliation Note 5): if streaming is unavailable — no
+// EventSource, the source errors before any token, or no `roundId` is provided — we fall
+// back to the shipped single-shot `rationale` typewriter (~26ms/char, comp startType),
+// IDENTICAL appearance, so the demo never stalls. Reduced-motion → full text / per-chunk
+// append with NO per-char interval (RESEARCH Pitfall 7); the source + interval are torn
+// down on unmount (RESEARCH Pitfall 6).
 //
 // Below: the "Competing Agents · ranked by matched volume" table. Phase 6 renders ONLY
 // the rank-1 real SOLVER-AGENT-00 row; the grid markup is kept for the stretch §19 rows
 // but NO AGENT-01/02 is fabricated.
 import { useEffect, useRef, useState } from 'react'
 import type { SolvePreviewResponse } from '../solver'
+import { rationaleStreamUrl } from '../solver'
 
-type Props = { rationale: string | null; preview?: SolvePreviewResponse | null }
+// `roundId` (optional) enables the WOW-04 live SSE source; without it the panel keeps its
+// shipped single-shot behavior verbatim (backward-compatible for existing callers).
+type Props = {
+  rationale: string | null
+  preview?: SolvePreviewResponse | null
+  roundId?: string
+}
 
 const CHAR_MS = 26
 
@@ -24,36 +36,87 @@ function prefersReducedMotion(): boolean {
   )
 }
 
-export default function AgentRationale({ rationale, preview }: Props) {
+export default function AgentRationale({ rationale, preview, roundId }: Props) {
   const text = rationale ?? ''
   const [typed, setTyped] = useState('')
   const intervalRef = useRef<ReturnType<typeof setInterval>>()
+  const sourceRef = useRef<EventSource>()
 
   useEffect(() => {
-    // Always clear any prior run before (re)starting.
+    // Always tear down any prior run (interval + source) before (re)starting.
     clearInterval(intervalRef.current)
+    sourceRef.current?.close()
+    sourceRef.current = undefined
 
-    if (!text) {
+    // The shipped single-shot typewriter — the fallback render target (identical look).
+    const runSingleShot = (full: string) => {
+      clearInterval(intervalRef.current)
+      if (!full) {
+        setTyped('')
+        return
+      }
+      // Reduced-motion → full text instantly, no interval (Pitfall 7).
+      if (prefersReducedMotion()) {
+        setTyped(full)
+        return
+      }
+      // Typewriter: slice full[0..i] at ~26ms/char (comp startType).
       setTyped('')
-      return
+      let i = 0
+      intervalRef.current = setInterval(() => {
+        i += 1
+        setTyped(full.slice(0, i))
+        if (i >= full.length) clearInterval(intervalRef.current)
+      }, CHAR_MS)
     }
-    // Reduced-motion → full text instantly, no interval (Pitfall 7).
-    if (prefersReducedMotion()) {
-      setTyped(text)
-      return
-    }
-    // Typewriter: slice text[0..i] at ~26ms/char (comp startType).
-    setTyped('')
-    let i = 0
-    intervalRef.current = setInterval(() => {
-      i += 1
-      setTyped(text.slice(0, i))
-      if (i >= text.length) clearInterval(intervalRef.current)
-    }, CHAR_MS)
 
-    // Clear the interval on unmount / text change (Pitfall 6).
+    // WOW-04 live source: append SSE deltas into the panel; the caret rides the insertion
+    // point. No per-char interval — tokens arrive over the wire (already reduced-motion
+    // friendly: each chunk is appended as-is). On any error before a token → single-shot.
+    if (roundId && typeof EventSource !== 'undefined') {
+      let received = false
+      let acc = ''
+      setTyped('')
+      const es = new EventSource(rationaleStreamUrl(roundId))
+      sourceRef.current = es
+
+      es.onmessage = (ev: MessageEvent<string>) => {
+        received = true
+        // Each frame is a JSON-encoded string delta (solver writes `data: JSON`).
+        let delta: unknown = ev.data
+        try {
+          delta = JSON.parse(ev.data)
+        } catch {
+          /* tolerate a raw (non-JSON) frame */
+        }
+        if (typeof delta !== 'string') return
+        acc += delta
+        setTyped(acc)
+      }
+      // `event: done` sentinel → the stream completed cleanly; close (no reconnect).
+      es.addEventListener('done', () => {
+        es.close()
+        sourceRef.current = undefined
+      })
+      // Error / connection close: stop the auto-reconnect. If NOTHING streamed, fall back
+      // to the shipped single-shot rationale so the panel always has text (never stalls).
+      es.onerror = () => {
+        es.close()
+        sourceRef.current = undefined
+        if (!received) runSingleShot(text)
+      }
+
+      return () => {
+        es.close()
+        sourceRef.current = undefined
+        clearInterval(intervalRef.current)
+      }
+    }
+
+    // No live source → shipped single-shot typewriter (backward-compatible).
+    runSingleShot(text)
     return () => clearInterval(intervalRef.current)
-  }, [text])
+  }, [text, roundId])
 
   return (
     <div style={{ padding: '26px 0 0' }}>

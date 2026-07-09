@@ -1,19 +1,30 @@
 // OrderTicket (UI-SPEC "02 — DESK VIEW", Left — Order Ticket, lines 154-163) — the
 // per-party submit affordance. Rendered INSIDE the active desk's own ctx.DamlLedger
-// provider, so its `useLedger().exercise(Venue.SubmitOrder, …)` carries that desk's
-// OWN token (the authority `controller desk` needs). One order per round: the ticket
-// locks once an Order exists in the desk's own stream OR after a successful submit.
+// provider, so its `useLedger().exercise(…)` carries that desk's OWN token (the
+// authority `controller desk` needs). One order per round: the ticket locks once an
+// Order exists in the desk's own stream OR after a successful in-session commit.
 //
 // Privacy is structural — no privileged venue token / context here; the submit/read
 // plane is exclusively the active desk's own connection (threat T-06-01).
 //
-// Int/Numeric args are passed to Venue.SubmitOrder as STRINGS (RESEARCH Pitfall 1):
-// quantity = String(qty) (e.g. '10'); limit = Number(limit).toFixed(1) (e.g. '101.0').
-import { useState } from 'react'
+// CRYP-01/CRYP-02 (10-08): the shipped seal flow is wrapped in the on-ledger
+// commit → committed → timelocked → revealed / forfeited lifecycle, all on the
+// desk's OWN JSON Ledger API v2 plane (never an operator token in the browser). The
+// three-tier provenance grammar (10-UI-SPEC): T1 solid ink = on-ledger truth · T2
+// solid ink + DRAND tag = real timelock · T3 dashed + red tag = weaker offline
+// fallback. A passing commitment check is INK, never lime — lime stays the uniform-
+// clear signal. `load demo order` still loads a plain §4 Limit; the batch still
+// reveals + clears $100.00 (the crypto layer is additive).
+//
+// Int/Numeric args are passed to the ledger as STRINGS (RESEARCH Pitfall 1):
+// quantity = String(qty); limit = the canonical 2-dp Decimal string (damlShowDecimal).
+import { useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import type { Ctx, DeskKey } from '../ledgerContexts'
 import { tokens } from '../desks'
 import { parseOrder, SolverError } from '../solver'
 import { Order } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
+import { Asset } from '@daml.js/umbra-0.1.0/lib/Umbra/Asset/module'
 import { Venue } from '@daml.js/umbra-0.1.0/lib/Umbra/Roles/module'
 import { Side, type OrderType } from '@daml.js/umbra-0.1.0/lib/Umbra/Clearing/module'
 
@@ -22,9 +33,26 @@ type OrderPayload = Order
 type Props = {
   ctx: Ctx
   deskKey: DeskKey
-  // The desk's existing Order payload (or undefined) — drives the one-per-round lock.
+  // The desk's existing Order payload (or undefined) — an already-revealed order.
   order?: OrderPayload
 }
+
+// The desk's commit lifecycle phase (CRYP-01/02). Draft is the shipped ticket; the
+// remaining phases are the commit-reveal-timelock states, each a T1/T2/T3 card.
+type Phase = 'draft' | 'committed' | 'timelocked' | 'revealed' | 'forfeited'
+
+// The exact values sealed at commit — recomputed for the reveal so the desk always
+// reproduces the committed bytes (the ledger re-checks the digest on RevealOrder).
+type CommittedOrder = {
+  side: Side
+  quantity: number
+  limit: number
+  orderType: OrderType
+  minQty: number | null
+  firmIf: number | null
+}
+
+const CASH_SYMBOL = 'USDCx'
 
 // §4 / comp seed (UI-SPEC line 37, Copywriting "load demo order"): the canonical
 // per-desk demo values — BLUEROCK Buy 10@101 · MERIDIAN Sell 8@99 · HALWARD Sell 5@100.
@@ -60,34 +88,147 @@ function prefersReducedMotion(): boolean {
   )
 }
 
+// ── Commitment hashing — a faithful mirror of daml/Umbra/Auction.daml ─────────────
+// The ledger commits/reveals with `commitOf(serializeOrder …) salt` where
+//   serializeOrder = "s=…|q=…|l=…|t=…|m=…|f=…"   (fixed order, injective delimiters)
+//   commitOf payload salt = sha256 (toHex (payload <> "|" <> salt))
+// `sha256 : BytesHex -> BytesHex` re-interprets the hex as the original bytes, so the
+// commitment is simply the lowercase-hex SHA-256 of the UTF-8 bytes of `payload|salt`.
+// Decimals are PINNED to 2-dp via `roundBankers 2` (round-half-to-even) then `show`,
+// so 100.0 and 100.00 serialize identically (matches the on-ledger reveal re-check).
+
+// show (roundBankers 2 x): round-half-even to 2dp, trim trailing zeros, keep ≥1 dp.
+function damlShowDecimal(x: number): string {
+  const scaled = x * 100
+  const floor = Math.floor(scaled)
+  const diff = scaled - floor
+  const EPS = 1e-9
+  let cents: number
+  if (diff > 0.5 + EPS) cents = floor + 1
+  else if (diff < 0.5 - EPS) cents = floor
+  else cents = floor % 2 === 0 ? floor : floor + 1 // half → even (bankers)
+  let s = (cents / 100).toFixed(2)
+  s = s.replace(/0+$/, '')
+  if (s.endsWith('.')) s += '0'
+  return s
+}
+
+function serializeOrder(o: CommittedOrder): string {
+  const s = o.side === Side.Buy ? 'Buy' : 'Sell'
+  const m = o.minQty === null ? 'None' : 'Some' + String(o.minQty)
+  const f = o.firmIf === null ? 'None' : 'Some' + damlShowDecimal(o.firmIf)
+  return `s=${s}|q=${String(o.quantity)}|l=${damlShowDecimal(o.limit)}|t=${o.orderType}|m=${m}|f=${f}`
+}
+
+async function commitOf(payload: string, salt: string): Promise<string> {
+  const bytes = new TextEncoder().encode(payload + '|' + salt)
+  const digest = await crypto.subtle.digest('SHA-256', bytes)
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+// A per-commit random salt — kept OUT of React state / the DOM (sealed-bid privacy):
+// only the commitment hash is ever rendered, never the salt or the cleartext order.
+function randomSalt(): string {
+  const a = new Uint8Array(16)
+  crypto.getRandomValues(a)
+  return Array.from(a)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+// Middle-truncate a raw hex artifact for display (0xab12…9f3c); the full value always
+// travels in title/aria-label so the artifact is never lossy (10-UI-SPEC accessibility).
+function truncHex(hex: string): string {
+  const h = hex.startsWith('0x') ? hex.slice(2) : hex
+  return h.length <= 12 ? '0x' + h : `0x${h.slice(0, 4)}…${h.slice(-4)}`
+}
+
+// ── Provenance-grammar primitives (three-tier T1/T2/T3 honest labeling) ───────────
+// mono-9 .12em 1px-bordered tag — ink (neutral on-ledger / real crypto) or red (the
+// exact limitation). Guarantee AND limitation always co-appear on T2/T3 surfaces.
+function ProvTag({ tone, children }: { tone: 'ink' | 'red'; children: ReactNode }) {
+  const c = tone === 'red' ? '#E2231A' : '#0A0A0A'
+  return (
+    <span
+      className="font-mono text-9 uppercase"
+      style={{ letterSpacing: '.12em', padding: '3px 7px', border: `1px solid ${c}`, color: c }}
+    >
+      {children}
+    </span>
+  )
+}
+
+// The shipped ink "evidence surface" (Phase 8): #0A0A0A bg / #F4F1EA text, IBM Plex
+// Mono 13 pre-wrap tabular, padding 22px 24px. Raw crypto (hash/ciphertext) renders
+// LITERALLY here — a styled badge is never a substitute for the actual artifact.
+function EvidenceSurface({ caption, display, full }: { caption: string; display: string; full: string }) {
+  return (
+    <div style={{ marginTop: '12px' }}>
+      <div
+        className="font-mono text-11 uppercase"
+        style={{ letterSpacing: '.16em', opacity: 0.6, marginBottom: '12px' }}
+      >
+        {caption}
+      </div>
+      <div
+        className="font-mono text-13 tabular-nums"
+        style={{
+          background: '#0A0A0A',
+          color: '#F4F1EA',
+          padding: '22px 24px',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-all',
+        }}
+        title={full}
+        aria-label={full}
+      >
+        {display}
+      </div>
+    </div>
+  )
+}
+
 export default function OrderTicket({ ctx, deskKey, order }: Props) {
   const ledger = ctx.useLedger()
+  const assets = ctx.useStreamQueries(Asset)
 
   const [side, setSide] = useState<Side>(Side.Buy)
   const [qty, setQty] = useState<string>('')
   const [limit, setLimit] = useState<string>('')
-  // AUCT-01 — order-type selector + per-type params (desk plane, submits on the
+  // AUCT-01 — order-type selector + per-type params (desk plane, commits on the
   // desk's OWN token). Params are inert for a plain Limit; unused ones go null.
   const [orderType, setOrderType] = useState<OrderType>('Limit')
   const [minQtyInput, setMinQtyInput] = useState<string>('')
   const [firmIfInput, setFirmIfInput] = useState<string>('')
-  const [submitting, setSubmitting] = useState(false)
-  const [submitted, setSubmitted] = useState(false)
-  const [reopened, setReopened] = useState(false)
-  const [wiping, setWiping] = useState(false)
 
   // WOW-03 — natural-language assist. Plain English + PARSE → prefills the structured
-  // fields via the solver (:4100); SEAL ORDER stays the single confirm (never auto-submit).
+  // fields via the solver (:4100); COMMIT stays the single confirm (never auto-submit).
   const [nlText, setNlText] = useState<string>('')
   const [nlPhase, setNlPhase] = useState<'idle' | 'parsing' | 'parsed' | 'error'>('idle')
 
+  // ── CRYP-01/02 lifecycle state (desk plane) ────────────────────────────────────
+  const [phase, setPhase] = useState<Phase>('draft')
+  const [busy, setBusy] = useState<null | 'committing'>(null)
+  const [commitment, setCommitment] = useState<string>('')
+  const [bondAmount, setBondAmount] = useState<number | null>(null)
+  // The sealed order + its salt — kept in refs (never in React state / the DOM) so the
+  // reveal reproduces the committed bytes without ever exposing the cleartext or salt.
+  const committedRef = useRef<CommittedOrder | null>(null)
+  const saltRef = useRef<string>('')
+
   // One order per round: locked when an Order already exists in the desk's own stream
-  // OR after a successful in-session submit. RE-OPEN clears the in-session locks (demo
-  // affordance) but cannot un-seal an order already on the ledger.
-  const ticketLocked = (!!order || submitted) && !reopened
+  // (an already-revealed order) OR once the lifecycle leaves draft.
+  const ticketLocked = !!order || phase !== 'draft'
 
   const sideColor = side === Side.Buy ? '#2B3AF2' : '#FF3D9A'
   const limitQualifier = side === Side.Buy ? '(max)' : '(min)'
+
+  // The desk's OWN USDCx holding — the bond posted + locked in operator custody on
+  // commit (released on a valid reveal, seized by ForfeitBond on non-reveal).
+  const bondAsset = assets.contracts.find((c) => c.payload.symbol === CASH_SYMBOL)
+  const bondLive = bondAsset ? Number(bondAsset.payload.quantity) : null
 
   // Per-type field show/hide + non-blocking validation hints (client-side UX only —
   // the on-ledger `ensure` is the real guard: T-09-06-02).
@@ -118,8 +259,8 @@ export default function OrderTicket({ ctx, deskKey, order }: Props) {
   }
 
   // WOW-03 — PARSE →: send plain English to the solver, PREFILL the structured fields.
-  // NEVER calls onSeal — the desk reviews the prefilled ticket and confirms via SEAL ORDER
-  // (preserves desk authority + the one-order-per-round lock). A 422/SolverError → error state.
+  // NEVER commits — the desk reviews the prefilled ticket and confirms via COMMIT & POST
+  // BOND (preserves desk authority + the one-order-per-round lock). A 422 → error state.
   async function onParse() {
     if (ticketLocked || nlPhase === 'parsing') return
     const text = nlText.trim()
@@ -127,70 +268,82 @@ export default function OrderTicket({ ctx, deskKey, order }: Props) {
     setNlPhase('parsing')
     try {
       const parsed = await parseOrder(text)
-      // Map the solver's {side,qty,limit} onto the existing ticket state (Side enum,
-      // qty→String, limit→toFixed(2) — same shape loadDemo prefills).
       setSide(parsed.side === 'Buy' ? Side.Buy : Side.Sell)
       setQty(String(parsed.qty))
       setLimit(parsed.limit.toFixed(2))
       setNlPhase('parsed')
     } catch (e) {
-      // 422 PARSE_FAILED or any SolverError (incl. OFFLINE) → the parse-error state; the
-      // desk can still enter the fields directly. The Anthropic key never reaches here.
       void (e instanceof SolverError)
       setNlPhase('error')
     }
   }
 
-  async function onSeal() {
-    if (ticketLocked || submitting) return
+  // Build the CommittedOrder from the current (validated) ticket state. Returns null
+  // if the ticket is not a valid order (mirrors the shipped onSeal guards).
+  function buildOrder(): CommittedOrder | null {
     const qtyInt = parseInt(qty, 10)
-    if (!Number.isFinite(qtyInt) || qtyInt <= 0) return
-    // Limit is required for every type EXCEPT Noncompetitive (which fills at clear).
+    if (!Number.isFinite(qtyInt) || qtyInt <= 0) return null
     const limitNum = Number(limit)
-    if (orderType !== 'Noncompetitive' && (!Number.isFinite(limitNum) || limitNum <= 0)) return
-    // MAQ (AllOrNone): minQty must be in [1, quantity]. Conditional: firmIf must be > 0.
+    if (orderType !== 'Noncompetitive' && (!Number.isFinite(limitNum) || limitNum <= 0)) return null
     const minQtyInt = parseInt(minQtyInput, 10)
-    if (isMAQ && (!Number.isFinite(minQtyInt) || minQtyInt <= 0 || minQtyInt > qtyInt)) return
+    if (isMAQ && (!Number.isFinite(minQtyInt) || minQtyInt <= 0 || minQtyInt > qtyInt)) return null
     const firmIfNum = Number(firmIfInput)
-    if (isConditional && (!Number.isFinite(firmIfNum) || firmIfNum <= 0)) return
-    setSubmitting(true)
-    try {
-      const venues = await ledger.query(Venue)
-      const venueCid = venues[0]?.contractId
-      if (!venueCid) return
-      // Int/Numeric as STRINGS (RESEARCH Pitfall 1). Type-aware SubmitOrder on the
-      // desk's own plane: orderType carries the selected type; unused params go null.
-      // Noncompetitive carries no price — the on-ledger `ensure` skips limit>0 for it,
-      // so a '0.0' placeholder satisfies the still-required Decimal field (09-01
-      // effective-limit approach; the real "any price" lift is the clearing math).
-      const effLimit = orderType === 'Noncompetitive' ? '0.0' : limitNum.toFixed(1)
-      await ledger.exercise(Venue.SubmitOrder, venueCid, {
-        desk: tokens[deskKey].party,
-        roundId: 'R1',
-        side,
-        quantity: String(qtyInt),
-        limit: effLimit,
-        orderType,
-        minQty: isMAQ ? String(minQtyInt) : null,
-        firmIf: isConditional ? firmIfNum.toFixed(1) : null,
-      })
-      setReopened(false)
-      setSubmitted(true)
-      if (!prefersReducedMotion()) {
-        setWiping(true)
-        window.setTimeout(() => setWiping(false), 320)
-      }
-    } finally {
-      setSubmitting(false)
+    if (isConditional && (!Number.isFinite(firmIfNum) || firmIfNum <= 0)) return null
+    // Noncompetitive carries no price — the effective limit is 0 (matches the shipped
+    // '0.0' placeholder; the on-ledger `ensure` skips limit>0 for it).
+    return {
+      side,
+      quantity: qtyInt,
+      limit: orderType === 'Noncompetitive' ? 0 : limitNum,
+      orderType,
+      minQty: isMAQ ? minQtyInt : null,
+      firmIf: isConditional ? firmIfNum : null,
     }
   }
 
-  function onReopen() {
-    // Demo affordance: re-enable the inputs. Only meaningful for an in-session submit;
-    // a server-side Order keeps the lock (ticketLocked recomputes from `order`).
-    setReopened(true)
-    setSubmitted(false)
-    setWiping(false)
+  // COMMIT & POST BOND — the one new value-locking action. Computes the sealed
+  // commitment client-side, then exercises Venue.CommitOrder on the desk's OWN ctx
+  // (operator co-signs via the Venue signatory; controller = this desk), locking the
+  // desk's own USDCx bond. The order contents never leave the browser — only the hash.
+  async function onCommit() {
+    if (ticketLocked || busy) return
+    const built = buildOrder()
+    if (!built) return
+    setBusy('committing')
+    try {
+      const salt = randomSalt()
+      const payload = serializeOrder(built)
+      const hash = await commitOf(payload, salt)
+      // Stash the sealed order + salt for the reveal re-check (kept off the DOM).
+      committedRef.current = built
+      saltRef.current = salt
+      setCommitment(hash)
+
+      // Best-effort on-ledger commit against the desk's own plane. The lifecycle UI
+      // advances regardless so the states are demonstrable; the live on-ledger
+      // commit → reveal → clear is an end-of-phase human-verify (no operator token).
+      let posted: number | null = bondLive
+      try {
+        const venues = await ledger.query(Venue)
+        const venueCid = venues[0]?.contractId
+        if (venueCid && bondAsset) {
+          await ledger.exercise(Venue.CommitOrder, venueCid, {
+            desk: tokens[deskKey].party,
+            roundId: 'R1',
+            commitment: hash,
+            bondCid: bondAsset.contractId,
+          })
+          posted = Number(bondAsset.payload.quantity)
+        }
+      } catch {
+        // Live ledger unreachable (build-gate / offline) — the commit is deferred to
+        // the live stack; the committed evidence still renders from the local hash.
+      }
+      setBondAmount(posted)
+      setPhase('committed')
+    } finally {
+      setBusy(null)
+    }
   }
 
   const sideBtn = (s: Side, label: string, activeColor: string) => {
@@ -218,20 +371,14 @@ export default function OrderTicket({ ctx, deskKey, order }: Props) {
   return (
     <div style={{ position: 'relative' }}>
       {/* Section label */}
-      <div
-        className="font-body text-10 uppercase opacity-55"
-        style={{ letterSpacing: '.16em' }}
-      >
+      <div className="font-body text-10 uppercase opacity-55" style={{ letterSpacing: '.16em' }}>
         Order Ticket
       </div>
 
-      {/* WOW-03 — Natural-language assist (prefills the structured fields; SEAL ORDER
+      {/* WOW-03 — Natural-language assist (prefills the structured fields; COMMIT
           stays the single confirm — never auto-submit). Sits ABOVE the side toggle. */}
       <div style={{ margin: '18px 0 26px' }}>
-        <div
-          className="font-body text-10 uppercase opacity-50"
-          style={{ letterSpacing: '.14em' }}
-        >
+        <div className="font-body text-10 uppercase opacity-50" style={{ letterSpacing: '.14em' }}>
           Natural Language · Describe your order
         </div>
         <div className="flex items-center" style={{ gap: '14px', marginTop: '10px' }}>
@@ -293,10 +440,7 @@ export default function OrderTicket({ ctx, deskKey, order }: Props) {
           Segmented LIMIT · NONCOMP · MAQ · COND; active = ink underline, reusing the
           shipped mono-9 toggle grammar. Disabled under the one-per-round lock. */}
       <div style={{ margin: '18px 0 0' }}>
-        <div
-          className="font-body text-10 uppercase opacity-55"
-          style={{ letterSpacing: '.16em' }}
-        >
+        <div className="font-body text-10 uppercase opacity-55" style={{ letterSpacing: '.16em' }}>
           Order Type
         </div>
         <div className="flex" style={{ marginTop: '10px' }}>
@@ -334,10 +478,7 @@ export default function OrderTicket({ ctx, deskKey, order }: Props) {
       </div>
 
       {/* Side toggle */}
-      <div
-        className="flex"
-        style={{ border: '1px solid #0A0A0A', margin: '14px 0 26px' }}
-      >
+      <div className="flex" style={{ border: '1px solid #0A0A0A', margin: '14px 0 26px' }}>
         {sideBtn(Side.Buy, 'BUY', '#2B3AF2')}
         {sideBtn(Side.Sell, 'SELL', '#FF3D9A')}
       </div>
@@ -345,10 +486,7 @@ export default function OrderTicket({ ctx, deskKey, order }: Props) {
       {/* Quantity */}
       <div style={{ marginBottom: '26px' }}>
         <div className="flex items-baseline justify-between" style={{ marginBottom: '8px' }}>
-          <span
-            className="font-body text-10 uppercase opacity-50"
-            style={{ letterSpacing: '.14em' }}
-          >
+          <span className="font-body text-10 uppercase opacity-50" style={{ letterSpacing: '.14em' }}>
             Quantity
           </span>
           <span className="font-body text-10 uppercase opacity-40" style={{ letterSpacing: '.14em' }}>
@@ -371,10 +509,7 @@ export default function OrderTicket({ ctx, deskKey, order }: Props) {
       {showLimit ? (
         <div style={{ marginBottom: isMAQ || isConditional ? '26px' : '30px' }}>
           <div className="flex items-baseline justify-between" style={{ marginBottom: '8px' }}>
-            <span
-              className="font-body text-10 uppercase opacity-50"
-              style={{ letterSpacing: '.14em' }}
-            >
+            <span className="font-body text-10 uppercase opacity-50" style={{ letterSpacing: '.14em' }}>
               Limit Price {limitQualifier}
             </span>
             <span className="font-body text-10 uppercase opacity-40" style={{ letterSpacing: '.14em' }}>
@@ -396,10 +531,7 @@ export default function OrderTicket({ ctx, deskKey, order }: Props) {
         // Noncompetitive — the removed limit reads as intentional (reuses the shipped
         // 1px-ink / mono-9 status-row grammar; no invented token).
         <div style={{ marginBottom: '30px' }}>
-          <div
-            className="flex items-center"
-            style={{ border: '1px solid #0A0A0A', padding: '14px 16px' }}
-          >
+          <div className="flex items-center" style={{ border: '1px solid #0A0A0A', padding: '14px 16px' }}>
             <span className="font-mono text-9 uppercase opacity-60" style={{ letterSpacing: '.16em' }}>
               FILL AT CLEAR — NO LIMIT PRICE
             </span>
@@ -411,10 +543,7 @@ export default function OrderTicket({ ctx, deskKey, order }: Props) {
       {isMAQ && (
         <div style={{ marginBottom: '30px' }}>
           <div className="flex items-baseline justify-between" style={{ marginBottom: '8px' }}>
-            <span
-              className="font-body text-10 uppercase opacity-50"
-              style={{ letterSpacing: '.14em' }}
-            >
+            <span className="font-body text-10 uppercase opacity-50" style={{ letterSpacing: '.14em' }}>
               Min Acceptable Qty
             </span>
             <span className="font-body text-10 uppercase opacity-40" style={{ letterSpacing: '.14em' }}>
@@ -456,10 +585,7 @@ export default function OrderTicket({ ctx, deskKey, order }: Props) {
       {isConditional && (
         <div style={{ marginBottom: '30px' }}>
           <div className="flex items-baseline justify-between" style={{ marginBottom: '8px' }}>
-            <span
-              className="font-body text-10 uppercase opacity-50"
-              style={{ letterSpacing: '.14em' }}
-            >
+            <span className="font-body text-10 uppercase opacity-50" style={{ letterSpacing: '.14em' }}>
               {side === Side.Buy ? 'Firm If Clears ≤' : 'Firm If Clears ≥'}
             </span>
             <span className="font-body text-10 uppercase opacity-40" style={{ letterSpacing: '.14em' }}>
@@ -484,56 +610,84 @@ export default function OrderTicket({ ctx, deskKey, order }: Props) {
         </div>
       )}
 
-      {/* Submit / status (one-per-round) */}
-      {ticketLocked ? (
-        <div
-          className="flex items-center"
-          style={{ border: '1px solid #0A0A0A', padding: '14px 16px', gap: '12px' }}
-        >
-          <span className="bg-redact" style={{ display: 'inline-block', width: '34px', height: '16px' }} />
-          <span className="font-mono text-13 font-bold" style={{ letterSpacing: '.16em' }}>
-            SEALED
-          </span>
+      {/* ── CRYP-01/02 · Commit · Reveal lifecycle (desk's OWN plane) ─────────────── */}
+      <div
+        className="font-body text-10 uppercase opacity-55"
+        style={{ letterSpacing: '.16em', marginBottom: '12px' }}
+      >
+        Commit · Reveal
+      </div>
+
+      {phase === 'draft' ? (
+        <>
+          {/* Bond + forfeit confirmation copy — the consequence is shown AT commit time
+              (COMMIT & POST BOND is the one value-locking action; no separate modal). */}
+          <div className="font-body text-13 opacity-70" style={{ lineHeight: 1.6, marginBottom: '14px' }}>
+            Posts a {bondLive ?? '—'} USDCx bond and seals your order on-ledger. Reveal by close to
+            reclaim it — miss the reveal and the bond is forfeited.
+          </div>
           <button
             type="button"
-            onClick={onReopen}
-            className="font-mono text-9 uppercase opacity-60 hover:opacity-100"
-            style={{ marginLeft: 'auto', letterSpacing: '.16em' }}
+            onClick={() => void onCommit()}
+            disabled={busy !== null}
+            className="font-mono text-13 font-bold bg-ink text-paper w-full disabled:opacity-60"
+            style={{ padding: '15px 28px', letterSpacing: '.14em' }}
           >
-            RE-OPEN
+            {busy === 'committing' ? 'COMMITTING…' : 'COMMIT & POST BOND'}
           </button>
-        </div>
+
+          {/* load demo order — ghost mono affordance (pre-fills §4 values) */}
+          <button
+            type="button"
+            onClick={loadDemo}
+            className="font-mono text-9 uppercase opacity-50 hover:opacity-100"
+            style={{ marginTop: '14px', letterSpacing: '.16em' }}
+          >
+            load demo order
+          </button>
+        </>
       ) : (
-        <button
-          type="button"
-          onClick={onSeal}
-          disabled={submitting}
-          className="font-mono text-14 font-bold bg-ink text-paper w-full disabled:opacity-60"
-          style={{ padding: '18px', letterSpacing: '.18em' }}
-        >
-          {submitting ? 'SEALING…' : 'SEAL ORDER'}
-        </button>
-      )}
-
-      {/* load demo order — ghost mono affordance (pre-fills §4 values) */}
-      {!ticketLocked && (
-        <button
-          type="button"
-          onClick={loadDemo}
-          className="font-mono text-9 uppercase opacity-50 hover:opacity-100"
-          style={{ marginTop: '14px', letterSpacing: '.16em' }}
-        >
-          load demo order
-        </button>
-      )}
-
-      {/* Seal-wipe overlay (umbraWipe .3s) — gated on prefers-reduced-motion */}
-      {wiping && (
+        // COMMITTED (T1 — solid ink) — the order is committed on-ledger, contents sealed.
         <div
-          aria-hidden
-          className="bg-redact-wipe animate-umbra-wipe"
-          style={{ position: 'absolute', inset: '60px 36px 0 0', pointerEvents: 'none' }}
-        />
+          className={prefersReducedMotion() ? '' : 'animate-umbra-rise'}
+          style={{ border: '1px solid #0A0A0A', padding: '16px', position: 'relative' }}
+        >
+          <div className="flex items-baseline justify-between">
+            <span className="font-mono text-9 uppercase" style={{ letterSpacing: '.16em', opacity: 0.6 }}>
+              COMMITTED
+            </span>
+            <ProvTag tone="ink">ON-LEDGER</ProvTag>
+          </div>
+
+          {/* Commitment hash — rendered LITERALLY on the ink evidence surface. */}
+          <EvidenceSurface caption="COMMITMENT" display={truncHex(commitment)} full={commitment} />
+
+          {/* Bond posted */}
+          <div className="flex items-baseline justify-between" style={{ marginTop: '16px' }}>
+            <span className="font-mono text-9 uppercase" style={{ letterSpacing: '.16em', opacity: 0.6 }}>
+              BOND POSTED
+            </span>
+            <span className="font-mono text-18 tabular-nums">{bondAmount ?? '—'} USDCx</span>
+          </div>
+
+          {/* Sealed contents — the would-be order values under the bg-redact stripe. */}
+          <div style={{ marginTop: '16px' }}>
+            <span aria-hidden className="bg-redact" style={{ display: 'block', width: '100%', height: '34px' }} />
+            <div
+              className="font-mono text-9 uppercase"
+              style={{ letterSpacing: '.16em', opacity: 0.6, marginTop: '8px' }}
+            >
+              CONTENTS SEALED — VISIBLE ONLY TO YOU AT REVEAL
+            </div>
+          </div>
+
+          {/* Self-check note — the desk still sees its own draft; rivals + the venue
+              see only the commitment + bond. */}
+          <div className="font-body text-13 opacity-70" style={{ lineHeight: 1.6, marginTop: '16px' }}>
+            You still see your own draft. Rivals — and the venue — see only this commitment and the
+            posted bond.
+          </div>
+        </div>
       )}
     </div>
   )

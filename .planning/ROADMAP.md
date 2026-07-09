@@ -344,7 +344,7 @@ Plans:
 
 **Wave 1**
 
-- [ ] 10-01-PLAN.md — CRYP-01 Daml: OrderCommitment + CommitOrder/RevealOrder (on-ledger sha256 binding) + ForfeitBond slash + ProofAnchor + §4 commit→reveal→clear seed + 5 Daml tests; Round.Clear byte-unchanged [CRYP-01, CRYP-03]
+- [x] 10-01-PLAN.md — CRYP-01 Daml: OrderCommitment + CommitOrder/RevealOrder (on-ledger sha256 binding) + ForfeitBond slash + ProofAnchor + §4 commit→reveal→clear seed + 5 Daml tests; Round.Clear byte-unchanged [CRYP-01, CRYP-03]
 - [ ] 10-02-PLAN.md — Crypto toolchain install (blocking legitimacy checkpoint + tlock-js/snarkjs/circomlibjs/circomlib + prebuilt circom.exe + Wave-0 test scaffolds) [CRYP-02, CRYP-03]
 
 **Wave 2** *(blocked on Wave 1)*
@@ -368,7 +368,6 @@ Plans:
 - [ ] 10-10-PLAN.md — VIZ-02 TimeMachineView (view 06) + Nav + App route + per-party redaction test [VIZ-02]
 
 **UI hint**: yes
-
 
 ### Phase 11: Settlement & Institutional Grade
 
@@ -418,7 +417,7 @@ Build waves run in numeric order 8 → 9 → 10 → 11. Track A (Phase 12) runs 
 |-------|----------------|--------|-----------|
 | 8. Demo Hardening | 7/7 | Built · live UAT pending | 2026-07-09 |
 | 9. Auction Depth & Live Viz | 7/7 | Built · live UAT pending | 2026-07-09 |
-| 10. Cryptographic Privacy | 0/10 | Planned (5 waves) | — |
+| 10. Cryptographic Privacy | 1/10 | In Progress|  |
 | 11. Settlement & Institutional Grade | 0/— | Not started | — |
 | 12. Real On-Chain (Canton DevNet) | 0/— | Not started (external gate) | — |
 | 13. Platform Baseline & Adjacent | 0/— | Not started (ongoing) | — |

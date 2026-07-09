@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Progress
-status: verifying
+status: executing
 stopped_at: Phase 10 UI-SPEC approved
-last_updated: "2026-07-09T20:03:06.943Z"
-last_activity: "2026-07-09 -- Completed 09-07 (WOW-06 cost-of-leakage simulator: pure client-side leakage.ts + SettlementView dashed-border SIMULATION panel — $X lost vs $0 leaked → $X saved; WOW-06 closed)"
+last_updated: "2026-07-09T20:42:45.670Z"
+last_activity: 2026-07-09 -- Phase 10 execution started
 progress:
   total_phases: 6
   completed_phases: 2
-  total_plans: 14
-  completed_plans: 14
+  total_plans: 24
+  completed_plans: 15
   percent: 33
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-25)
 
 **Core value:** The privacy money shot — three desks submit sealed orders blind to each other, an AI solver clears them at one uniform price ($100.00 on the §4 fixture), and the whole batch settles atomically in a single Canton transaction.
-**Current focus:** Phase 09 — auction-depth-live-viz
+**Current focus:** Phase 10 — cryptographic-privacy
 
 ## Current Position
 
-Phase: 09 (auction-depth-live-viz) — EXECUTING (all 7 plans built; end-of-phase live UAT pending)
-Plan: 09-07 done (wave 5, final) — Phase 9 plans 7/7 built
-Status: Phase 9 build complete; end-of-phase human verification pending
-Last activity: 2026-07-09 -- Completed 09-07 (WOW-06 cost-of-leakage simulator: pure client-side leakage.ts + SettlementView dashed-border SIMULATION panel — $X lost vs $0 leaked → $X saved; WOW-06 closed)
+Phase: 10 (cryptographic-privacy) — EXECUTING
+Plan: 2 of 10
+Status: Ready to execute
+Last activity: 2026-07-09 -- Phase 10 execution started
 
 ## Performance Metrics
 
@@ -80,6 +80,7 @@ Last activity: 2026-07-09 -- Completed 09-07 (WOW-06 cost-of-leakage simulator: 
 | Phase 09 P05 | ~18 min | 2 tasks | 10 files |
 | Phase 09 P06 | ~7 min | 1 task | 1 file |
 | Phase 09 P07 | ~7 min | 2 tasks | 3 files |
+| Phase 10 P01 | 24min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -137,6 +138,7 @@ Recent decisions affecting current work:
 - [09-05 / AUCT-04]: On-ledger best-ex/TCA. TradeConfirmation gains ownLimit(Optional)/referencePrice/surplusVsLimit/improvementVsLimitBp/improvementVsReferenceBp(signed); Round.Clear computes per-desk surplus at the create site and asserts `surplusVsLimit >= 0` on-ledger (T-09-05-01 — the PROVEN best-ex number). referencePrice is a LABELED stub choice arg (REFERENCE_PRICE_STUB=100 in ledger.ts; a choice body can't read config so it's passed in), driving ONLY the SIGNED improvementVsReferenceBp benchmark — never conflated with the proven ≥0 number. bp = roundBankers 0 ((|limit−p*|/p*)*10000) ⇄ pinned RULEBOOK formula. §4 surpluses A=10/B=8/C=0, all bp-vs-ref=0 (ref==p*). daml test 23/23 green (test_surplus_nonneg + extended test_settled_balances; all 5 Clear call sites pass referencePrice); web/daml.js regenerated+committed. Solver: readTradeConfirmations maps TCA fields, settle/tamperClear pass referencePrice (settle otherwise byte-unchanged), api.ts settled body gains receipts[], proofpack bundle 02 renders two-distinct-surplus (secret sweep green); 94/94 vitest, tsc clean. Web: Receipt type + receipts on RoundResponse; new TcaReceipts.tsx (proven ink vs-LIMIT row + benchmark vs-REFERENCE red-only-when-negative + REFERENCE stub tag + EXPORT RECEIPT ink-ghost). web build + 30 vitest green. Per-desk privacy unchanged (TradeConfirmation observer=desk). Live settled-round receipt = end-of-phase human-check. AUCT-04 CLOSED.
 - [09-07 / WOW-06]: Cost-of-leakage simulator shipped as a PURE web leaf lib — web/src/lib/leakage.ts `estimateLeakage(legs)` walks the buy-side matched volume sequentially through a naive public book (unit i premium over the clear = clearingPrice·(SLIPPAGE_BP_PER_UNIT·i + FRONT_RUN_BP)/1e4 — book-depth slippage + flat front-run markup, illustrative bp constants) → `publicBookLost`; sealed clear `umbraLeaked:0`; `saved===publicBookLost`. §4 → $5.10. Pure/DOM-free (no fetch/@daml/document/Date/random), deterministic, empty-safe; `ownLimit` in the LeakageLeg shape but NOT load-bearing (capping at the buyer's limit would zero §4). 7 vitest cases. SettlementView `LeakageSimPanel` (post-settle, BELOW the AUCT-04 receipts): 1px DASHED ink border + `SIMULATION · ILLUSTRATIVE — NOT LEDGER DATA` tag + disclaimer (unmistakably NOT ledger data — real receipts use SOLID ink); `$X LOST` red / `$0 LEAKED` ink / `$X SAVED` ink punchline (never lime), umbra-rise + reduced-motion. Reads only preview.allocations — no solver/ledger call in the sim path. No clearing/template/solver change (§4 canary untouched). web build + 37 vitest green. WOW-06 CLOSED; Phase 9 plans 7/7 built (live UAT end-of-phase).
 - [09-04 / AUCT-03,VIZ-01]: OPEN-window aggregate indicative feed — api.ts GET /round/:id attaches an `indicative` block (SCALARS ONLY: `{indicativePrice|coarse+band, netImbalance, estMatched}`) only when status Open with ≥1 sealed order. Small-N guard: exact price published only with ≥2 orders on BOTH sides (else coarse band = round(p*/5)*5 + coarse:true — §4's single buyer → coarse). NO curve/candidatePrices during open (buildCurve stays terminal-only, Pitfall 1). choosePStar threaded through AppDeps/MathPort/buildDeps. api.test.ts +3 (indicative/no-leak, small-N coarse band, open-body secret sweep); solver 87/87, tsc clean. web solver.ts IndicativeMeta type. VIZ-01: CrossingChart gains `mode` prop (assembling|locked, default locked) — assembling hides red p*/marker/label + faint region + ASSEMBLING caption; locked byte-unchanged SVG (296,160/r5/15px) + red-square `p* LOCKED @ {price}` verdict. TheatreView indicative panel (INDICATIVE/NET IMBALANCE/EST. MATCHED, small-N labeled) + assembling chart during open (curve=[] — no per-order geometry crosses the wire). curve.ts UNCHANGED (curve.test.ts §4 marker green); web build + 30 vitest green. Live "updates as orders arrive" = end-of-phase human-check.
+- [Phase 10]: [10-01 / CRYP-01,CRYP-03]: On-ledger commit–reveal via DA.Crypto.Text.sha256 (alpha, -Wno-crypto-text-is-alpha). Single canonical serializeOrder shared by commit+reveal; bond uses operator-custody LOCK (not escrow-by-reassign — an operator-owned Asset is invisible to the desk). OrderCommitment/RevealOrder/ForfeitBond + ProofAnchor/Venue.AnchorProof (hashes only). Round.Clear + §8 byte-unchanged; §4 clears 100.00/A=10/B=8/C=2 through commit→reveal→clear. Bindings regen deferred to 10-05.
 
 ### Pending Todos
 
@@ -162,6 +164,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-09T18:46:31.918Z
+Last session: 2026-07-09T20:41:04.055Z
 Stopped at: Phase 10 UI-SPEC approved
 Resume file: .planning/phases/10-cryptographic-privacy/10-UI-SPEC.md

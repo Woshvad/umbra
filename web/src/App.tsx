@@ -15,6 +15,7 @@ import DeskView from './views/DeskView'
 import TheatreView from './views/TheatreView'
 import AgentView from './views/AgentView'
 import SettlementView from './views/SettlementView'
+import TimeMachineView from './views/TimeMachineView'
 import type { SolvePreviewResponse } from './solver'
 import type { OperatorViewState, TheatrePhase } from './operatorState'
 
@@ -105,6 +106,7 @@ export default function App() {
       {screen === 'theatre' && <TheatreView {...operatorState} />}
       {screen === 'agent' && <AgentView {...operatorState} />}
       {screen === 'settlement' && <SettlementView {...operatorState} />}
+      {screen === 'timemachine' && <TimeMachineView {...operatorState} />}
     </div>
   )
 }

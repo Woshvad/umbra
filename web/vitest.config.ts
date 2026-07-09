@@ -6,6 +6,10 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    // `.tsx` added for the VIZ-02 Time Machine's DOM-free logic test (10-10): its pure
+    // cell-verdict core (bankCell/operatorCell/ordersFromAcs) is exported from a `.tsx`
+    // view, so its co-located test carries the `.tsx` extension. Still node-env — the
+    // test asserts pure functions, never renders (no jsdom/RTL needed).
+    include: ['src/**/*.test.{ts,tsx}'],
   },
 })

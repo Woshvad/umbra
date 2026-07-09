@@ -196,6 +196,7 @@ const main = async (): Promise<void> => {
   const zkVerify = await import('./zk/verify.js')
   const timemachine = await import('./timemachine.js')
   const { readFileSync } = await import('node:fs')
+  const { randomBytes } = await import('node:crypto')
   const vkey = JSON.parse(
     readFileSync(fileURLToPath(new URL('./zk/vkey.json', import.meta.url)), 'utf8'),
   ) as Record<string, unknown>
@@ -338,21 +339,25 @@ const main = async (): Promise<void> => {
 
   // ── CRYP-03 proof composition (zk/prove.ts over the round's sealed views) ─────────
   // Build the §4 ClearingWitness from the LIVE sealed orders + the deterministic §8 fills,
-  // then produce a real Groth16 proof. The salt is a deterministic PoC field element (the
-  // real reveal salt is the desk's private witness; PoC-grade, labeled as such). The private
-  // witness never leaves zk/prove.ts — only { proof, publicSignals, sizeBytes, ms } return.
+  // then produce a real Groth16 proof. Each order's salt is a CRYPTOGRAPHICALLY-RANDOM field
+  // element (randomBytes(31) = 248 bits, safely below the BN254 scalar field prime), freshly
+  // generated per order — a real blinding factor so the published Poseidon commitments are
+  // actually hiding (NOT a guessable index; that defeats sealed-bid privacy). The salt stays
+  // in the PRIVATE witness — it never leaves zk/prove.ts; only { proof, publicSignals,
+  // sizeBytes, ms } return, and the salt is never logged.
+  const saltFieldElement = () => BigInt('0x' + randomBytes(31).toString('hex')).toString()
   const generateProof: AppDeps['generateProof'] = async (roundId) => {
     const views = (await ledger.readSealedOrders(roundId)).map((s) => s.view)
     const clearing = auction.computeClearing(views)
     const pStar = clearing.clearingPrice
     const matched = auction.matchedAt(views, pStar)
-    const orders = views.map((v, i) => {
+    const orders = views.map((v) => {
       const alloc = clearing.allocations.find((a) => a.desk === v.desk && a.side === v.side)
       return {
         side: (v.side === 'Buy' ? 1 : 0) as 0 | 1,
         qty: v.quantity,
         limit: v.limit,
-        salt: String(i + 1), // deterministic PoC salt (never logged / returned)
+        salt: saltFieldElement(), // high-entropy random blinding factor (never logged / returned)
         fill: alloc?.filledQty ?? 0,
       }
     })

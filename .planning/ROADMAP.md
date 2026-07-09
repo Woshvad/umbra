@@ -358,7 +358,7 @@ Build waves run in numeric order 8 → 9 → 10 → 11. Track A (Phase 12) runs 
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 8. Demo Hardening | 4/7 | In Progress|  |
+| 8. Demo Hardening | 7/7 | Built · live UAT pending | 2026-07-09 |
 | 9. Auction Depth & Live Viz | 0/— | Not started | — |
 | 10. Cryptographic Privacy | 0/— | Not started | — |
 | 11. Settlement & Institutional Grade | 0/— | Not started | — |

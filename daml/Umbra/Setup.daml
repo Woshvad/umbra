@@ -153,3 +153,107 @@ seedOpenRound = do
   -- exported IDs match the seeded Round/orders, so minted tokens authenticate
   -- against the live money-shot state).
   pure p
+
+-- ===========================================================================
+-- CRYP-01 (10-01) — §4 commit → reveal → clear seed. The canonical §4 batch,
+-- now routed through the on-ledger commit–reveal binding, still clears exactly
+-- $100.00 / A=10 / B=8 / C=2. Everything the real `Round.Clear` needs is
+-- collected at the Script tier (Option-B ContractIds) and returned so the caller
+-- drives the SAME settle path — Round.Clear and the §8 math are untouched.
+-- ===========================================================================
+
+-- Everything the real `Round.Clear` needs to settle the §4 commit→reveal batch.
+data CommitRevealSeed = CommitRevealSeed with
+    parties        : Parties
+    roundCid       : ContractId Round
+    orderCids      : [ContractId Order]
+    buyerUsdcCid   : ContractId Asset
+    sellerBondCids : [(Party, ContractId Asset)]
+
+-- The small per-desk USDCx bond carved from each desk's OWN §4 cash (so total
+-- value is conserved and the §4 finals stay exact). It MUST be < the §4
+-- cash-needed threshold (the buyer pays 1000 USDCx), so the buyer's cash leg
+-- selects the large trade remainder, never a released bond slice.
+commitRevealBond : Decimal
+commitRevealBond = 10.0
+
+-- Mint the §4 holdings, carve a small USDCx bond per desk, open a Round, and for
+-- each §4 order: compute the on-ledger commitment, CommitOrder (lock the bond),
+-- RevealOrder (recompute sha256 on-ledger, release the bond, create the sealed
+-- Order). Then CloseRound and gather the Option-B ContractIds.
+seedCommitRevealRound : Script CommitRevealSeed
+seedCommitRevealRound = do
+  p@Parties{..} <- initialize
+  -- Carve a bond slice from each desk's own USDCx (operator is the Asset custodian).
+  usdc0 <- query @Asset operator
+  let usdcCidFor owner =
+        case [ cid | (cid, a) <- usdc0, a.owner == owner, a.symbol == "USDCx" ] of
+          (cid :: _) -> cid
+          []         -> error ("seedCommitRevealRound: no USDCx for " <> show owner)
+  (aBond, _) <- submit operator do exerciseCmd (usdcCidFor bankA) Split with splitQty = commitRevealBond
+  (bBond, _) <- submit operator do exerciseCmd (usdcCidFor bankB) Split with splitQty = commitRevealBond
+  (cBond, _) <- submit operator do exerciseCmd (usdcCidFor bankC) Split with splitQty = commitRevealBond
+  -- Open the Round.
+  now <- getTime
+  roundCid0 <- submit operator do
+    createCmd Round with
+      operator
+      roundId       = "R1"
+      symbol        = "BONDX"
+      desks         = [bankA, bankB, bankC]
+      openedAt      = now
+      windowSeconds = 60
+      status        = Open
+  -- Find the seeded Venue.
+  venues <- query @Venue operator
+  let venueCid = case venues of
+        ((v, _) :: _) -> v
+        []            -> error "seedCommitRevealRound: no Venue found after initialize"
+  -- Per desk: COMMIT (hash + lock bond) then REVEAL (recompute on-ledger + Order).
+  ocA <- submit bankA do
+    exerciseCmd venueCid CommitOrder with
+      desk = bankA; roundId = "R1"
+      commitment = commitOf (serializeOrder Buy 10 101.0 Limit None None) "saltA"
+      bondCid = aBond
+  oa <- submit bankA do
+    exerciseCmd ocA RevealOrder with
+      side = Buy; quantity = 10; limit = 101.0; orderType = Limit; minQty = None; firmIf = None
+      salt = "saltA"
+  ocB <- submit bankB do
+    exerciseCmd venueCid CommitOrder with
+      desk = bankB; roundId = "R1"
+      commitment = commitOf (serializeOrder Sell 8 99.0 Limit None None) "saltB"
+      bondCid = bBond
+  ob <- submit bankB do
+    exerciseCmd ocB RevealOrder with
+      side = Sell; quantity = 8; limit = 99.0; orderType = Limit; minQty = None; firmIf = None
+      salt = "saltB"
+  ocC <- submit bankC do
+    exerciseCmd venueCid CommitOrder with
+      desk = bankC; roundId = "R1"
+      commitment = commitOf (serializeOrder Sell 5 100.0 Limit None None) "saltC"
+      bondCid = cBond
+  oc <- submit bankC do
+    exerciseCmd ocC RevealOrder with
+      side = Sell; quantity = 5; limit = 100.0; orderType = Limit; minQty = None; firmIf = None
+      salt = "saltC"
+  -- Close the round → the recreated Closed contract is what Clear settles.
+  roundCid <- submit operator do exerciseCmd roundCid0 CloseRound
+  -- Gather the Option-B ContractIds. The buyer's cash leg needs a SINGLE USDCx
+  -- holding >= 1000 (the §4 cash needed) — pick the large trade remainder, never
+  -- the released 10.0 bond slice (the load-bearing reason bond < 1000).
+  assets <- query @Asset operator
+  let buyerUsdcCid =
+        case [ cid | (cid, a) <- assets, a.owner == bankA, a.symbol == "USDCx", a.quantity >= 1000.0 ] of
+          (cid :: _) -> cid
+          []         -> error "seedCommitRevealRound: no sufficient USDCx (>=1000) for the buyer"
+      bondCidOf owner =
+        case [ cid | (cid, a) <- assets, a.owner == owner, a.symbol == "BONDX" ] of
+          (cid :: _) -> cid
+          []         -> error ("seedCommitRevealRound: no BONDX for " <> show owner)
+  pure CommitRevealSeed with
+    parties        = p
+    roundCid
+    orderCids      = [oa, ob, oc]
+    buyerUsdcCid
+    sellerBondCids = [(bankB, bondCidOf bankB), (bankC, bondCidOf bankC)]

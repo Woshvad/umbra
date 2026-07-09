@@ -800,3 +800,42 @@ test_proof_anchor = do
   length anchors === 1
   assertMsg "ProofAnchor round-trips proofHash + vkeyHash + roundId"
     (any (\(_, pa) -> pa.proofHash == ph && pa.vkeyHash == vh && pa.roundId == "R1") anchors)
+
+-- THE §4 CANARY through commit → reveal → clear (CLAUDE.md rule 3, HARD). The
+-- canonical batch is now sealed via on-ledger commitments, revealed against the
+-- ledger's own sha256 recompute, and cleared by the UNCHANGED Round.Clear — and
+-- it STILL clears exactly $100.00 with fills A=10 / B=8 / C=2 and the exact §4
+-- settled balances (bonds released, so cash lands on the §4 finals). If the
+-- crypto layer ever perturbs the money-shot number, this fails LOUDLY.
+test_commit_reveal_clears_at_100 : Script ()
+test_commit_reveal_clears_at_100 = do
+  CommitRevealSeed{..} <- seedCommitRevealRound
+  let Parties{..} = parties
+  -- Settle via the SAME real Round.Clear (operator-custody DvP), driven by the
+  -- verified §4 allocation @100.0 and the Option-B ContractIds.
+  result <- submit operator do
+    exerciseCmd roundCid Clear with
+      clearingPrice  = 100.0
+      allocations    = canonicalAllocs bankA bankB bankC
+      orderCids
+      buyerUsdcCid
+      sellerBondCids
+      referencePrice = 100.0
+  -- The money-shot number, now flowing through commit → reveal → clear.
+  result.clearingPrice === 100.0
+  result.totalMatched === 10
+  -- The EXACT §4 post-settlement balances (bond released → cash on the §4 finals).
+  assets <- query @Asset operator
+  let bal owner sym = sum [ a.quantity | (_, a) <- assets, a.owner == owner, a.symbol == sym ]
+  bal bankA "BONDX" === 10.0
+  bal bankA "USDCx" === 4000.0
+  bal bankB "BONDX" === 12.0
+  bal bankB "USDCx" === 1800.0
+  bal bankC "BONDX" === 13.0
+  bal bankC "USDCx" === 1200.0
+  -- Fills A=10 / B=8 / C=2 (C residual 3) via the per-desk TradeConfirmations.
+  confs <- query @TradeConfirmation operator
+  let fillOf d = sum [ t.filledQty | (_, t) <- confs, t.desk == d ]
+  fillOf bankA === 10
+  fillOf bankB === 8
+  fillOf bankC === 2

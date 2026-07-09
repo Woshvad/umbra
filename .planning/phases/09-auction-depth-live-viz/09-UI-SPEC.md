@@ -1,7 +1,8 @@
 ---
 phase: 9
 slug: auction-depth-live-viz
-status: draft
+status: approved
+reviewed_at: 2026-07-09
 shadcn_initialized: false
 preset: none
 design_system: "Umbra design/ comp (binding) + web/tailwind.config.ts tokens (frozen from P3/P6, UI-07 = 24/24)"
@@ -118,7 +119,9 @@ RoundBrief (AUCT-04 receipts, then WOW-06 sim). Exceptions: none beyond the irre
 
 **No new type sizes.** Every Phase-9 element maps to a size already declared in `tailwind.config.ts
 fontSize`. All mono numerals/data carry `font-variant-numeric: tabular-nums`. Two weights dominate, per
-comp grammar: **400 (Inter labels/body)** and **600/700 (mono data + display)**.
+comp grammar: **400 (Inter labels/body)** and **600 (mono data + display)** — with **700 confined
+strictly to the shipped export/parse CTA grammar** (`EXPORT RECEIPT ↓`, `PARSE →`). No Phase-9 element
+introduces a new weight; 700 is inherited from the shipped CTA row, not added here.
 
 | Role | Family | Size / LH (token) | Weight | Where (Phase 9) |
 |------|--------|-------------------|--------|-----------------|
@@ -403,11 +406,11 @@ with the reveal or the simultaneous settle.
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: PASS
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS (FLAG resolved — 700 explicitly confined to shipped CTA grammar)
+- [x] Dimension 5 Spacing: PASS
+- [x] Dimension 6 Registry Safety: PASS
 
-**Approval:** pending
+**Approval:** approved 2026-07-09

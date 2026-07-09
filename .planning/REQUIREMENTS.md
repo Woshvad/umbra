@@ -113,7 +113,7 @@ Scoped for milestone v2.0. Grounded in the **current** stack (Daml 3.4.11 + Cant
 ### Cryptographic Privacy (CRYP)
 
 - [x] **CRYP-01**: Sealed orders use on-ledger commit–reveal — a desk posts `hash(order‖salt)` during the window and reveals at close; `Round.Clear` re-checks each revealed order against its commitment; non-reveal forfeits a bond
-- [ ] **CRYP-02**: Orders are timelock-encrypted (drand/tlock) so they are undecryptable — even by the operator/solver — until the window closes; composes with Canton per-party visibility
+- [x] **CRYP-02**: Orders are timelock-encrypted (drand/tlock) so they are undecryptable — even by the operator/solver — until the window closes; composes with Canton per-party visibility
 - [x] **CRYP-03**: A ZK proof-of-correct-clearing PoC runs §8 in a zkVM over the committed orders and produces a proof any party verifies off-ledger (anchored on-ledger), revealing no losing order
 
 ### Settlement — Daml Finance (DFIN)

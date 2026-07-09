@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Progress
 status: executing
-stopped_at: Phase 10 UI-SPEC approved
-last_updated: "2026-07-09T20:42:45.670Z"
+stopped_at: Completed 10-02-PLAN.md
+last_updated: "2026-07-09T20:56:01.396Z"
 last_activity: 2026-07-09 -- Phase 10 execution started
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 24
-  completed_plans: 15
+  completed_plans: 16
   percent: 33
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 ## Current Position
 
 Phase: 10 (cryptographic-privacy) — EXECUTING
-Plan: 2 of 10
+Plan: 3 of 10
 Status: Ready to execute
 Last activity: 2026-07-09 -- Phase 10 execution started
 
@@ -81,6 +81,7 @@ Last activity: 2026-07-09 -- Phase 10 execution started
 | Phase 09 P06 | ~7 min | 1 task | 1 file |
 | Phase 09 P07 | ~7 min | 2 tasks | 3 files |
 | Phase 10 P01 | 24min | 3 tasks | 6 files |
+| Phase 10 P02 | 6 min | 2 tasks tasks | 7 files files |
 
 ## Accumulated Context
 
@@ -139,6 +140,7 @@ Recent decisions affecting current work:
 - [09-07 / WOW-06]: Cost-of-leakage simulator shipped as a PURE web leaf lib — web/src/lib/leakage.ts `estimateLeakage(legs)` walks the buy-side matched volume sequentially through a naive public book (unit i premium over the clear = clearingPrice·(SLIPPAGE_BP_PER_UNIT·i + FRONT_RUN_BP)/1e4 — book-depth slippage + flat front-run markup, illustrative bp constants) → `publicBookLost`; sealed clear `umbraLeaked:0`; `saved===publicBookLost`. §4 → $5.10. Pure/DOM-free (no fetch/@daml/document/Date/random), deterministic, empty-safe; `ownLimit` in the LeakageLeg shape but NOT load-bearing (capping at the buyer's limit would zero §4). 7 vitest cases. SettlementView `LeakageSimPanel` (post-settle, BELOW the AUCT-04 receipts): 1px DASHED ink border + `SIMULATION · ILLUSTRATIVE — NOT LEDGER DATA` tag + disclaimer (unmistakably NOT ledger data — real receipts use SOLID ink); `$X LOST` red / `$0 LEAKED` ink / `$X SAVED` ink punchline (never lime), umbra-rise + reduced-motion. Reads only preview.allocations — no solver/ledger call in the sim path. No clearing/template/solver change (§4 canary untouched). web build + 37 vitest green. WOW-06 CLOSED; Phase 9 plans 7/7 built (live UAT end-of-phase).
 - [09-04 / AUCT-03,VIZ-01]: OPEN-window aggregate indicative feed — api.ts GET /round/:id attaches an `indicative` block (SCALARS ONLY: `{indicativePrice|coarse+band, netImbalance, estMatched}`) only when status Open with ≥1 sealed order. Small-N guard: exact price published only with ≥2 orders on BOTH sides (else coarse band = round(p*/5)*5 + coarse:true — §4's single buyer → coarse). NO curve/candidatePrices during open (buildCurve stays terminal-only, Pitfall 1). choosePStar threaded through AppDeps/MathPort/buildDeps. api.test.ts +3 (indicative/no-leak, small-N coarse band, open-body secret sweep); solver 87/87, tsc clean. web solver.ts IndicativeMeta type. VIZ-01: CrossingChart gains `mode` prop (assembling|locked, default locked) — assembling hides red p*/marker/label + faint region + ASSEMBLING caption; locked byte-unchanged SVG (296,160/r5/15px) + red-square `p* LOCKED @ {price}` verdict. TheatreView indicative panel (INDICATIVE/NET IMBALANCE/EST. MATCHED, small-N labeled) + assembling chart during open (curve=[] — no per-order geometry crosses the wire). curve.ts UNCHANGED (curve.test.ts §4 marker green); web build + 30 vitest green. Live "updates as orders arrive" = end-of-phase human-check.
 - [Phase 10]: [10-01 / CRYP-01,CRYP-03]: On-ledger commit–reveal via DA.Crypto.Text.sha256 (alpha, -Wno-crypto-text-is-alpha). Single canonical serializeOrder shared by commit+reveal; bond uses operator-custody LOCK (not escrow-by-reassign — an operator-owned Asset is invisible to the desk). OrderCommitment/RevealOrder/ForfeitBond + ProofAnchor/Venue.AnchorProof (hashes only). Round.Clear + §8 byte-unchanged; §4 clears 100.00/A=10/B=8/C=2 through commit→reveal→clear. Bindings regen deferred to 10-05.
+- [Phase ?]: [10-02 / CRYP-02,CRYP-03]: Installed the pure-JS crypto toolchain (tlock-js@0.9.0, snarkjs@0.7.6, circomlibjs@0.1.7 deps; circomlib@2.0.5 dev) + pinned prebuilt circom v2.2.3 exe (sha256 e43f132e…d185e1) into solver/ via --legacy-peer-deps (the @anthropic-ai/sdk/zod@3.23.8 peer, 05-01 precedent; core deps untouched, exact-pinned). zk BUILD artifacts gitignored, §4 fixtures + circom.exe force-kept. Two INTENTIONAL Wave-0 red scaffolds (solver/src/tlock.test.ts, solver/src/zk/verify.test.ts) — green in 10-03/10-04; rest of suite 95 green, tsc clean. Package-legitimacy gate satisfied by orchestrator registry vet (all iden3/drand official).
 
 ### Pending Todos
 
@@ -164,6 +166,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-09T20:41:04.055Z
-Stopped at: Phase 10 UI-SPEC approved
+Last session: 2026-07-09T20:56:01.384Z
+Stopped at: Completed 10-02-PLAN.md
 Resume file: .planning/phases/10-cryptographic-privacy/10-UI-SPEC.md

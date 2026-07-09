@@ -89,7 +89,7 @@ Scoped for milestone v2.0. Grounded in the **current** stack (Daml 3.4.11 + Cant
 
 ### Judge-Facing "Wow" (WOW)
 
-- [ ] **WOW-01**: A judge holding one desk's token can attempt to fetch a rival desk's `Order` via the raw JSON Ledger API v2 in the UI and see it return empty/403 live — privacy proven at the wire, not in render logic
+- [x] **WOW-01**: A judge holding one desk's token can attempt to fetch a rival desk's `Order` via the raw JSON Ledger API v2 in the UI and see it return empty/403 live — privacy proven at the wire, not in render logic
 - [ ] **WOW-02**: A demo control can force the solver to propose a wrong clearing price; on-ledger `Round.Clear` re-verification rejects the transaction on screen while the correct deterministic clear still settles
 - [ ] **WOW-03**: A desk can enter a plain-English order ("buy up to 10 under 101") and Claude parses it into a validated structured sealed order for confirmation
 - [ ] **WOW-04**: The solver streams its clearing rationale as it computes and produces a shareable post-round natural-language brief

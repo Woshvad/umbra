@@ -266,7 +266,7 @@ Plans:
 **Wave 1**
 
 - [x] 08-01-PLAN.md — Foundation: :4000→:4100 port-drift fix + TRUST-01 CI (golden vitest + daml test) + gitignore solver/proofs/ + web/.env.example [TRUST-01]
-- [ ] 08-02-PLAN.md — WOW-01 try-to-peek adversarial privacy console on PrivacyView (raw v2 rival query → []/403 verdict) [WOW-01]
+- [x] 08-02-PLAN.md — WOW-01 try-to-peek adversarial privacy console on PrivacyView (raw v2 rival query → []/403 verdict) [WOW-01]
 
 **Wave 2** *(blocked on 08-01)*
 
@@ -358,7 +358,7 @@ Build waves run in numeric order 8 → 9 → 10 → 11. Track A (Phase 12) runs 
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 8. Demo Hardening | 1/7 | In Progress|  |
+| 8. Demo Hardening | 2/7 | In Progress|  |
 | 9. Auction Depth & Live Viz | 0/— | Not started | — |
 | 10. Cryptographic Privacy | 0/— | Not started | — |
 | 11. Settlement & Institutional Grade | 0/— | Not started | — |

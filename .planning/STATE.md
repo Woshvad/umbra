@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Progress
 status: executing
-stopped_at: Phase 8 UI-SPEC approved
-last_updated: "2026-07-09T11:24:43.861Z"
+stopped_at: Completed 08-02-PLAN.md (WOW-01 peek console)
+last_updated: "2026-07-09T11:39:02.461Z"
 last_activity: 2026-07-09 -- Phase 08 execution started
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 7
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 ## Current Position
 
 Phase: 08 (demo-hardening) — EXECUTING
-Plan: 2 of 7
+Plan: 3 of 7
 Status: Ready to execute
 Last activity: 2026-07-09 -- Phase 08 execution started
 
@@ -67,6 +67,7 @@ Last activity: 2026-07-09 -- Phase 08 execution started
 | Phase 06 P04 | 4min | 2 tasks | 7 files |
 | Phase 07 P02 | 6 min | 2 tasks | 3 files |
 | Phase 08 P01 | 12min | 2 tasks | 9 files |
+| Phase 08 P02 | 9min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -109,6 +110,7 @@ Recent decisions affecting current work:
 - [Phase ?]: 06-04: Settlement plays via a SINGLE rAF settleProgress driving ALL DvP legs + balance lerps simultaneously; aggregate derived from solver allocations with Allocation shape confirmed vs auction.ts; agent badge maps agent.source via badgeLabel
 - [Phase ?]: [08-01 / TRUST-01]: Reused the existing auction.test.ts §4 fixture (clears 100.00, A=10/B=8/C=2 + the 99-vs-100 tie-break trap) as the CI golden gate — no new golden file; the vitest suite IS the regression gate. .github/workflows/ci.yml runs golden vitest on every push/PR touching solver/** or daml/**; daml build+test gated to main push (SDK install is heavy).
 - [Phase ?]: [08-01]: Killed the :4000->:4100 port drift in web/src via a single derived source — web/src/solver.ts parses SOLVER_BASE_URL once into exported solverPort + OFFLINE_CAPTION; AgentView/SettlementView/TheatreView import OFFLINE_CAPTION (no caption carries a literal port digit). solver/src/index.ts DEFAULT_SOLVER_PORT=4100; solver/proofs/ gitignored; web/.env.example documents VITE_SOLVER_URL=http://localhost:4100.
+- [Phase 08]: [08-02 / WOW-01]: PeekConsole fires a raw per-party JSON Ledger API v2 active-contracts POST as the selected desk's OWN token for a rival's Order/TradeConfirmation; empty []/403 rendered verbatim + red-square verdict. Pure lib/peek.ts (buildPeekRequest/classifyPeekResult/elideBearer) unit-tested; token never in body, node/CORS error rendered distinct from the privacy verdict (Pitfall 4). No operator token in the browser.
 
 ### Pending Todos
 
@@ -134,6 +136,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-09T11:22:54.577Z
-Stopped at: Phase 8 UI-SPEC approved
-Resume file: .planning/phases/08-demo-hardening/08-UI-SPEC.md
+Last session: 2026-07-09T11:39:02.226Z
+Stopped at: Completed 08-02-PLAN.md (WOW-01 peek console)
+Resume file: None

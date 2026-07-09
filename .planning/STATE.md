@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Progress
 status: executing
-stopped_at: Completed 09-01-PLAN.md
-last_updated: "2026-07-09T15:41:58.097Z"
-last_activity: 2026-07-09 -- Phase 09 execution started
+stopped_at: Completed 09-02-PLAN.md
+last_updated: "2026-07-09T17:02:00.000Z"
+last_activity: 2026-07-09 -- Completed 09-02 (coreClear two-pass + Noncompetitive)
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 14
-  completed_plans: 8
+  completed_plans: 9
   percent: 17
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 ## Current Position
 
 Phase: 09 (auction-depth-live-viz) — EXECUTING
-Plan: 2 of 7
+Plan: 3 of 7
 Status: Ready to execute
-Last activity: 2026-07-09 -- Phase 09 execution started
+Last activity: 2026-07-09 -- Completed 09-02 (coreClear two-pass + Noncompetitive)
 
 ## Performance Metrics
 
@@ -74,6 +74,7 @@ Last activity: 2026-07-09 -- Phase 09 execution started
 | Phase 08 P06 | 6 min | 3 tasks | 4 files |
 | Phase 08 P07 | ~8 min | 3 tasks | 8 files |
 | Phase 09 P01 | 22min | 3 tasks tasks | 12 files files |
+| Phase 09 P02 | ~11 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -125,6 +126,7 @@ Recent decisions affecting current work:
 - [Phase ?]: [09-01 / AUCT-01]: Additive order model as a PURE REDUCTION — OrderType(Limit|Noncompetitive|AllOrNone|Conditional)+minQty/firmIf on OrderView/Order/Venue.SubmitOrder+TS mirror; effective-limit (limit stays Decimal). New fields INERT until wave 2; §4 stays 100.00/A=10/B=8/C=2, Daml-TS parity intact.
 - [Phase ?]: [09-01]: web/daml.js regenerated+committed (fresh-clone invariant 6e4bade); generated Order/SubmitOrder carry orderType/minQty/firmIf. DeskColumn.tsx was a 2nd SubmitOrder site the plan missed (Rule 3 fix).
 - [Phase ?]: [09-01 / AUCT-02]: RULEBOOK.md skeleton anchors max-matched->min-imbalance->lower-price + topPrices trap guard + bp formula, cites both Clearing.daml and auction.ts; 09-02/09-03 fill per-type sections. AUCT-01/02 NOT complete (multi-plan foundation).
+- [09-02 / AUCT-01,AUCT-02]: coreClear extracted (single-pass §8 kernel) + computeClearing now a two-pass wrapper (partition firm/conditional, provisional coreClear over firm, pass-through `qualifies` hook for 09-03) — behavior-preserving in both planes. Noncompetitive shipped: any-price demand/supply (isNoncomp OR limit), excluded from candidatePrices, TOP-priority ration key `(not noncomp, per-side limit)` — Daml Bool→TS 0/1 (Pitfall 6); per-side direction kept (sells ASC or §4 breaks). Golden parity fixtures test_noncomp_sell_top_priority ⇄ auction.test.ts noncomp (p*=100.00, A=6/B=2/C=4). §4 canary + 99-vs-100 trap green; solver 84/84, daml 16 ok, tsc clean. RULEBOOK Noncompetitive section filled citing both planes. Noncomp kept SELL-side (single funded buyer, Pitfall 3). AUCT-01/02 still NOT complete (AON/MAQ + Conditional + full rulebook land 09-03).
 
 ### Pending Todos
 
@@ -150,6 +152,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-09T15:41:58.072Z
-Stopped at: Completed 09-01-PLAN.md
+Last session: 2026-07-09T17:02:00.000Z
+Stopped at: Completed 09-02-PLAN.md
 Resume file: None

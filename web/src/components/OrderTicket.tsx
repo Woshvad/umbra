@@ -15,7 +15,7 @@ import { tokens } from '../desks'
 import { parseOrder, SolverError } from '../solver'
 import { Order } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
 import { Venue } from '@daml.js/umbra-0.1.0/lib/Umbra/Roles/module'
-import { Side } from '@daml.js/umbra-0.1.0/lib/Umbra/Clearing/module'
+import { Side, type OrderType } from '@daml.js/umbra-0.1.0/lib/Umbra/Clearing/module'
 
 type OrderPayload = Order
 
@@ -34,6 +34,24 @@ const DEMO: Record<DeskKey, { side: Side; qty: number; limit: number }> = {
   bankC: { side: Side.Sell, qty: 5, limit: 100 },
 }
 
+// AUCT-01 — the four sealed order types. UI segment labels map to the on-ledger
+// OrderType discriminator (09-01): MAQ = the AllOrNone variant (min == qty is the
+// full-fill special case). Full names live in the descriptor, below the selector.
+const TYPE_SEGMENTS: { type: OrderType; label: string }[] = [
+  { type: 'Limit', label: 'LIMIT' },
+  { type: 'Noncompetitive', label: 'NONCOMP' },
+  { type: 'AllOrNone', label: 'MAQ' },
+  { type: 'Conditional', label: 'COND' },
+]
+
+// Active-type descriptor copy (UI-SPEC Copywriting Contract — verbatim).
+const TYPE_DESCRIPTOR: Record<OrderType, string> = {
+  Limit: 'Sealed limit — fill at or better than your price.',
+  Noncompetitive: 'Fill at clear — take the uniform price, no limit.',
+  AllOrNone: 'Fills only if you get at least your minimum quantity.',
+  Conditional: 'Firms only inside your price band — else drops at clear.',
+}
+
 function prefersReducedMotion(): boolean {
   return (
     typeof window !== 'undefined' &&
@@ -48,6 +66,11 @@ export default function OrderTicket({ ctx, deskKey, order }: Props) {
   const [side, setSide] = useState<Side>(Side.Buy)
   const [qty, setQty] = useState<string>('')
   const [limit, setLimit] = useState<string>('')
+  // AUCT-01 — order-type selector + per-type params (desk plane, submits on the
+  // desk's OWN token). Params are inert for a plain Limit; unused ones go null.
+  const [orderType, setOrderType] = useState<OrderType>('Limit')
+  const [minQtyInput, setMinQtyInput] = useState<string>('')
+  const [firmIfInput, setFirmIfInput] = useState<string>('')
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [reopened, setReopened] = useState(false)
@@ -66,8 +89,29 @@ export default function OrderTicket({ ctx, deskKey, order }: Props) {
   const sideColor = side === Side.Buy ? '#2B3AF2' : '#FF3D9A'
   const limitQualifier = side === Side.Buy ? '(max)' : '(min)'
 
+  // Per-type field show/hide + non-blocking validation hints (client-side UX only —
+  // the on-ledger `ensure` is the real guard: T-09-06-02).
+  const isNoncomp = orderType === 'Noncompetitive'
+  const isMAQ = orderType === 'AllOrNone'
+  const isConditional = orderType === 'Conditional'
+  const showLimit = !isNoncomp
+  const qtyIntView = parseInt(qty, 10)
+  const minQtyIntView = parseInt(minQtyInput, 10)
+  const firmIfNumView = Number(firmIfInput)
+  const maqMinExceedsQty =
+    isMAQ && Number.isFinite(minQtyIntView) && Number.isFinite(qtyIntView) && minQtyIntView > qtyIntView
+  const maqMinTooLow =
+    isMAQ && minQtyInput.trim() !== '' && (!Number.isFinite(minQtyIntView) || minQtyIntView <= 0)
+  const maqFullFill =
+    isMAQ && Number.isFinite(minQtyIntView) && minQtyIntView > 0 && minQtyIntView === qtyIntView
+  const condBandTooLow =
+    isConditional && firmIfInput.trim() !== '' && (!Number.isFinite(firmIfNumView) || firmIfNumView <= 0)
+
   function loadDemo() {
+    // load demo order stays a plain Limit (§4) — resets the selector even if a
+    // richer type was picked, so the demo always seeds the canonical Limit order.
     const d = DEMO[deskKey]
+    setOrderType('Limit')
     setSide(d.side)
     setQty(String(d.qty))
     setLimit(d.limit.toFixed(2))
@@ -100,27 +144,35 @@ export default function OrderTicket({ ctx, deskKey, order }: Props) {
   async function onSeal() {
     if (ticketLocked || submitting) return
     const qtyInt = parseInt(qty, 10)
+    if (!Number.isFinite(qtyInt) || qtyInt <= 0) return
+    // Limit is required for every type EXCEPT Noncompetitive (which fills at clear).
     const limitNum = Number(limit)
-    if (!Number.isFinite(qtyInt) || qtyInt <= 0 || !Number.isFinite(limitNum) || limitNum <= 0) {
-      return
-    }
+    if (orderType !== 'Noncompetitive' && (!Number.isFinite(limitNum) || limitNum <= 0)) return
+    // MAQ (AllOrNone): minQty must be in [1, quantity]. Conditional: firmIf must be > 0.
+    const minQtyInt = parseInt(minQtyInput, 10)
+    if (isMAQ && (!Number.isFinite(minQtyInt) || minQtyInt <= 0 || minQtyInt > qtyInt)) return
+    const firmIfNum = Number(firmIfInput)
+    if (isConditional && (!Number.isFinite(firmIfNum) || firmIfNum <= 0)) return
     setSubmitting(true)
     try {
       const venues = await ledger.query(Venue)
       const venueCid = venues[0]?.contractId
       if (!venueCid) return
-      // Int/Numeric as STRINGS (RESEARCH Pitfall 1). AUCT-01: the ticket submits a
-      // plain Limit — orderType='Limit', minQty/firmIf null (the order-type
-      // selector UI is plan 09-06; these satisfy the regenerated required args).
+      // Int/Numeric as STRINGS (RESEARCH Pitfall 1). Type-aware SubmitOrder on the
+      // desk's own plane: orderType carries the selected type; unused params go null.
+      // Noncompetitive carries no price — the on-ledger `ensure` skips limit>0 for it,
+      // so a '0.0' placeholder satisfies the still-required Decimal field (09-01
+      // effective-limit approach; the real "any price" lift is the clearing math).
+      const effLimit = orderType === 'Noncompetitive' ? '0.0' : limitNum.toFixed(1)
       await ledger.exercise(Venue.SubmitOrder, venueCid, {
         desk: tokens[deskKey].party,
         roundId: 'R1',
         side,
         quantity: String(qtyInt),
-        limit: limitNum.toFixed(1),
-        orderType: 'Limit',
-        minQty: null,
-        firmIf: null,
+        limit: effLimit,
+        orderType,
+        minQty: isMAQ ? String(minQtyInt) : null,
+        firmIf: isConditional ? firmIfNum.toFixed(1) : null,
       })
       setReopened(false)
       setSubmitted(true)
@@ -237,6 +289,50 @@ export default function OrderTicket({ ctx, deskKey, order }: Props) {
         )}
       </div>
 
+      {/* AUCT-01 — Order Type selector (below the NL assist, above the side toggle).
+          Segmented LIMIT · NONCOMP · MAQ · COND; active = ink underline, reusing the
+          shipped mono-9 toggle grammar. Disabled under the one-per-round lock. */}
+      <div style={{ margin: '18px 0 0' }}>
+        <div
+          className="font-body text-10 uppercase opacity-55"
+          style={{ letterSpacing: '.16em' }}
+        >
+          Order Type
+        </div>
+        <div className="flex" style={{ marginTop: '10px' }}>
+          {TYPE_SEGMENTS.map(({ type, label }) => {
+            const active = orderType === type
+            return (
+              <button
+                key={type}
+                type="button"
+                disabled={ticketLocked}
+                onClick={() => setOrderType(type)}
+                className="font-mono text-9 uppercase disabled:cursor-not-allowed"
+                style={{
+                  flex: 1,
+                  padding: '8px 0',
+                  letterSpacing: '.16em',
+                  background: 'transparent',
+                  color: active ? '#0A0A0A' : 'rgba(10,10,10,.45)',
+                  borderBottom: active ? '1px solid #0A0A0A' : '1px solid transparent',
+                }}
+              >
+                {label}
+              </button>
+            )
+          })}
+        </div>
+        {/* Active-type descriptor (umbra-rise on change; honors reduced motion) */}
+        <div
+          key={orderType}
+          className={`font-body text-13 ${prefersReducedMotion() ? '' : 'animate-umbra-rise'}`}
+          style={{ lineHeight: 1.6, opacity: 0.65, marginTop: '10px' }}
+        >
+          {TYPE_DESCRIPTOR[orderType]}
+        </div>
+      </div>
+
       {/* Side toggle */}
       <div
         className="flex"
@@ -271,30 +367,122 @@ export default function OrderTicket({ ctx, deskKey, order }: Props) {
         />
       </div>
 
-      {/* Limit */}
-      <div style={{ marginBottom: '30px' }}>
-        <div className="flex items-baseline justify-between" style={{ marginBottom: '8px' }}>
-          <span
-            className="font-body text-10 uppercase opacity-50"
-            style={{ letterSpacing: '.14em' }}
-          >
-            Limit Price {limitQualifier}
-          </span>
-          <span className="font-body text-10 uppercase opacity-40" style={{ letterSpacing: '.14em' }}>
-            USDCx / unit
-          </span>
+      {/* Limit — shown for every type except Noncompetitive, which fills at clear */}
+      {showLimit ? (
+        <div style={{ marginBottom: isMAQ || isConditional ? '26px' : '30px' }}>
+          <div className="flex items-baseline justify-between" style={{ marginBottom: '8px' }}>
+            <span
+              className="font-body text-10 uppercase opacity-50"
+              style={{ letterSpacing: '.14em' }}
+            >
+              Limit Price {limitQualifier}
+            </span>
+            <span className="font-body text-10 uppercase opacity-40" style={{ letterSpacing: '.14em' }}>
+              USDCx / unit
+            </span>
+          </div>
+          <input
+            type="text"
+            inputMode="decimal"
+            disabled={ticketLocked}
+            value={limit}
+            onChange={(e) => setLimit(e.target.value.replace(/[^\d.]/g, ''))}
+            placeholder="0.00"
+            className="font-mono text-44 tabular-nums w-full bg-transparent outline-none disabled:opacity-50"
+            style={{ fontWeight: 600, borderBottom: '2px solid #0A0A0A', padding: '2px 0 8px', color: sideColor }}
+          />
         </div>
-        <input
-          type="text"
-          inputMode="decimal"
-          disabled={ticketLocked}
-          value={limit}
-          onChange={(e) => setLimit(e.target.value.replace(/[^\d.]/g, ''))}
-          placeholder="0.00"
-          className="font-mono text-44 tabular-nums w-full bg-transparent outline-none disabled:opacity-50"
-          style={{ fontWeight: 600, borderBottom: '2px solid #0A0A0A', padding: '2px 0 8px', color: sideColor }}
-        />
-      </div>
+      ) : (
+        // Noncompetitive — the removed limit reads as intentional (reuses the shipped
+        // 1px-ink / mono-9 status-row grammar; no invented token).
+        <div style={{ marginBottom: '30px' }}>
+          <div
+            className="flex items-center"
+            style={{ border: '1px solid #0A0A0A', padding: '14px 16px' }}
+          >
+            <span className="font-mono text-9 uppercase opacity-60" style={{ letterSpacing: '.16em' }}>
+              FILL AT CLEAR — NO LIMIT PRICE
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* MAQ / All-or-None — Min Acceptable Qty (1px assist tier, mono 22) */}
+      {isMAQ && (
+        <div style={{ marginBottom: '30px' }}>
+          <div className="flex items-baseline justify-between" style={{ marginBottom: '8px' }}>
+            <span
+              className="font-body text-10 uppercase opacity-50"
+              style={{ letterSpacing: '.14em' }}
+            >
+              Min Acceptable Qty
+            </span>
+            <span className="font-body text-10 uppercase opacity-40" style={{ letterSpacing: '.14em' }}>
+              BONDX
+            </span>
+          </div>
+          <input
+            type="text"
+            inputMode="numeric"
+            disabled={ticketLocked}
+            value={minQtyInput}
+            onChange={(e) => setMinQtyInput(e.target.value.replace(/[^\d]/g, ''))}
+            placeholder="0"
+            className="font-mono text-22 tabular-nums w-full bg-transparent outline-none disabled:opacity-50"
+            style={{ fontWeight: 600, borderBottom: '1px solid #0A0A0A', padding: '2px 0 6px' }}
+          />
+          {maqFullFill && (
+            <div
+              className="font-mono text-9 uppercase opacity-60"
+              style={{ letterSpacing: '.16em', marginTop: '8px' }}
+            >
+              = FULL FILL ONLY
+            </div>
+          )}
+          {maqMinExceedsQty && (
+            <div className="font-body text-13 opacity-70" style={{ lineHeight: 1.6, marginTop: '8px' }}>
+              Minimum can&apos;t exceed your order size.
+            </div>
+          )}
+          {maqMinTooLow && (
+            <div className="font-body text-13 opacity-70" style={{ lineHeight: 1.6, marginTop: '8px' }}>
+              Enter a minimum of at least 1.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Conditional — side-directional Firm-If band (1px assist tier, mono 22) */}
+      {isConditional && (
+        <div style={{ marginBottom: '30px' }}>
+          <div className="flex items-baseline justify-between" style={{ marginBottom: '8px' }}>
+            <span
+              className="font-body text-10 uppercase opacity-50"
+              style={{ letterSpacing: '.14em' }}
+            >
+              {side === Side.Buy ? 'Firm If Clears ≤' : 'Firm If Clears ≥'}
+            </span>
+            <span className="font-body text-10 uppercase opacity-40" style={{ letterSpacing: '.14em' }}>
+              USDCx / unit
+            </span>
+          </div>
+          <input
+            type="text"
+            inputMode="decimal"
+            disabled={ticketLocked}
+            value={firmIfInput}
+            onChange={(e) => setFirmIfInput(e.target.value.replace(/[^\d.]/g, ''))}
+            placeholder="0.00"
+            className="font-mono text-22 tabular-nums w-full bg-transparent outline-none disabled:opacity-50"
+            style={{ fontWeight: 600, borderBottom: '1px solid #0A0A0A', padding: '2px 0 6px', color: sideColor }}
+          />
+          {condBandTooLow && (
+            <div className="font-body text-13 opacity-70" style={{ lineHeight: 1.6, marginTop: '8px' }}>
+              Enter a firm-if price above 0.
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Submit / status (one-per-round) */}
       {ticketLocked ? (

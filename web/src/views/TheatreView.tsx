@@ -15,6 +15,7 @@
 // Privacy still renders.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { OperatorViewState } from '../operatorState'
+import type { IndicativeMeta } from '../solver'
 import { closeRound, getRound, solvePreview, SolverError, OFFLINE_CAPTION } from '../solver'
 import CountdownRing from '../components/CountdownRing'
 import CrossingChart from '../components/CrossingChart'
@@ -35,6 +36,9 @@ export default function TheatreView({
 }: Props) {
   const [seconds, setSeconds] = useState(WINDOW_SECONDS)
   const [sealedOrderCount, setSealedOrderCount] = useState(0)
+  // AUCT-03: the aggregate indicative scalars (scalars only — never an order). Present
+  // only while the window is open with ≥1 sealed order; small-N guarded server-side.
+  const [indicative, setIndicative] = useState<IndicativeMeta | undefined>()
   const clockRef = useRef<ReturnType<typeof setInterval>>()
 
   // ── Close & Solve (RESEARCH Pattern 5) ──────────────────────────────────────────
@@ -84,7 +88,12 @@ export default function TheatreView({
     let cancelled = false
     getRound(roundId)
       .then((r) => {
-        if (!cancelled) setSealedOrderCount(r.sealedOrderCount)
+        if (!cancelled) {
+          setSealedOrderCount(r.sealedOrderCount)
+          // Scalars only — the solver never sends an order or a candidate-price curve
+          // during the open window (present solely when status is Open with ≥1 order).
+          setIndicative(r.indicative)
+        }
       })
       .catch((e) => {
         if (!cancelled && e instanceof SolverError && e.code === 'OFFLINE') setOffline(true)
@@ -129,6 +138,7 @@ export default function TheatreView({
             phase={phase}
             seconds={seconds}
             sealedOrderCount={sealedOrderCount}
+            indicative={indicative}
             onStart={startWindow}
             onClose={() => void closeAndSolve()}
           />
@@ -145,52 +155,66 @@ function RunningStage({
   phase,
   seconds,
   sealedOrderCount,
+  indicative,
   onStart,
   onClose,
 }: {
   phase: OperatorViewState['phase']
   seconds: number
   sealedOrderCount: number
+  indicative: IndicativeMeta | undefined
   onStart: () => void
   onClose: () => void
 }) {
   const open = phase === 'open'
   const caption = open ? 'WINDOW READY' : 'WINDOW OPEN — ORDERS LOCKED & HIDDEN'
+  // AUCT-03: the aggregate indicative panel shows only once the window is open with ≥1
+  // sealed order AND the solver has published the (scalars-only) block.
+  const showIndicative = sealedOrderCount >= 1 && indicative !== undefined
+  // VIZ-01: the assembling crossing appears alongside once orders are sealing. Per the
+  // privacy invariant NO per-order/candidate-price curve crosses the wire during the open
+  // window, so the assembling chart renders its frame + faint matched region WITHOUT a red
+  // p* — the full crossing locks in from solve-preview at close.
+  const showAssembling = sealedOrderCount >= 1
 
   return (
-    <div className="flex items-center" style={{ gap: '72px' }}>
-      <CountdownRing seconds={seconds} />
+    <div className="flex flex-col" style={{ gap: '40px' }}>
+      <div className="flex items-center" style={{ gap: '72px' }}>
+        <CountdownRing seconds={seconds} />
 
-      <div className="flex flex-col" style={{ flex: 1, minWidth: 0 }}>
-        <span
-          className="font-mono text-13 uppercase"
-          style={{ letterSpacing: '.16em', opacity: 0.6 }}
-        >
-          {caption}
-        </span>
-
-        <h2
-          className="font-display text-56 font-bold"
-          style={{ letterSpacing: '-.02em', margin: '14px 0 18px' }}
-        >
-          ONE PRICE.
-          <br />
-          NO LEAKS.
-        </h2>
-
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: '14px', marginBottom: '30px' }}>
-          <span className="font-mono text-44 font-bold tabular-nums" style={{ lineHeight: 1 }}>
-            {sealedOrderCount}
-          </span>
+        <div className="flex flex-col" style={{ flex: 1, minWidth: 0 }}>
           <span
-            className="font-body uppercase"
-            style={{ fontSize: '12px', letterSpacing: '.2em', opacity: 0.7 }}
+            className="font-mono text-13 uppercase"
+            style={{ letterSpacing: '.16em', opacity: 0.6 }}
           >
-            Sealed orders in the book
+            {caption}
           </span>
-        </div>
 
-        <div style={{ display: 'flex', gap: '14px' }}>
+          <h2
+            className="font-display text-56 font-bold"
+            style={{ letterSpacing: '-.02em', margin: '14px 0 18px' }}
+          >
+            ONE PRICE.
+            <br />
+            NO LEAKS.
+          </h2>
+
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '14px', marginBottom: '18px' }}>
+            <span className="font-mono text-44 font-bold tabular-nums" style={{ lineHeight: 1 }}>
+              {sealedOrderCount}
+            </span>
+            <span
+              className="font-body uppercase"
+              style={{ fontSize: '12px', letterSpacing: '.2em', opacity: 0.7 }}
+            >
+              Sealed orders in the book
+            </span>
+          </div>
+
+          {/* AUCT-03 indicative aggregate panel — scalars only, small-N guarded */}
+          {showIndicative && <IndicativePanel indicative={indicative} />}
+
+          <div style={{ display: 'flex', gap: '14px', marginTop: '30px' }}>
           {open ? (
             <button
               type="button"
@@ -224,6 +248,128 @@ function RunningStage({
               Close &amp; Solve
             </button>
           )}
+          </div>
+        </div>
+      </div>
+
+      {/* VIZ-01 assembling crossing — the chart frame builds as orders seal; NO red p*
+          during the open window (red is reserved for the LOCKED clear). No per-order or
+          candidate-price curve crosses the wire here, so it renders the framed/faint
+          state; the full crossing locks in from solve-preview at close. */}
+      {showAssembling && (
+        <div style={{ maxWidth: '480px' }}>
+          <CrossingChart curve={[]} clearingPrice={0} matchedVolume={0} mode="assembling" />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── AUCT-03 indicative aggregate panel (scalars only, small-N guarded) ───────────────
+// A compact sub-panel on the dark stage — 1px paper-at-.28 border (the shipped inverted
+// axis-stroke grammar, reduced opacity; not a new color). Three scalar rows: INDICATIVE
+// (mono 40, small-N guarded → coarse band + guard caption), NET IMBALANCE (signed,
+// buy-blue / sell-pink / paper), EST. MATCHED (mono 18). Scalars only — never an order.
+function IndicativePanel({ indicative }: { indicative: IndicativeMeta }) {
+  const { indicativePrice, coarse, band, netImbalance, estMatched } = indicative
+  // Net-imbalance direction + sign color (UI-SPEC: +buy blue / −sell pink / 0 paper).
+  const imbColor = netImbalance > 0 ? '#4A7DFF' : netImbalance < 0 ? '#FF5C8A' : '#F4F1EA'
+  const imbDir = netImbalance > 0 ? 'BUY-HEAVY' : netImbalance < 0 ? 'SELL-HEAVY' : 'BALANCED'
+  const imbLabel = netImbalance > 0 ? `+${netImbalance}` : `${netImbalance}`
+
+  return (
+    <div
+      style={{
+        border: '1px solid rgba(244,241,234,0.28)',
+        padding: '16px 22px',
+        marginTop: '18px',
+        maxWidth: '460px',
+      }}
+    >
+      {/* Sub-label + aggregate note */}
+      <div
+        className="font-body uppercase"
+        style={{ fontSize: '10px', letterSpacing: '.16em', opacity: 0.55 }}
+      >
+        Indicative · Aggregate Only
+      </div>
+      <div
+        className="font-mono uppercase"
+        style={{ fontSize: '9px', letterSpacing: '.16em', opacity: 0.5, marginTop: '4px' }}
+      >
+        AGGREGATE — NO ORDER LEAVES THE SOLVER
+      </div>
+
+      <div style={{ display: 'flex', gap: '40px', flexWrap: 'wrap', marginTop: '16px' }}>
+        {/* INDICATIVE — exact price past the guard, else a coarse band */}
+        <div>
+          <div
+            className="font-mono uppercase"
+            style={{ fontSize: '11px', letterSpacing: '.16em', opacity: 0.6 }}
+          >
+            Indicative
+          </div>
+          {coarse ? (
+            <>
+              <div
+                className="font-mono tabular-nums"
+                style={{ fontSize: '22px', fontWeight: 600, opacity: 0.8, marginTop: '4px' }}
+              >
+                ≈ {band} BAND
+              </div>
+              <div
+                className="font-mono uppercase"
+                style={{ fontSize: '9px', letterSpacing: '.16em', opacity: 0.55, marginTop: '4px' }}
+              >
+                COARSE — PRIVACY GUARD (&lt; 2 ORDERS ON A SIDE)
+              </div>
+            </>
+          ) : (
+            <div
+              className="font-mono tabular-nums"
+              style={{ fontSize: '40px', fontWeight: 600, lineHeight: 1, marginTop: '4px' }}
+            >
+              {indicativePrice?.toFixed(2)}
+            </div>
+          )}
+        </div>
+
+        {/* NET IMBALANCE — signed, direction-colored */}
+        <div>
+          <div
+            className="font-mono uppercase"
+            style={{ fontSize: '11px', letterSpacing: '.16em', opacity: 0.6 }}
+          >
+            Net Imbalance
+          </div>
+          <div
+            className="font-mono tabular-nums"
+            style={{ fontSize: '22px', fontWeight: 600, color: imbColor, marginTop: '4px' }}
+          >
+            {imbLabel} <span style={{ fontSize: '11px', opacity: 0.7 }}>BONDX</span>
+          </div>
+          <div
+            className="font-mono uppercase"
+            style={{ fontSize: '9px', letterSpacing: '.16em', opacity: 0.55, marginTop: '2px' }}
+          >
+            {imbDir}
+          </div>
+        </div>
+
+        {/* EST. MATCHED — aggregate matched volume */}
+        <div>
+          <div
+            className="font-mono uppercase"
+            style={{ fontSize: '11px', letterSpacing: '.16em', opacity: 0.6 }}
+          >
+            Est. Matched
+          </div>
+          <div
+            className="font-mono tabular-nums"
+            style={{ fontSize: '18px', fontWeight: 600, marginTop: '4px' }}
+          >
+            {estMatched} <span style={{ fontSize: '11px', opacity: 0.7 }}>BONDX</span>
+          </div>
         </div>
       </div>
     </div>
@@ -267,6 +413,7 @@ function SolvedStage({
         curve={preview.curve}
         clearingPrice={preview.clearingPrice}
         matchedVolume={preview.matchedVolume}
+        mode="locked"
       />
       <PriceReveal
         clearingPrice={preview.clearingPrice}

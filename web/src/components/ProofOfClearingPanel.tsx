@@ -507,8 +507,16 @@ export default function ProofOfClearingPanel({ roundId, phase, preview, offline 
 
                 {tamper && (
                   <div style={{ margin: '16px 0 0' }}>
+                    {/* Honest-labeling: the verdict row reflects the ACTUAL outcome. Only claim
+                        "rejected" when the tampered clearing was genuinely rejected (rejected =
+                        !verified). If a tampered clearing ANOMALOUSLY verified true, surface a
+                        distinct investigate state instead of a false "rejected" claim (WR-02). */}
                     <div style={{ marginBottom: '8px' }}>
-                      <RedSquareRow label="TAMPERED CLEARING → PROOF REJECTED" />
+                      {tamper.rejected ? (
+                        <RedSquareRow label="TAMPERED CLEARING → PROOF REJECTED" />
+                      ) : (
+                        <RedSquareRow label="ANOMALY — TAMPER ACCEPTED, INVESTIGATE" />
+                      )}
                     </div>
                     <div className="font-mono text-13 tabular-nums" style={INK_SURFACE}>
                       {tamper.error || '// (no rejection captured)'}

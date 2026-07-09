@@ -88,6 +88,19 @@ export type CreateRoundResponse = {
 // POST /round/:id/close — force-close the window.
 export type CloseRoundResponse = { roundId: string; status: 'Closed' }
 
+// POST /parse-order — WOW-03. The solver (holding the server-only Anthropic key)
+// returns a zod-validated {side, qty, limit} for the desk to CONFIRM (never
+// auto-submitted). A 422 PARSE_FAILED surfaces as a SolverError the UI maps to the
+// parse-error state. Mirrors solver/src/api.ts POST /parse-order (200 body shape).
+export type ParseOrderResponse = { side: 'Buy' | 'Sell'; qty: number; limit: number }
+
+// POST /round/:id/tamper-clear — WOW-02. Attempts a deliberately WRONG on-ledger
+// Round.Clear (wrong-price / overfill); the recompute-and-assert backstop rejects it
+// atomically, changing NOTHING on-ledger. `error` is the VERBATIM (secret-free) ledger
+// rejection body — render it, never summarize it. Mirrors solver/src/api.ts.
+export type TamperMode = 'wrong-price' | 'overfill'
+export type TamperClearResponse = { rejected: boolean; error: string }
+
 // The solver's secret-safe error envelope (api.ts lines 266-273).
 export type ApiErrorBody = { error: { code: string; message: string } }
 
@@ -144,3 +157,18 @@ export const solvePreview = (id: string): Promise<SolvePreviewResponse> =>
 
 export const settle = (id: string): Promise<SettleResponse> =>
   call<SettleResponse>(`/round/${id}/settle`, { method: 'POST' })
+
+// ── WOW-03 / WOW-02 client methods (:4100, no operator/Anthropic credential) ──────
+// Natural-language order parse — plain English → validated {side, qty, limit}. A 422
+// PARSE_FAILED throws SolverError (code 'PARSE_FAILED'); the caller maps it to the
+// parse-error state. Prefills the ticket only — the desk still confirms via SEAL ORDER.
+export const parseOrder = (text: string): Promise<ParseOrderResponse> =>
+  call<ParseOrderResponse>('/parse-order', { method: 'POST', body: JSON.stringify({ text }) })
+
+// Break-the-AI tamper trigger — attempts a wrong on-ledger clear and resolves the
+// verbatim ledger rejection. It never settles; the real settle path is byte-unchanged.
+export const tamperClear = (id: string, mode: TamperMode): Promise<TamperClearResponse> =>
+  call<TamperClearResponse>(`/round/${id}/tamper-clear`, {
+    method: 'POST',
+    body: JSON.stringify({ mode }),
+  })

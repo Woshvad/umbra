@@ -19,6 +19,7 @@ import type { SolvePreviewResponse } from '../solver'
 import { settle, SolverError, OFFLINE_CAPTION } from '../solver'
 import { codeForParty } from '../desks'
 import { deskBalancesFromAllocations, type DeskBalances } from '../lib/balance'
+import { estimateLeakage, type LeakageLeg } from '../lib/leakage'
 import DvpLegs, { type DvpLeg } from '../components/DvpLegs'
 import BalanceTable, { type BalanceRow } from '../components/BalanceTable'
 import AtomicStamp from '../components/AtomicStamp'
@@ -230,6 +231,11 @@ export default function SettlementView({
                 {/* AUCT-04 — per-desk best-ex / TCA receipts (two-distinct-surplus + export). */}
                 <TcaReceipts roundId={roundId} />
                 <ProofPackButton roundId={roundId} />
+                {/* WOW-06 — cost-of-leakage SIMULATION. Sits BELOW the on-ledger receipts;
+                    the dashed border + SIMULATION tag + disclaimer keep it unmistakably
+                    NOT ledger data. Pure client-side math over the settled preview numbers
+                    (leakage.ts) — no solver/ledger call in this path (T-09-07-02/03). */}
+                <LeakageSimPanel preview={preview} />
               </>
             )}
           </div>
@@ -245,5 +251,95 @@ export default function SettlementView({
         </p>
       )}
     </main>
+  )
+}
+
+// WOW-06 — Cost-of-Leakage Simulator (UI-SPEC "WOW-06 — Cost-of-Leakage Simulator").
+// A POST-settle, CLIENT-SIDE illustrative panel: it runs the SAME settled order set
+// through a naive public order book (lib/leakage.estimateLeakage — slippage + front-run
+// → `$X LOST`) beside Umbra's sealed uniform clear (`$0 LEAKED`), showing `$X SAVED`.
+// It is UNMISTAKABLY NOT ledger data: a 1px DASHED ink border (the real receipts above
+// use SOLID 1px ink), a `SIMULATION · ILLUSTRATIVE — NOT LEDGER DATA` tag, and a
+// disclaimer footnote. `$X LOST` is red (the leakage); `$0 LEAKED` + the `$X SAVED`
+// punchline are INK — never lime (lime stays the clearing-reveal signal). No solver/
+// ledger dependency for the sim math — it reads only the settled preview numbers.
+function LeakageSimPanel({ preview }: { preview: SolvePreviewResponse }) {
+  // Build the leakage legs from the SETTLED preview allocations (qty + side) at the
+  // uniform clear — pure client-side, no fetch/ledger/solver call in this path.
+  const legs: LeakageLeg[] = preview.allocations
+    .filter((a) => a.filledQty > 0)
+    .map((a) => ({ side: a.side, filledQty: a.filledQty, clearingPrice: preview.clearingPrice }))
+  const { publicBookLost, saved } = estimateLeakage(legs)
+  const lost = `$${publicBookLost.toFixed(2)}`
+  const savedStr = `$${saved.toFixed(2)}`
+  // Reduced-motion → the punchline rises instantly (no keyframe), per the motion contract.
+  const rise = prefersReducedMotion() ? '' : ' animate-umbra-rise'
+
+  return (
+    <div style={{ marginTop: '34px', border: '1px dashed #0A0A0A', padding: '22px 24px' }}>
+      {/* Header — sub-label + right-pushed SIMULATION tag (ink border, neutral-illustrative). */}
+      <div className="flex items-center" style={{ gap: '10px' }}>
+        <span className="font-body text-10 uppercase opacity-55" style={{ letterSpacing: '.16em' }}>
+          Cost of Leakage · Simulation
+        </span>
+        <span
+          className="font-mono text-9 uppercase"
+          style={{
+            marginLeft: 'auto',
+            letterSpacing: '.12em',
+            padding: '3px 7px',
+            border: '1px solid #0A0A0A',
+          }}
+        >
+          SIMULATION · ILLUSTRATIVE — NOT LEDGER DATA
+        </span>
+      </div>
+
+      {/* Two columns — SIMULATED PUBLIC BOOK ($X LOST, red) vs UMBRA SEALED CLEAR ($0, ink). */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '22px' }}>
+        <div>
+          <div className="font-mono text-11 uppercase" style={{ letterSpacing: '.16em', opacity: 0.6 }}>
+            SIMULATED PUBLIC BOOK
+          </div>
+          <div
+            className="font-mono text-22 font-semibold tabular-nums"
+            style={{ color: '#E2231A', marginTop: '8px' }}
+          >
+            {lost} LOST
+          </div>
+          <div
+            className="font-mono text-9 uppercase"
+            style={{ letterSpacing: '.16em', opacity: 0.55, marginTop: '4px' }}
+          >
+            SLIPPAGE + FRONT-RUN
+          </div>
+        </div>
+        <div>
+          <div className="font-mono text-11 uppercase" style={{ letterSpacing: '.16em', opacity: 0.6 }}>
+            UMBRA SEALED CLEAR
+          </div>
+          <div className="font-mono text-22 font-semibold tabular-nums" style={{ marginTop: '8px' }}>
+            $0 LEAKED
+          </div>
+          <div
+            className="font-mono text-9 uppercase"
+            style={{ letterSpacing: '.16em', opacity: 0.55, marginTop: '4px' }}
+          >
+            SEALED UNIFORM PRICE
+          </div>
+        </div>
+      </div>
+
+      {/* Punchline — INK (deliberately NOT lime), umbra-rise on mount. */}
+      <div className={`font-mono text-40 font-semibold tabular-nums${rise}`} style={{ marginTop: '22px' }}>
+        {savedStr} SAVED VS A PUBLIC BOOK
+      </div>
+
+      {/* Disclaimer footnote — verbatim (Inter 13/1.6 opacity .6). */}
+      <p className="font-body text-13" style={{ opacity: 0.6, marginTop: '12px', maxWidth: '560px' }}>
+        Illustrative model — the same orders run through a naive public order book. No real venue;
+        nothing here is on-ledger.
+      </p>
+    </div>
   )
 }

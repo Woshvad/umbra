@@ -272,10 +272,15 @@ function RunningStage({
 // buy-blue / sell-pink / paper), EST. MATCHED (mono 18). Scalars only — never an order.
 function IndicativePanel({ indicative }: { indicative: IndicativeMeta }) {
   const { indicativePrice, coarse, band, netImbalance, estMatched } = indicative
+  // netImbalance/estMatched are withheld under the small-N guard (CR-01) — render those two
+  // scalar rows ONLY when both are present (≥2 orders on both sides). In the guarded state
+  // the panel shows just the coarse INDICATIVE band + privacy caption; nothing order-derivable.
+  const hasScalars = netImbalance !== undefined && estMatched !== undefined
   // Net-imbalance direction + sign color (UI-SPEC: +buy blue / −sell pink / 0 paper).
-  const imbColor = netImbalance > 0 ? '#4A7DFF' : netImbalance < 0 ? '#FF5C8A' : '#F4F1EA'
-  const imbDir = netImbalance > 0 ? 'BUY-HEAVY' : netImbalance < 0 ? 'SELL-HEAVY' : 'BALANCED'
-  const imbLabel = netImbalance > 0 ? `+${netImbalance}` : `${netImbalance}`
+  const imb = netImbalance ?? 0
+  const imbColor = imb > 0 ? '#4A7DFF' : imb < 0 ? '#FF5C8A' : '#F4F1EA'
+  const imbDir = imb > 0 ? 'BUY-HEAVY' : imb < 0 ? 'SELL-HEAVY' : 'BALANCED'
+  const imbLabel = imb > 0 ? `+${imb}` : `${imb}`
 
   return (
     <div
@@ -334,43 +339,64 @@ function IndicativePanel({ indicative }: { indicative: IndicativeMeta }) {
           )}
         </div>
 
-        {/* NET IMBALANCE — signed, direction-colored */}
-        <div>
-          <div
-            className="font-mono uppercase"
-            style={{ fontSize: '11px', letterSpacing: '.16em', opacity: 0.6 }}
-          >
-            Net Imbalance
-          </div>
-          <div
-            className="font-mono tabular-nums"
-            style={{ fontSize: '22px', fontWeight: 600, color: imbColor, marginTop: '4px' }}
-          >
-            {imbLabel} <span style={{ fontSize: '11px', opacity: 0.7 }}>BONDX</span>
-          </div>
-          <div
-            className="font-mono uppercase"
-            style={{ fontSize: '9px', letterSpacing: '.16em', opacity: 0.55, marginTop: '2px' }}
-          >
-            {imbDir}
-          </div>
-        </div>
+        {/* NET IMBALANCE + EST. MATCHED — withheld under the small-N guard (CR-01) so
+            nothing order-derivable is shown; rendered only at ≥2 orders on both sides. */}
+        {hasScalars ? (
+          <>
+            {/* NET IMBALANCE — signed, direction-colored */}
+            <div>
+              <div
+                className="font-mono uppercase"
+                style={{ fontSize: '11px', letterSpacing: '.16em', opacity: 0.6 }}
+              >
+                Net Imbalance
+              </div>
+              <div
+                className="font-mono tabular-nums"
+                style={{ fontSize: '22px', fontWeight: 600, color: imbColor, marginTop: '4px' }}
+              >
+                {imbLabel} <span style={{ fontSize: '11px', opacity: 0.7 }}>BONDX</span>
+              </div>
+              <div
+                className="font-mono uppercase"
+                style={{ fontSize: '9px', letterSpacing: '.16em', opacity: 0.55, marginTop: '2px' }}
+              >
+                {imbDir}
+              </div>
+            </div>
 
-        {/* EST. MATCHED — aggregate matched volume */}
-        <div>
-          <div
-            className="font-mono uppercase"
-            style={{ fontSize: '11px', letterSpacing: '.16em', opacity: 0.6 }}
-          >
-            Est. Matched
+            {/* EST. MATCHED — aggregate matched volume */}
+            <div>
+              <div
+                className="font-mono uppercase"
+                style={{ fontSize: '11px', letterSpacing: '.16em', opacity: 0.6 }}
+              >
+                Est. Matched
+              </div>
+              <div
+                className="font-mono tabular-nums"
+                style={{ fontSize: '18px', fontWeight: 600, marginTop: '4px' }}
+              >
+                {estMatched} <span style={{ fontSize: '11px', opacity: 0.7 }}>BONDX</span>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div>
+            <div
+              className="font-mono uppercase"
+              style={{ fontSize: '11px', letterSpacing: '.16em', opacity: 0.6 }}
+            >
+              Imbalance · Matched
+            </div>
+            <div
+              className="font-mono uppercase"
+              style={{ fontSize: '9px', letterSpacing: '.16em', opacity: 0.55, marginTop: '6px', maxWidth: '160px' }}
+            >
+              WITHHELD — PRIVACY GUARD (&lt; 2 ORDERS ON A SIDE)
+            </div>
           </div>
-          <div
-            className="font-mono tabular-nums"
-            style={{ fontSize: '18px', fontWeight: 600, marginTop: '4px' }}
-          >
-            {estMatched} <span style={{ fontSize: '11px', opacity: 0.7 }}>BONDX</span>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   )

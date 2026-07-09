@@ -44,13 +44,14 @@ export type AgentMeta = { verified: boolean; source: 'claude' | 'deterministic-f
 // (mirrors solver/src/api.ts buildIndicative). NEVER an individual order or a candidate-
 // price curve. `indicativePrice` is published only past the small-N guard (≥2 orders on
 // both sides); otherwise `coarse:true` + a wide-bucket `band` (the UI labels the guard).
-// `netImbalance` (Σbuy − Σsell) and `estMatched` are aggregate counts, always present.
+// `netImbalance` (Σbuy − Σsell) and `estMatched` are published ONLY past the same guard —
+// below it they degenerate into individual orders (CR-01), so they are withheld (optional).
 export type IndicativeMeta = {
   indicativePrice?: number
   coarse?: boolean
   band?: number
-  netImbalance: number
-  estMatched: number
+  netImbalance?: number
+  estMatched?: number
 }
 
 // AUCT-04 per-desk best-ex / TCA receipt — present ONLY on the post-settle GET body

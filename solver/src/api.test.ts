@@ -454,12 +454,46 @@ describe('solver §11 HTTP API', () => {
     expect(body.indicative.coarse).toBe(true)
     expect(typeof body.indicative.band).toBe('number')
     expect(body.indicative.indicativePrice).toBeUndefined()
-    // Aggregate counts still cross (accepted residual — T-09-04-04).
-    expect(body.indicative.netImbalance).toBe(-3) // 10 buy − (8+5) sell.
-    expect(body.indicative.estMatched).toBe(10)
+    // CR-01: netImbalance/estMatched are WITHHELD under the guard — with a singleton side
+    // they are order-derivable (netImbalance would equal ±the lone side's quantity, and
+    // {imbalance,matched} invert to both orders), so nothing order-derivable may cross.
+    expect(body.indicative.netImbalance).toBeUndefined()
+    expect(body.indicative.estMatched).toBeUndefined()
+    // Only coarse price info crosses — the guarded indicative block has NO other field.
+    expect(Object.keys(body.indicative).sort()).toEqual(['band', 'coarse'])
     // Still no candidate-price curve during the open window.
     expect(body).not.toHaveProperty('curve')
     expect(body).not.toHaveProperty('candidatePrices')
+  })
+
+  it('GET /round/:id (open) small-N guard — a single sealed order never leaks its side/quantity via netImbalance (CR-01)', async () => {
+    // N=1: one lone buy for 7. Pre-fix, netImbalance = +7 published the exact quantity AND
+    // side of the ONLY order in the book (and estMatched leaked too). The guard must withhold
+    // every order-derivable scalar during the open window — only a coarse price band may cross.
+    const SOLO: SealedOrder[] = [
+      { contractId: '#solo', view: { desk: 'DeskSolo', side: 'Buy', quantity: 7, limit: 100.0 } },
+    ]
+    const deps = makeDeps({
+      queryRound: vi.fn(async (roundId: string) => ({ roundId, status: 'Open' })),
+      readSealedOrders: vi.fn(async (): Promise<SealedOrder[]> => SOLO),
+      refreshStats: vi.fn(async (): Promise<number> => SOLO.length),
+    })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1`)
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    expect(body.indicative).toBeDefined()
+    expect(body.indicative.coarse).toBe(true)
+    expect(body.indicative.indicativePrice).toBeUndefined()
+    // The lone order's side & quantity stay sealed — no order-derivable scalar crosses.
+    expect(body.indicative.netImbalance).toBeUndefined()
+    expect(body.indicative.estMatched).toBeUndefined()
+    expect(Object.keys(body.indicative).sort()).toEqual(['band', 'coarse'])
+    // The order's desk identity never appears anywhere in the response.
+    expect(JSON.stringify(body)).not.toContain('DeskSolo')
   })
 
   it('GET /round/:id (open) response never echoes the operator token or ANTHROPIC_API_KEY (secret sweep on the indicative body)', async () => {

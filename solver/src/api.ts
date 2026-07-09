@@ -207,40 +207,44 @@ const buildCurve = (
 // NEVER an individual order and NEVER a candidate-price curve (each candidate price is
 // one desk's limit; see Pitfall 1). This computes:
 //   • indicativePrice = choosePStar(views)  — published EXACT only past the small-N guard
-//   • netImbalance    = Σ buy qty − Σ sell qty  (aggregate count, always)
-//   • estMatched      = matchedAt(views, p*)     (aggregate count, always)
-// Small-N guard: the exact indicativePrice is withheld unless there are ≥2 orders on
-// BOTH sides of the crossing — with a singleton side, p* could BE that order's limit, so
-// a coarse wide-bucket band + `coarse:true` is emitted instead (the UI labels the guard).
+//   • netImbalance    = Σ buy qty − Σ sell qty  — published ONLY past the small-N guard
+//   • estMatched      = matchedAt(views, p*)     — published ONLY past the small-N guard
+// Small-N guard (CR-01): with <2 orders on EITHER side the "aggregate" scalars degenerate
+// into individual orders — at N=1 netImbalance IS that lone order's ±quantity, and with one
+// order per side {netImbalance, estMatched} invert to both quantities and both sides. So
+// below the threshold NOTHING order-derivable is published: only a coarse wide-bucket price
+// `band` + `coarse:true` (the UI labels the guard). The exact price AND the imbalance/matched
+// scalars require ≥2 orders on BOTH sides, where the sums are genuinely non-invertible.
 // buildCurve is deliberately NOT called here — the curve stays terminal-status-only.
 const INDICATIVE_BAND_BUCKET = 5
 
 // The scalars-only shape returned during the open window (mirrored by web IndicativeMeta).
+// netImbalance/estMatched are OPTIONAL: withheld under the small-N guard (see CR-01 above).
 type IndicativeBlock = {
   indicativePrice?: number
   coarse?: boolean
   band?: number
-  netImbalance: number
-  estMatched: number
+  netImbalance?: number
+  estMatched?: number
 }
 
 const buildIndicative = (deps: AppDeps, views: OrderView[]): IndicativeBlock => {
   const buys = views.filter((v) => v.side === 'Buy')
   const sells = views.filter((v) => v.side === 'Sell')
-  const netImbalance =
-    buys.reduce((s, v) => s + v.quantity, 0) - sells.reduce((s, v) => s + v.quantity, 0)
   const pStar = deps.choosePStar(views)
-  const estMatched = deps.matchedAt(views, pStar)
-  // Guard: a singleton side would let the published price back out that order's limit.
+  // Small-N guard: <2 orders on EITHER side makes every scalar order-derivable (CR-01),
+  // so we publish only a coarse price band — no imbalance, no matched, no exact price.
   const guarded = buys.length < 2 || sells.length < 2
   if (guarded) {
     return {
       coarse: true,
       band: Math.round(pStar / INDICATIVE_BAND_BUCKET) * INDICATIVE_BAND_BUCKET,
-      netImbalance,
-      estMatched,
     }
   }
+  // ≥2 orders on both sides: the sums are genuinely aggregate (non-invertible to an order).
+  const netImbalance =
+    buys.reduce((s, v) => s + v.quantity, 0) - sells.reduce((s, v) => s + v.quantity, 0)
+  const estMatched = deps.matchedAt(views, pStar)
   return { indicativePrice: pStar, netImbalance, estMatched }
 }
 

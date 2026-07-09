@@ -54,6 +54,10 @@ export type RoundResponse = {
   curve?: CurvePoint[]
   rationale?: string
   agent?: AgentMeta
+  // WOW-04: the shareable natural-language brief — present ONLY on the terminal
+  // (Cleared/Settled) GET body, composed server-side from the settled numbers +
+  // verified rationale (solver/src/brief.ts composeBrief; secret-free, no drift).
+  brief?: string
 }
 
 // GET /round/:id/solve-preview — the full deterministic §8 proposal (always present).
@@ -172,3 +176,26 @@ export const tamperClear = (id: string, mode: TamperMode): Promise<TamperClearRe
     method: 'POST',
     body: JSON.stringify({ mode }),
   })
+
+// ── WOW-04 / WOW-05 URL builders (no credential, no port literal) ─────────────────
+// These build PLAIN URLs off SOLVER_BASE_URL — consumed by the browser's EventSource
+// (SSE) and an <a download> anchor respectively. Both are on the operator plane but
+// carry NO auth header (the solver serves them open on the operator plane — RESEARCH
+// Pitfall 5); no operator/Anthropic credential ever reaches the browser.
+
+// GET /round/:id/rationale-stream — the live rationale token stream. EventSource
+// consumes this URL directly (it cannot set headers, and none are needed).
+export const rationaleStreamUrl = (id: string): string =>
+  `${SOLVER_BASE_URL}/round/${id}/rationale-stream`
+
+// GET /round/:id/proof-pack.pdf — the on-brand proof-pack PDF (Content-Disposition:
+// attachment). An <a href={proofPackUrl(id)} download> triggers the one-click save.
+export const proofPackUrl = (id: string): string =>
+  `${SOLVER_BASE_URL}/round/${id}/proof-pack.pdf`
+
+// WOW-04 shareable brief — the settled round's natural-language summary. Reuses
+// getRound (the terminal GET body carries `brief`); returns null pre-settle / if absent.
+export const getBrief = async (id: string): Promise<string | null> => {
+  const round = await getRound(id)
+  return round.brief ?? null
+}

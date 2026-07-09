@@ -1,12 +1,13 @@
 ---
 gsd_state_version: 1.0
 milestone: v2.0
-milestone_name: Production Hardening & Real On-Chain
-status: planning
-last_updated: "2026-07-09T09:02:00.327Z"
-last_activity: 2026-07-09
+milestone_name: Progress
+status: executing
+stopped_at: Phase 8 UI-SPEC approved
+last_updated: "2026-07-09T11:05:57.416Z"
+last_activity: 2026-07-09 — Milestone v2.0 started
 progress:
-  total_phases: 0
+  total_phases: 6
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -26,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 
 Phase: Not started (defining requirements)
 Plan: —
-Status: Defining requirements
+Status: Ready to execute
 Last activity: 2026-07-09 — Milestone v2.0 started
 
 ## Performance Metrics
@@ -130,6 +131,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-27T21:22:54.425Z
-Stopped at: Completed 05-02-PLAN.md — wired the AI Solver Agent into the API (solve-preview + GET /round/:id terminal branch emit the agent rationale + an additive agent:{verified,source} block; deterministic numbers unchanged; settle untouched / AI off the settlement path), constructed the real keyless-safe agent at boot in index.ts, extended api.test.ts (verified/fallback/GET-terminal + ANTHROPIC_API_KEY sentinel), and wrote solver/PROMPT.md (the AGENT-04 contract, SYSTEM_PROMPT byte-matched). 33-test suite green; tsc clean. Phase 5 COMPLETE (2/2).
-Resume file: None
+Last session: 2026-07-09T10:00:02.636Z
+Stopped at: Phase 8 UI-SPEC approved
+Resume file: .planning/phases/08-demo-hardening/08-UI-SPEC.md

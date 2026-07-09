@@ -27,6 +27,8 @@ let acs: Created[] = []
 let cidSeq = 0
 const createCalls: { template: string; args: Record<string, any> }[] = []
 const archiveCalls: { template: string; cid: string }[] = []
+// WOW-02: every `Clear` exercise the client submits (captured to assert the TAMPERED shape).
+const clearCalls: { clearingPrice: number; allocations: { desk: string; side: string; filledQty: number }[] }[] = []
 
 const umbra = (templateId: string, createArgument: Record<string, any>, contractId = `cid-${++cidSeq}`): Created => ({
   contractId,
@@ -55,10 +57,48 @@ const mockFetch = vi.fn(async (url: unknown, opts?: any) => {
         acs.push(umbra(t, cmd.CreateCommand.createArguments))
         createCalls.push({ template: t, args: cmd.CreateCommand.createArguments })
       } else if (cmd.ExerciseCommand) {
-        const { contractId, choice, templateId } = cmd.ExerciseCommand
+        const { contractId, choice, templateId, choiceArgument } = cmd.ExerciseCommand
         if (choice === 'Archive' || choice === 'Retire') {
           acs = acs.filter((c) => c.contractId !== contractId)
           archiveCalls.push({ template: templateId, cid: contractId })
+        } else if (choice === 'Clear') {
+          // Emulate the on-ledger recompute-and-assert backstop (Auction.daml 183/187/192)
+          // for the §4 fixture (correct clear = price 100, A=10 Buy / B=8 Sell / C=2 Sell).
+          // The assert ORDER is faithful: price → allocation → conservation. The verbatim
+          // body is what submitAndWait surfaces (WOW-02); a tampered Clear NEVER mutates acs.
+          const arg = choiceArgument as {
+            clearingPrice: number
+            allocations: { desk: string; side: string; filledQty: number }[]
+          }
+          clearCalls.push({ clearingPrice: arg.clearingPrice, allocations: arg.allocations })
+          const buyTotal = arg.allocations.filter((a) => a.side === 'Buy').reduce((s, a) => s + a.filledQty, 0)
+          const sellTotal = arg.allocations.filter((a) => a.side === 'Sell').reduce((s, a) => s + a.filledQty, 0)
+          const expected: Record<string, number> = { 'bankA::test|Buy': 10, 'bankB::test|Sell': 8, 'bankC::test|Sell': 2 }
+          const allocMatches =
+            arg.allocations.length === 3 &&
+            arg.allocations.every((a) => expected[`${a.desk}|${a.side}`] === a.filledQty)
+          if (Number(arg.clearingPrice) !== 100) {
+            return {
+              ok: false,
+              status: 400,
+              text: async () => 'DAML_INTERPRETATION_ERROR: Unhandled exception: clearingPrice does not match recomputed §8 p*',
+            } as unknown as Response
+          }
+          if (!allocMatches) {
+            return {
+              ok: false,
+              status: 400,
+              text: async () => 'DAML_INTERPRETATION_ERROR: Unhandled exception: allocations do not match recomputed §8',
+            } as unknown as Response
+          }
+          if (buyTotal !== sellTotal) {
+            return {
+              ok: false,
+              status: 400,
+              text: async () => 'DAML_INTERPRETATION_ERROR: Unhandled exception: fills not conserved (Σbuy /= Σsell)',
+            } as unknown as Response
+          }
+          // A correct Clear would settle — not exercised by the tamper tests.
         }
       }
     }
@@ -113,11 +153,28 @@ const seedStats = (roundId: string, count: number): void => {
   )
 }
 
+// Seed the canonical §4 world for a settleable (Closed) round: 3 sealed orders, the
+// buyer's USDCx + each seller's BONDX holding, and the Round contract. tamperClear
+// gathers exactly these (mirroring settle) before submitting a TAMPERED Clear.
+const seedSection4World = (roundId: string): void => {
+  // A Buy 10 @101, B Sell 8 @99, C Sell 5 @100 → clears 100, A=10 / B=8 / C=2.
+  acs.push(
+    umbra('#umbra:Umbra.Auction:Order', { operator: 'operator::test', desk: 'bankA::test', roundId, side: 'Buy', quantity: '10', limit: '101.0', status: 'Sealed' }, 'order-A'),
+    umbra('#umbra:Umbra.Auction:Order', { operator: 'operator::test', desk: 'bankB::test', roundId, side: 'Sell', quantity: '8', limit: '99.0', status: 'Sealed' }, 'order-B'),
+    umbra('#umbra:Umbra.Auction:Order', { operator: 'operator::test', desk: 'bankC::test', roundId, side: 'Sell', quantity: '5', limit: '100.0', status: 'Sealed' }, 'order-C'),
+    umbra('#umbra:Umbra.Auction:Asset', { operator: 'operator::test', owner: 'bankA::test', symbol: 'USDCx', quantity: '5000.0' }, 'asset-A-usdc'),
+    umbra('#umbra:Umbra.Auction:Asset', { operator: 'operator::test', owner: 'bankB::test', symbol: 'BONDX', quantity: '20.0' }, 'asset-B-bond'),
+    umbra('#umbra:Umbra.Auction:Asset', { operator: 'operator::test', owner: 'bankC::test', symbol: 'BONDX', quantity: '15.0' }, 'asset-C-bond'),
+    umbra('#umbra:Umbra.Auction:Round', { operator: 'operator::test', roundId, symbol: 'BONDX', desks: ['bankA::test', 'bankB::test', 'bankC::test'], openedAt: '2026-07-09T00:00:00Z', windowSeconds: '60', status: 'Closed' }, 'round-0'),
+  )
+}
+
 beforeEach(() => {
   acs = []
   cidSeq = 0
   createCalls.length = 0
   archiveCalls.length = 0
+  clearCalls.length = 0
   vi.stubGlobal('fetch', mockFetch)
 })
 afterEach(() => {
@@ -168,6 +225,66 @@ describe('ledger.refreshStats (stubbed v2 participant — no live LocalNet)', ()
 
     expect(party).toBe('operator::test')
     expect(JSON.stringify({ party, result })).not.toContain(SENTINEL_TOKEN)
+    for (const call of [...logSpy.mock.calls, ...errSpy.mock.calls]) {
+      expect(JSON.stringify(call)).not.toContain(SENTINEL_TOKEN)
+    }
+
+    logSpy.mockRestore()
+    errSpy.mockRestore()
+  })
+})
+
+// ── WOW-02: tamperClear — attempt a WRONG Round.Clear, surface the verbatim reject ──
+describe('ledger.tamperClear (WOW-02 — the on-ledger recompute-and-assert backstop)', () => {
+  it('wrong-price: submits clearingPrice 99 → verbatim "clearingPrice does not match recomputed §8 p*"', async () => {
+    seedSection4World('R1')
+
+    const result = await ledgerMod.tamperClear('R1', 'wrong-price')
+
+    // Resolves (NEVER throws) with the verbatim on-ledger rejection.
+    expect(result.rejected).toBe(true)
+    expect(result.error).toContain('clearingPrice does not match recomputed §8 p*')
+    // It actually SUBMITTED the tampered price (99 = correct 100 - 1) — still a valid Decimal.
+    expect(clearCalls).toHaveLength(1)
+    expect(clearCalls[0].clearingPrice).toBe(99)
+    // The buyer over-fill was NOT applied on this mode — allocations stay the correct §8 set.
+    const buyLeg = clearCalls[0].allocations.find((a) => a.side === 'Buy')
+    expect(buyLeg?.filledQty).toBe(10)
+  })
+
+  it('overfill: submits an over-filled Buy leg → verbatim allocation/conservation rejection', async () => {
+    seedSection4World('R1')
+
+    const result = await ledgerMod.tamperClear('R1', 'overfill')
+
+    expect(result.rejected).toBe(true)
+    // The real Daml asserts allocation-match before conservation; either verbatim string
+    // is a faithful "the ledger, not the AI, rejected it" (Auction.daml 187/192).
+    expect(result.error).toMatch(/allocations do not match recomputed §8|fills not conserved \(Σbuy \/= Σsell\)/)
+    // It SUBMITTED the over-filled Buy leg (10 + 2 = 12) at the still-correct price.
+    expect(clearCalls).toHaveLength(1)
+    expect(clearCalls[0].clearingPrice).toBe(100)
+    const buyLeg = clearCalls[0].allocations.find((a) => a.side === 'Buy')
+    expect(buyLeg?.filledQty).toBe(12)
+  })
+
+  it('never throws and never leaks the Operator token in the surfaced rejection', async () => {
+    seedSection4World('R1')
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const wrong = await ledgerMod.tamperClear('R1', 'wrong-price')
+    // Reset the world between attempts (a rejected atomic Clear changes nothing on-ledger,
+    // but the test re-seeds to keep each attempt independent of query ordering).
+    acs = []
+    clearCalls.length = 0
+    seedSection4World('R1')
+    const over = await ledgerMod.tamperClear('R1', 'overfill')
+
+    for (const r of [wrong, over]) {
+      expect(r.rejected).toBe(true)
+      expect(JSON.stringify(r)).not.toContain(SENTINEL_TOKEN)
+    }
     for (const call of [...logSpy.mock.calls, ...errSpy.mock.calls]) {
       expect(JSON.stringify(call)).not.toContain(SENTINEL_TOKEN)
     }

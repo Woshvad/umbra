@@ -362,3 +362,94 @@ export const settle = async (
     status: settled?.payload.status ?? 'Settled',
   }
 }
+
+// ── WOW-02: tamperClear — the DEDICATED "break the AI" demo seam ──────────────────
+// A demo-only path that gathers the EXACT SAME ContractIds as settle() but submits a
+// deliberately WRONG proposal to the on-ledger `Round.Clear`. The choice's recompute-
+// and-assert backstop (Auction.daml 183/187/192) rejects the whole atomic transaction;
+// `submitAndWait` throws with the verbatim ledger body; tamperClear CATCHES it and
+// resolves `{ rejected:true, error }` — it NEVER throws and NEVER settles (an atomic
+// rejected Clear changes nothing on-ledger). The verbatim rejection is the credibility:
+// it proves the LEDGER, not the AI, is the backstop.
+//
+// SAFETY (T-08-04-TAMPER, hard constraint): this is a SEPARATE function from settle()
+// — settle() stays byte-unchanged. tamperClear only ever ATTEMPTS the exercise.
+//
+// PITFALL 3 (T-08-04-DECODE): perturb only numeric VALUES, never their wire TYPES.
+// `badPrice = clearingPrice - 1` stays a valid Decimal and `filledQty + 2` a valid Int,
+// so the §8 assert (not a decoder error) is what fires — the demo shows the real reason.
+export const tamperClear = async (
+  roundId: string,
+  mode: 'wrong-price' | 'overfill',
+): Promise<{ rejected: true; error: string }> => {
+  // Gather EXACTLY as settle() does (steps 1-6) — copied, not refactored, so settle()
+  // stays byte-unchanged. The holdings are located from the CORRECT §8 allocation; only
+  // the values SUBMITTED to Clear are perturbed below.
+  const sealed = await readSealedOrders(roundId)
+  const orderCids = sealed.map((o) => o.contractId)
+  const views: OrderView[] = sealed.map((o) => o.view)
+
+  const { clearingPrice, allocations } = computeClearing(views)
+  const matchedVolume = matchedAt(views, clearingPrice)
+
+  const buyAlloc = allocations.find((a) => a.side === 'Buy')
+  if (!buyAlloc) throw new Error(`round ${roundId} has no Buy-side allocation (no cross)`)
+  const buyer = buyAlloc.desk
+
+  const assets = await queryByEntity('Asset')
+  const cashNeeded = matchedVolume * clearingPrice
+  const buyerUsdc = assets.find(
+    (c) =>
+      c.createArgument.owner === buyer &&
+      c.createArgument.symbol === CASH_SYMBOL &&
+      Number(c.createArgument.quantity) >= cashNeeded,
+  )
+  if (!buyerUsdc) {
+    throw new Error(`insufficient or missing ${CASH_SYMBOL} holding for ${buyer} (need ${cashNeeded})`)
+  }
+  const buyerUsdcCid = buyerUsdc.contractId
+
+  const sellerBondCids: { _1: string; _2: string }[] = []
+  for (const a of allocations) {
+    if (a.side !== 'Sell' || a.filledQty <= 0) continue
+    const bond = assets.find(
+      (c) =>
+        c.createArgument.owner === a.desk &&
+        c.createArgument.symbol === BOND_SYMBOL &&
+        Number(c.createArgument.quantity) >= a.filledQty,
+    )
+    if (!bond) {
+      throw new Error(`insufficient or missing ${BOND_SYMBOL} holding for ${a.desk} (need ${a.filledQty})`)
+    }
+    sellerBondCids.push({ _1: a.desk, _2: bond.contractId })
+  }
+
+  const round = await queryRound(roundId)
+  if (!round) throw new Error(`round ${roundId} not found`)
+
+  // Perturb ONLY numeric values (Pitfall 3): a still-valid Decimal price one dollar off
+  // (wrong-price) OR an over-filled Buy leg breaking the recomputed allocation +
+  // conservation (overfill). Everything else is the exact settle() shape.
+  const badPrice = mode === 'wrong-price' ? clearingPrice - 1 : clearingPrice
+  const badAllocs =
+    mode === 'overfill'
+      ? allocations.map((a) => (a.side === 'Buy' ? { ...a, filledQty: a.filledQty + 2 } : a))
+      : allocations
+
+  try {
+    await exerciseChoice('Umbra.Auction:Round', round.contractId, 'Clear', {
+      clearingPrice: badPrice,
+      allocations: badAllocs.map((a) => ({ desk: a.desk, side: a.side, filledQty: a.filledQty })),
+      orderCids,
+      buyerUsdcCid,
+      sellerBondCids,
+    })
+    // Should NEVER happen — the on-ledger recompute-and-assert must reject a tampered clear.
+    return { rejected: true, error: 'UNEXPECTED: ledger accepted a tampered clear' }
+  } catch (e) {
+    // submitAndWait throws `submit HTTP <status>: <body>` — the body carries the verbatim
+    // assertMsg and is already a secret-free ledger slice (the token lives only in the
+    // Authorization header, never in the request body or the echoed error).
+    return { rejected: true, error: e instanceof Error ? e.message : 'rejected' }
+  }
+}

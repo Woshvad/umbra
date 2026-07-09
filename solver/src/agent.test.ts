@@ -320,3 +320,66 @@ describe('AI Solver Agent — verify-don\'t-trust gate', () => {
     }
   })
 })
+
+// ── WOW-03: server-side natural-language order parsing (structured output + zod) ────
+describe('AI Solver Agent — parseOrder (NL → validated {side,qty,limit})', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('valid: a well-formed structured order → the typed {side,qty,limit}', async () => {
+    const client = fakeClientReturning({ side: 'Buy', qty: 10, limit: 101 })
+    const agent = createAgent({ client, computeClearing, matchedAt })
+    const order = await agent.parseOrder('buy up to 10 under 101')
+
+    expect(order).toEqual({ side: 'Buy', qty: 10, limit: 101 })
+    // The key sentinel the fake client closes over never rides out in the result.
+    expect(JSON.stringify(order)).not.toContain(SENTINEL_KEY)
+  })
+
+  it('valid: a Sell order with a floor limit → the typed object', async () => {
+    const client = fakeClientReturning({ side: 'Sell', qty: 8, limit: 99 })
+    const agent = createAgent({ client, computeClearing, matchedAt })
+    const order = await agent.parseOrder('sell 8, no less than 99')
+
+    expect(order).toEqual({ side: 'Sell', qty: 8, limit: 99 })
+  })
+
+  it('malformed: a non-order payload (zod safeParse fails) → null', async () => {
+    // qty 0 (not positive) + a missing side → the verify-side zod rejects it.
+    const client = fakeClientReturning({ qty: 0, limit: -5 })
+    const agent = createAgent({ client, computeClearing, matchedAt })
+    const order = await agent.parseOrder('what is the weather today?')
+
+    expect(order).toBeNull()
+  })
+
+  it('malformed: a non-integer qty → null', async () => {
+    const client = fakeClientReturning({ side: 'Buy', qty: 10.5, limit: 101 })
+    const agent = createAgent({ client, computeClearing, matchedAt })
+    const order = await agent.parseOrder('buy ten and a half')
+
+    expect(order).toBeNull()
+  })
+
+  it('keyless: no client injected → null (key never leaves the server)', async () => {
+    const agent = createAgent({ computeClearing, matchedAt })
+    const order = await agent.parseOrder('buy up to 10 under 101')
+
+    expect(order).toBeNull()
+  })
+
+  it('unavailable: the SDK throws → null, never rejects, no secret leak', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const client = fakeClientThrowing()
+    const agent = createAgent({ client, computeClearing, matchedAt })
+    const order = await agent.parseOrder('buy up to 10 under 101')
+
+    expect(order).toBeNull()
+    for (const call of [...logSpy.mock.calls, ...errSpy.mock.calls]) {
+      expect(JSON.stringify(call)).not.toContain(SENTINEL_KEY)
+    }
+  })
+})

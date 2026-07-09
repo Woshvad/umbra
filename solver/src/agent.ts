@@ -71,6 +71,84 @@ const proposalJsonSchema = {
   additionalProperties: false,
 }
 
+// ── WOW-03: natural-language order parsing (server-side, key stays module-private) ─
+// A desk types plain English ("buy up to 10 under 101"); parseOrder returns a
+// zod-validated {side, qty, limit} that only PREFILLS the ticket (never auto-submits —
+// the desk still confirms via SEAL ORDER, preserving the one-order-per-round lock).
+// Mirrors proposeClearing's proven shape EXACTLY: client.messages.parse +
+// jsonSchemaOutputFormat (NOT zodOutputFormat — Pitfall 1, zod is pinned v3) + a
+// verify-side zod safeParse. Keyless / malformed / thrown → null (the UI shows the
+// error state); the key is NEVER a param, a return value, or a log line.
+export interface ParsedOrder {
+  side: 'Buy' | 'Sell'
+  qty: number
+  limit: number
+}
+
+// Verify-side zod schema (zod 3) — re-validates the untrusted model output before it
+// can reach the UI: an integer qty > 0 and a number limit > 0 (ASVS V5).
+export const orderSchema = z.object({
+  side: z.enum(['Buy', 'Sell']),
+  qty: z.number().int().positive(),
+  limit: z.number().positive(),
+})
+
+// The SDK-side JSON Schema literal (zod-v4-free) — the SAME shape in plain JSON Schema,
+// forcing schema-valid JSON output (GA structured outputs, no beta header).
+const orderJsonSchema = {
+  type: 'object' as const,
+  properties: {
+    side: { type: 'string' as const, enum: ['Buy', 'Sell'] },
+    qty: { type: 'integer' as const },
+    limit: { type: 'number' as const },
+  },
+  required: ['side', 'qty', 'limit'],
+  additionalProperties: false,
+}
+
+// The order-extraction instruction. Maps natural comparators to a sealed limit order:
+// a buyer's "under/at most/up to" → a Buy limit ceiling; a seller's "at least/over/above"
+// → a Sell limit floor. Deterministic (temperature 0), a single order only.
+export const ORDER_SYSTEM_PROMPT =
+  'You extract a SINGLE sealed limit order from a trading desk\'s plain-English instruction. ' +
+  'Return only {side, qty, limit}. side is Buy or Sell. qty is a positive integer number of units. ' +
+  'limit is the price bound: for a Buy, "under/at most/up to/below" gives the maximum price the desk will pay; ' +
+  'for a Sell, "at least/over/above/no less than" gives the minimum price the desk will accept. ' +
+  'If the text is not a single actionable order, still return your best structured guess; the service re-validates it.'
+
+// The shared implementation — takes whichever client is in scope (injected or module-private).
+// Never throws into the caller: any SDK error / malformed output → null.
+const parseOrderWith = async (
+  client: AgentClient | null,
+  text: string,
+  timeoutMs: number,
+): Promise<ParsedOrder | null> => {
+  // Keyless degradation — no resolved client, no network call. The UI shows the error state.
+  if (!client) return null
+  try {
+    const message = await withTimeout(
+      client.messages.parse({
+        model: 'claude-haiku-4-5', // alias; pinned snapshot claude-haiku-4-5-20251001
+        max_tokens: 256, // a single {side,qty,limit} is tiny
+        temperature: 0, // deterministic extraction
+        system: ORDER_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: text }],
+        output_config: { format: jsonSchemaOutputFormat(orderJsonSchema) },
+      }),
+      timeoutMs,
+    )
+    const parsed = orderSchema.safeParse(message.parsed_output)
+    return parsed.success ? parsed.data : null
+  } catch (err) {
+    // SDK error / timeout / network — NEVER throw; log ONLY a fixed secret-free string.
+    console.error(
+      '[agent] parse-order unavailable — returning null',
+      err instanceof Error ? err.name : 'unknown',
+    )
+    return null
+  }
+}
+
 // ── SYSTEM_PROMPT — the §8 rules VERBATIM + role framing ─────────────────────────
 // This const is the SINGLE source of truth for the prompt. PROMPT.md (Plan 05-02)
 // MUST quote this block verbatim — keep the two in sync (RESEARCH Pitfall 6).
@@ -190,7 +268,10 @@ export interface AgentDeps {
 // ── createAgent — the DI factory (mirrors api.ts createApp(deps)) ─────────────────
 export const createAgent = (
   deps: AgentDeps,
-): { proposeClearing: (views: OrderView[]) => Promise<AgentResult> } => {
+): {
+  proposeClearing: (views: OrderView[]) => Promise<AgentResult>
+  parseOrder: (text: string) => Promise<ParsedOrder | null>
+} => {
   const { computeClearing, matchedAt } = deps
   // Injected client overrides the module-private one (test fake / boot client).
   const client: AgentClient | null = deps.client ?? (_client as AgentClient | null)
@@ -276,5 +357,16 @@ export const createAgent = (
     }
   }
 
-  return { proposeClearing }
+  // WOW-03: server-side NL → validated {side,qty,limit}. Uses the SAME injected/module-
+  // private client + deadline as proposeClearing; keyless/malformed/thrown → null.
+  const parseOrder = (text: string): Promise<ParsedOrder | null> => parseOrderWith(client, text, timeoutMs)
+
+  return { proposeClearing, parseOrder }
 }
+
+// ── Top-level parseOrder — bound to the module-private client for a direct import ──
+// index.ts wires `agent.parseOrder` (the createAgent-injected one); this standalone
+// export lets any server-side caller parse with the module-private ANTHROPIC_API_KEY
+// (keyless → null). The key is NEVER a param, a return value, or a log line.
+export const parseOrder = (text: string): Promise<ParsedOrder | null> =>
+  parseOrderWith(_client as AgentClient | null, text, resolveTimeoutMs())

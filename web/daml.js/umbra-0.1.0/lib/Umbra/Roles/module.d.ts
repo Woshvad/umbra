@@ -7,8 +7,34 @@ import * as damlTypes from '@daml/types';
 
 import * as pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69 from '@daml.js/ghc-stdlib-DA-Internal-Template-1.0.0';
 
+import * as Umbra_Asset from '../../Umbra/Asset/module';
 import * as Umbra_Auction from '../../Umbra/Auction/module';
 import * as Umbra_Clearing from '../../Umbra/Clearing/module';
+
+export declare type AnchorProof = {
+  roundId: string;
+  proofHash: string;
+  vkeyHash: string;
+};
+
+export declare const AnchorProof:
+  damlTypes.Serializable<AnchorProof> & {
+  }
+;
+
+
+export declare type CommitOrder = {
+  desk: damlTypes.Party;
+  roundId: string;
+  commitment: string;
+  bondCid: damlTypes.ContractId<Umbra_Asset.Asset>;
+};
+
+export declare const CommitOrder:
+  damlTypes.Serializable<CommitOrder> & {
+  }
+;
+
 
 export declare type SubmitOrder = {
   desk: damlTypes.Party;
@@ -33,8 +59,10 @@ export declare type Venue = {
 };
 
 export declare interface VenueInterface {
-  Archive: damlTypes.Choice<Venue, pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69.DA.Internal.Template.Archive, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Venue, undefined>>;
   SubmitOrder: damlTypes.Choice<Venue, SubmitOrder, damlTypes.ContractId<Umbra_Auction.Order>, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Venue, undefined>>;
+  CommitOrder: damlTypes.Choice<Venue, CommitOrder, damlTypes.ContractId<Umbra_Auction.OrderCommitment>, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Venue, undefined>>;
+  Archive: damlTypes.Choice<Venue, pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69.DA.Internal.Template.Archive, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Venue, undefined>>;
+  AnchorProof: damlTypes.Choice<Venue, AnchorProof, damlTypes.ContractId<Umbra_Auction.ProofAnchor>, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Venue, undefined>>;
 }
 export declare const Venue:
   damlTypes.Template<Venue, undefined, '#umbra:Umbra.Roles:Venue'> &

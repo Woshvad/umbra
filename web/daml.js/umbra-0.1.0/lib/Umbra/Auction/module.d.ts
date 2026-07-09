@@ -122,6 +122,74 @@ export declare namespace TradeConfirmation {
 
 
 
+export declare type ProofAnchor = {
+  operator: damlTypes.Party;
+  roundId: string;
+  proofHash: string;
+  vkeyHash: string;
+};
+
+export declare interface ProofAnchorInterface {
+  Archive: damlTypes.Choice<ProofAnchor, pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69.DA.Internal.Template.Archive, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<ProofAnchor, undefined>>;
+}
+export declare const ProofAnchor:
+  damlTypes.Template<ProofAnchor, undefined, '#umbra:Umbra.Auction:ProofAnchor'> &
+  damlTypes.ToInterface<ProofAnchor, never> &
+  ProofAnchorInterface;
+
+export declare namespace ProofAnchor {
+}
+
+
+
+export declare type ForfeitBond = {
+};
+
+export declare const ForfeitBond:
+  damlTypes.Serializable<ForfeitBond> & {
+  }
+;
+
+
+export declare type RevealOrder = {
+  side: Umbra_Clearing.Side;
+  quantity: damlTypes.Int;
+  limit: damlTypes.Numeric;
+  orderType: Umbra_Clearing.OrderType;
+  minQty: damlTypes.Optional<damlTypes.Int>;
+  firmIf: damlTypes.Optional<damlTypes.Numeric>;
+  salt: string;
+};
+
+export declare const RevealOrder:
+  damlTypes.Serializable<RevealOrder> & {
+  }
+;
+
+
+export declare type OrderCommitment = {
+  operator: damlTypes.Party;
+  desk: damlTypes.Party;
+  roundId: string;
+  commitment: string;
+  bondCid: damlTypes.ContractId<Umbra_Asset.Asset>;
+};
+
+export declare interface OrderCommitmentInterface {
+  RevealOrder: damlTypes.Choice<OrderCommitment, RevealOrder, damlTypes.ContractId<Order>, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<OrderCommitment, undefined>>;
+  ForfeitBond: damlTypes.Choice<OrderCommitment, ForfeitBond, damlTypes.ContractId<Umbra_Asset.Asset>, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<OrderCommitment, undefined>>;
+  Archive: damlTypes.Choice<OrderCommitment, pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69.DA.Internal.Template.Archive, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<OrderCommitment, undefined>>;
+}
+export declare const OrderCommitment:
+  damlTypes.Template<OrderCommitment, undefined, '#umbra:Umbra.Auction:OrderCommitment'> &
+  damlTypes.ToInterface<OrderCommitment, never> &
+  OrderCommitmentInterface;
+
+export declare namespace OrderCommitment {
+}
+
+
+
 export declare type Retire = {
 };
 

@@ -48,7 +48,7 @@ exports.CloseRound = {
 exports.Round = damlTypes.assembleTemplate(
 {
   templateId: '#umbra:Umbra.Auction:Round',
-  templateIdWithPackageId: '12560276cdc3281f38a0b88829be259f33f5f607bfe8d903e7a2cd19af01a34a:Umbra.Auction:Round',
+  templateIdWithPackageId: 'b5612deed4d4f313a67eeec837e12b2dd10bb702bb3afa04da2e341ac8c35c2d:Umbra.Auction:Round',
   keyDecoder: damlTypes.lazyMemo(function () { return jtv.constant(undefined); }),
   keyEncode: function () { throw 'EncodeError'; },
   decoder: damlTypes.lazyMemo(function () { return jtv.object({operator: damlTypes.Party.decoder, roundId: damlTypes.Text.decoder, symbol: damlTypes.Text.decoder, desks: damlTypes.List(damlTypes.Party).decoder, openedAt: damlTypes.Time.decoder, windowSeconds: damlTypes.Int.decoder, status: exports.RoundStatus.decoder, }); }),
@@ -93,7 +93,7 @@ exports.Round = damlTypes.assembleTemplate(
 );
 
 
-damlTypes.registerTemplate(exports.Round, ['12560276cdc3281f38a0b88829be259f33f5f607bfe8d903e7a2cd19af01a34a', '#umbra']);
+damlTypes.registerTemplate(exports.Round, ['b5612deed4d4f313a67eeec837e12b2dd10bb702bb3afa04da2e341ac8c35c2d', '#umbra']);
 
 
 
@@ -115,7 +115,7 @@ exports.ClearResult = {
 exports.RoundStats = damlTypes.assembleTemplate(
 {
   templateId: '#umbra:Umbra.Auction:RoundStats',
-  templateIdWithPackageId: '12560276cdc3281f38a0b88829be259f33f5f607bfe8d903e7a2cd19af01a34a:Umbra.Auction:RoundStats',
+  templateIdWithPackageId: 'b5612deed4d4f313a67eeec837e12b2dd10bb702bb3afa04da2e341ac8c35c2d:Umbra.Auction:RoundStats',
   keyDecoder: damlTypes.lazyMemo(function () { return jtv.constant(undefined); }),
   keyEncode: function () { throw 'EncodeError'; },
   decoder: damlTypes.lazyMemo(function () { return jtv.object({operator: damlTypes.Party.decoder, roundId: damlTypes.Text.decoder, desks: damlTypes.List(damlTypes.Party).decoder, sealedOrderCount: damlTypes.Int.decoder, }); }),
@@ -141,14 +141,14 @@ exports.RoundStats = damlTypes.assembleTemplate(
 );
 
 
-damlTypes.registerTemplate(exports.RoundStats, ['12560276cdc3281f38a0b88829be259f33f5f607bfe8d903e7a2cd19af01a34a', '#umbra']);
+damlTypes.registerTemplate(exports.RoundStats, ['b5612deed4d4f313a67eeec837e12b2dd10bb702bb3afa04da2e341ac8c35c2d', '#umbra']);
 
 
 
 exports.TradeConfirmation = damlTypes.assembleTemplate(
 {
   templateId: '#umbra:Umbra.Auction:TradeConfirmation',
-  templateIdWithPackageId: '12560276cdc3281f38a0b88829be259f33f5f607bfe8d903e7a2cd19af01a34a:Umbra.Auction:TradeConfirmation',
+  templateIdWithPackageId: 'b5612deed4d4f313a67eeec837e12b2dd10bb702bb3afa04da2e341ac8c35c2d:Umbra.Auction:TradeConfirmation',
   keyDecoder: damlTypes.lazyMemo(function () { return jtv.constant(undefined); }),
   keyEncode: function () { throw 'EncodeError'; },
   decoder: damlTypes.lazyMemo(function () { return jtv.object({operator: damlTypes.Party.decoder, desk: damlTypes.Party.decoder, roundId: damlTypes.Text.decoder, symbol: damlTypes.Text.decoder, side: Umbra_Clearing.Side.decoder, filledQty: damlTypes.Int.decoder, clearingPrice: damlTypes.Numeric(10).decoder, cashMoved: damlTypes.Numeric(10).decoder, ownLimit: jtv.Decoder.withDefault(null, damlTypes.Optional(damlTypes.Numeric(10)).decoder), referencePrice: damlTypes.Numeric(10).decoder, surplusVsLimit: damlTypes.Numeric(10).decoder, improvementVsLimitBp: damlTypes.Numeric(10).decoder, improvementVsReferenceBp: damlTypes.Numeric(10).decoder, }); }),
@@ -183,7 +183,119 @@ exports.TradeConfirmation = damlTypes.assembleTemplate(
 );
 
 
-damlTypes.registerTemplate(exports.TradeConfirmation, ['12560276cdc3281f38a0b88829be259f33f5f607bfe8d903e7a2cd19af01a34a', '#umbra']);
+damlTypes.registerTemplate(exports.TradeConfirmation, ['b5612deed4d4f313a67eeec837e12b2dd10bb702bb3afa04da2e341ac8c35c2d', '#umbra']);
+
+
+
+exports.ProofAnchor = damlTypes.assembleTemplate(
+{
+  templateId: '#umbra:Umbra.Auction:ProofAnchor',
+  templateIdWithPackageId: 'b5612deed4d4f313a67eeec837e12b2dd10bb702bb3afa04da2e341ac8c35c2d:Umbra.Auction:ProofAnchor',
+  keyDecoder: damlTypes.lazyMemo(function () { return jtv.constant(undefined); }),
+  keyEncode: function () { throw 'EncodeError'; },
+  decoder: damlTypes.lazyMemo(function () { return jtv.object({operator: damlTypes.Party.decoder, roundId: damlTypes.Text.decoder, proofHash: damlTypes.Text.decoder, vkeyHash: damlTypes.Text.decoder, }); }),
+  encode: function (__typed__) {
+  return {
+    operator: damlTypes.Party.encode(__typed__.operator),
+    roundId: damlTypes.Text.encode(__typed__.roundId),
+    proofHash: damlTypes.Text.encode(__typed__.proofHash),
+    vkeyHash: damlTypes.Text.encode(__typed__.vkeyHash),
+  };
+}
+,
+  Archive: {
+    template: function () { return exports.ProofAnchor; },
+    choiceName: 'Archive',
+    argumentDecoder: damlTypes.lazyMemo(function () { return pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69.DA.Internal.Template.Archive.decoder; }),
+    argumentEncode: function (__typed__) { return pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69.DA.Internal.Template.Archive.encode(__typed__); },
+    resultDecoder: damlTypes.lazyMemo(function () { return damlTypes.Unit.decoder; }),
+    resultEncode: function (__typed__) { return damlTypes.Unit.encode(__typed__); },
+  },
+}
+
+);
+
+
+damlTypes.registerTemplate(exports.ProofAnchor, ['b5612deed4d4f313a67eeec837e12b2dd10bb702bb3afa04da2e341ac8c35c2d', '#umbra']);
+
+
+
+exports.ForfeitBond = {
+  decoder: damlTypes.lazyMemo(function () { return jtv.object({}); }),
+  encode: function (__typed__) {
+  return {
+  };
+}
+,
+};
+
+
+
+exports.RevealOrder = {
+  decoder: damlTypes.lazyMemo(function () { return jtv.object({side: Umbra_Clearing.Side.decoder, quantity: damlTypes.Int.decoder, limit: damlTypes.Numeric(10).decoder, orderType: Umbra_Clearing.OrderType.decoder, minQty: jtv.Decoder.withDefault(null, damlTypes.Optional(damlTypes.Int).decoder), firmIf: jtv.Decoder.withDefault(null, damlTypes.Optional(damlTypes.Numeric(10)).decoder), salt: damlTypes.Text.decoder, }); }),
+  encode: function (__typed__) {
+  return {
+    side: Umbra_Clearing.Side.encode(__typed__.side),
+    quantity: damlTypes.Int.encode(__typed__.quantity),
+    limit: damlTypes.Numeric(10).encode(__typed__.limit),
+    orderType: Umbra_Clearing.OrderType.encode(__typed__.orderType),
+    minQty: damlTypes.Optional(damlTypes.Int).encode(__typed__.minQty),
+    firmIf: damlTypes.Optional(damlTypes.Numeric(10)).encode(__typed__.firmIf),
+    salt: damlTypes.Text.encode(__typed__.salt),
+  };
+}
+,
+};
+
+
+
+exports.OrderCommitment = damlTypes.assembleTemplate(
+{
+  templateId: '#umbra:Umbra.Auction:OrderCommitment',
+  templateIdWithPackageId: 'b5612deed4d4f313a67eeec837e12b2dd10bb702bb3afa04da2e341ac8c35c2d:Umbra.Auction:OrderCommitment',
+  keyDecoder: damlTypes.lazyMemo(function () { return jtv.constant(undefined); }),
+  keyEncode: function () { throw 'EncodeError'; },
+  decoder: damlTypes.lazyMemo(function () { return jtv.object({operator: damlTypes.Party.decoder, desk: damlTypes.Party.decoder, roundId: damlTypes.Text.decoder, commitment: damlTypes.Text.decoder, bondCid: damlTypes.ContractId(Umbra_Asset.Asset).decoder, }); }),
+  encode: function (__typed__) {
+  return {
+    operator: damlTypes.Party.encode(__typed__.operator),
+    desk: damlTypes.Party.encode(__typed__.desk),
+    roundId: damlTypes.Text.encode(__typed__.roundId),
+    commitment: damlTypes.Text.encode(__typed__.commitment),
+    bondCid: damlTypes.ContractId(Umbra_Asset.Asset).encode(__typed__.bondCid),
+  };
+}
+,
+  RevealOrder: {
+    template: function () { return exports.OrderCommitment; },
+    choiceName: 'RevealOrder',
+    argumentDecoder: damlTypes.lazyMemo(function () { return exports.RevealOrder.decoder; }),
+    argumentEncode: function (__typed__) { return exports.RevealOrder.encode(__typed__); },
+    resultDecoder: damlTypes.lazyMemo(function () { return damlTypes.ContractId(exports.Order).decoder; }),
+    resultEncode: function (__typed__) { return damlTypes.ContractId(exports.Order).encode(__typed__); },
+  },
+  ForfeitBond: {
+    template: function () { return exports.OrderCommitment; },
+    choiceName: 'ForfeitBond',
+    argumentDecoder: damlTypes.lazyMemo(function () { return exports.ForfeitBond.decoder; }),
+    argumentEncode: function (__typed__) { return exports.ForfeitBond.encode(__typed__); },
+    resultDecoder: damlTypes.lazyMemo(function () { return damlTypes.ContractId(Umbra_Asset.Asset).decoder; }),
+    resultEncode: function (__typed__) { return damlTypes.ContractId(Umbra_Asset.Asset).encode(__typed__); },
+  },
+  Archive: {
+    template: function () { return exports.OrderCommitment; },
+    choiceName: 'Archive',
+    argumentDecoder: damlTypes.lazyMemo(function () { return pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69.DA.Internal.Template.Archive.decoder; }),
+    argumentEncode: function (__typed__) { return pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69.DA.Internal.Template.Archive.encode(__typed__); },
+    resultDecoder: damlTypes.lazyMemo(function () { return damlTypes.Unit.decoder; }),
+    resultEncode: function (__typed__) { return damlTypes.Unit.encode(__typed__); },
+  },
+}
+
+);
+
+
+damlTypes.registerTemplate(exports.OrderCommitment, ['b5612deed4d4f313a67eeec837e12b2dd10bb702bb3afa04da2e341ac8c35c2d', '#umbra']);
 
 
 
@@ -201,7 +313,7 @@ exports.Retire = {
 exports.Order = damlTypes.assembleTemplate(
 {
   templateId: '#umbra:Umbra.Auction:Order',
-  templateIdWithPackageId: '12560276cdc3281f38a0b88829be259f33f5f607bfe8d903e7a2cd19af01a34a:Umbra.Auction:Order',
+  templateIdWithPackageId: 'b5612deed4d4f313a67eeec837e12b2dd10bb702bb3afa04da2e341ac8c35c2d:Umbra.Auction:Order',
   keyDecoder: damlTypes.lazyMemo(function () { return jtv.constant(undefined); }),
   keyEncode: function () { throw 'EncodeError'; },
   decoder: damlTypes.lazyMemo(function () { return jtv.object({operator: damlTypes.Party.decoder, desk: damlTypes.Party.decoder, roundId: damlTypes.Text.decoder, side: Umbra_Clearing.Side.decoder, quantity: damlTypes.Int.decoder, limit: damlTypes.Numeric(10).decoder, status: exports.OrderStatus.decoder, orderType: Umbra_Clearing.OrderType.decoder, minQty: jtv.Decoder.withDefault(null, damlTypes.Optional(damlTypes.Int).decoder), firmIf: jtv.Decoder.withDefault(null, damlTypes.Optional(damlTypes.Numeric(10)).decoder), }); }),
@@ -241,7 +353,7 @@ exports.Order = damlTypes.assembleTemplate(
 );
 
 
-damlTypes.registerTemplate(exports.Order, ['12560276cdc3281f38a0b88829be259f33f5f607bfe8d903e7a2cd19af01a34a', '#umbra']);
+damlTypes.registerTemplate(exports.Order, ['b5612deed4d4f313a67eeec837e12b2dd10bb702bb3afa04da2e341ac8c35c2d', '#umbra']);
 
 
 

@@ -278,7 +278,7 @@ function IndicativePanel({ indicative }: { indicative: IndicativeMeta }) {
   const hasScalars = netImbalance !== undefined && estMatched !== undefined
   // Net-imbalance direction + sign color (UI-SPEC: +buy blue / −sell pink / 0 paper).
   const imb = netImbalance ?? 0
-  const imbColor = imb > 0 ? '#4A7DFF' : imb < 0 ? '#FF5C8A' : '#F4F1EA'
+  const imbColor = imb > 0 ? '#2B3AF2' : imb < 0 ? '#FF3D9A' : '#F4F1EA'
   const imbDir = imb > 0 ? 'BUY-HEAVY' : imb < 0 ? 'SELL-HEAVY' : 'BALANCED'
   const imbLabel = imb > 0 ? `+${imb}` : `${imb}`
 

@@ -18,6 +18,18 @@ input {
   background: #d6fb3c;
   color: #0a0a0a;
 }
+/* WOW-02 FORCE A WRONG CLEAR — red ghost → hover red fill / paper text (existing
+   tokens only: #E2231A signal red, #F4F1EA paper). No new palette entry. */
+.break-ai-force {
+  border: 1px solid #e2231a;
+  background: transparent;
+  color: #e2231a;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.break-ai-force:not(:disabled):hover {
+  background: #e2231a;
+  color: #f4f1ea;
+}
 #root {
   min-height: 100vh;
   background: #f4f1ea;

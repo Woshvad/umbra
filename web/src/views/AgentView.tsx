@@ -10,10 +10,11 @@ import type { OperatorViewState } from '../operatorState'
 import { OFFLINE_CAPTION } from '../solver'
 import AgentProposal from '../components/AgentProposal'
 import AgentRationale from '../components/AgentRationale'
+import BreakTheAiPanel from '../components/BreakTheAiPanel'
 
 type Props = OperatorViewState
 
-export default function AgentView({ preview, offline }: Props) {
+export default function AgentView({ roundId, preview, offline }: Props) {
   return (
     <main style={{ position: 'relative', padding: '30px 48px 64px', overflow: 'hidden' }}>
       {/* Section marker */}
@@ -57,6 +58,11 @@ export default function AgentView({ preview, offline }: Props) {
           SOLVER-AGENT-00 computes the uniform clearing price and narrates its reasoning here.
         </p>
       )}
+
+      {/* WOW-02 — Break the AI: adversarial before/after (verbatim on-ledger reject →
+          correct $100.00 clear). Self-contained demo panel BELOW the shipped grid;
+          operator plane (:4100) only — no operator token / @daml/react context here. */}
+      <BreakTheAiPanel roundId={roundId} offline={offline} />
     </main>
   )
 }

@@ -84,6 +84,17 @@ export interface AppDeps {
   // module-private in agent.ts; this ONLY returns validated fields for the desk to
   // CONFIRM via the existing SEAL ORDER (never auto-submitted). Never throws the key.
   parseOrder: (text: string) => Promise<{ side: 'Buy' | 'Sell'; qty: number; limit: number } | null>
+  // WOW-04: stream the model's clearing rationale as text deltas (agent.ts messages.stream).
+  // Forwards each delta via onDelta, completion via onDone, and on ANY error (keyless /
+  // stream error) calls onError EXACTLY ONCE. onError carries NO key/prompt/err.message —
+  // the SSE route turns it into a fixed deterministic single-shot fallback frame. Never throws.
+  streamRationale: (
+    views: OrderView[],
+    handlers: { onDelta: (delta: string) => void; onDone: () => void; onError: () => void },
+  ) => Promise<void>
+  // WOW-04: compose the shareable post-round NL brief. PURE over numbers + the verified
+  // rationale — secret-free and cannot drift the clearing (the §4 fixture stays $100.00).
+  composeBrief: (clearingPrice: number, matchedVolume: number, allocations: Allocation[], rationale: string) => string
   // pure §8 helpers from auction.ts
   computeClearing: (orders: OrderView[]) => ClearingResult
   matchedAt: (orders: OrderView[], p: number) => number
@@ -214,6 +225,14 @@ export const createApp = (deps: AppDeps): Express => {
           const agent = await deps.proposeClearing(views)
           body.rationale = agent.rationale
           body.agent = { verified: agent.verified, source: agent.source }
+          // WOW-04: the shareable brief — additive, pure over the deterministic numbers +
+          // the verified rationale (no clearing-number drift).
+          body.brief = deps.composeBrief(
+            clearingPrice,
+            deps.matchedAt(views, clearingPrice),
+            allocations,
+            agent.rationale,
+          )
         } else {
           // Post-settle: the sealed orders are retired, so a §8 recompute would read 0.
           // Reconstruct the settled result from the persisted per-desk TradeConfirmations
@@ -240,6 +259,13 @@ export const createApp = (deps: AppDeps): Express => {
             ? `Settled at ${clearingPrice.toFixed(2)} — ${matchedVolume} units matched across ${allocations.length} desk fills in one atomic transaction.`
             : null
           body.agent = { verified: true, source: 'deterministic-fallback' }
+          // WOW-04: shareable brief reconstructed from the persisted settled facts.
+          body.brief = deps.composeBrief(
+            clearingPrice,
+            matchedVolume,
+            allocations,
+            typeof body.rationale === 'string' ? body.rationale : '',
+          )
         }
       }
       res.json(body)
@@ -283,6 +309,60 @@ export const createApp = (deps: AppDeps): Express => {
       })
     }),
   )
+
+  // GET /round/:id/rationale-stream — WOW-04 live rationale as Server-Sent Events.
+  // NOT wrap()'d: this is a streaming text/event-stream response, not a JSON handler.
+  // Each Claude text delta → one `data:` frame; completion → an `event: done` sentinel.
+  // On ANY error (keyless / stream error) the agent's onError fires and we write a SINGLE
+  // deterministic fallback frame (the browser typewriter still gets text) then end — the
+  // key/prompt/err.message NEVER reach the wire (Pitfall 6 / T-08-04-SSEKEY).
+  app.get('/round/:id/rationale-stream', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream')
+    res.setHeader('Cache-Control', 'no-cache')
+    res.setHeader('Connection', 'keep-alive')
+    res.flushHeaders?.()
+
+    void (async () => {
+      // The round's sealed views drive both the model batch and the deterministic fallback.
+      let views: OrderView[] = []
+      try {
+        views = (await deps.readSealedOrders(req.params.id)).map((s) => s.view)
+      } catch {
+        views = []
+      }
+
+      let closed = false
+      const finishDone = (): void => {
+        if (closed) return
+        closed = true
+        res.write('event: done\ndata: {}\n\n')
+        res.end()
+      }
+      const finishFallback = (): void => {
+        if (closed) return
+        // A deterministic, secret-free single-shot rationale frame (§8 numbers only).
+        const { clearingPrice, allocations } = deps.computeClearing(views)
+        const matchedVolume = deps.matchedAt(views, clearingPrice)
+        const fallback = deps.composeBrief(
+          clearingPrice,
+          matchedVolume,
+          allocations,
+          'Live rationale unavailable — cleared by the deterministic §8 algorithm.',
+        )
+        res.write(`data: ${JSON.stringify(fallback)}\n\n`)
+        closed = true
+        res.end()
+      }
+
+      await deps.streamRationale(views, {
+        onDelta: (delta) => {
+          if (!closed) res.write(`data: ${JSON.stringify(delta)}\n\n`)
+        },
+        onDone: finishDone,
+        onError: finishFallback,
+      })
+    })()
+  })
 
   // POST /round/:id/settle — run Round.Clear. 409 if already Cleared/Settled.
   app.post(

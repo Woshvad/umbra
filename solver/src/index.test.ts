@@ -47,6 +47,15 @@ const proposeClearing = vi.fn(
 // never hit /parse-order, so a keyless-style null stub suffices.
 const parseOrder = vi.fn(async (): Promise<{ side: 'Buy' | 'Sell'; qty: number; limit: number } | null> => null)
 
+// WOW-04: buildDeps threads the rationale streamer + the brief composer; the boot-wiring
+// proofs below never hit the SSE / terminal-GET paths, so inert stubs suffice.
+const streamRationale = vi.fn(
+  async (_views: unknown, handlers: { onError: () => void }): Promise<void> => {
+    handlers.onError()
+  },
+)
+const composeBrief = vi.fn((): string => 'brief')
+
 // A ledger port whose every function is a spy; defaults are inert.
 const makeLedger = (overrides: Partial<LedgerPort> = {}): LedgerPort => ({
   openRound: vi.fn(
@@ -121,7 +130,7 @@ describe('solver boot wiring (buildDeps)', () => {
     )
     const clock = makeClock(openRoundClock)
 
-    const deps = buildDeps({ ledger, math, clock, openRoundClock, roundSeconds: ROUND_SECONDS, proposeClearing, parseOrder })
+    const deps = buildDeps({ ledger, math, clock, openRoundClock, roundSeconds: ROUND_SECONDS, proposeClearing, parseOrder, streamRationale, composeBrief })
     const app = createApp(deps)
     const started = await listen(app)
     server = started.server
@@ -153,7 +162,7 @@ describe('solver boot wiring (buildDeps)', () => {
     )
     const clock = makeClock(openRoundClock)
 
-    const deps = buildDeps({ ledger, math, clock, openRoundClock, roundSeconds: ROUND_SECONDS, proposeClearing, parseOrder })
+    const deps = buildDeps({ ledger, math, clock, openRoundClock, roundSeconds: ROUND_SECONDS, proposeClearing, parseOrder, streamRationale, composeBrief })
     const started = await listen(createApp(deps))
     server = started.server
 

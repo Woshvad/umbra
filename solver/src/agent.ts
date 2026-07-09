@@ -248,11 +248,33 @@ const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> => {
   return Promise.race([p, deadline]).finally(() => clearTimeout(timer))
 }
 
+// ── WOW-04: streaming surface ─────────────────────────────────────────────────────
+// The minimal MessageStream shape the agent uses (real SDK: client.messages.stream()
+// → `.on('text', cb)` (chainable) + `.finalMessage()`). Lets a test inject a fake
+// without constructing a full Anthropic instance.
+export interface AgentMessageStream {
+  on: (event: 'text', cb: (delta: string) => void) => AgentMessageStream
+  finalMessage: () => Promise<unknown>
+}
+
+// The streamRationale callback contract. onError NEVER receives err.message / the
+// prompt / the key — it is a fixed signal the SSE layer turns into a deterministic
+// single-shot fallback frame (TRUST-02 degradation philosophy).
+export interface StreamHandlers {
+  onDelta: (delta: string) => void
+  onDone: () => void
+  onError: () => void
+}
+
 // The minimal client surface the agent uses — lets the test inject a fake without
 // constructing a full Anthropic instance. `messages.parse` → `{ parsed_output }`.
 export interface AgentClient {
   messages: {
     parse: (args: unknown) => Promise<{ parsed_output: unknown }>
+    // WOW-04: real Anthropic streaming. Optional in the DI surface so a parse-only fake
+    // still satisfies the type; a keyless / stream-less client degrades to onError (the
+    // SSE layer then renders the single graceful fallback frame).
+    stream?: (args: unknown) => AgentMessageStream
   }
 }
 
@@ -271,6 +293,7 @@ export const createAgent = (
 ): {
   proposeClearing: (views: OrderView[]) => Promise<AgentResult>
   parseOrder: (text: string) => Promise<ParsedOrder | null>
+  streamRationale: (views: OrderView[], handlers: StreamHandlers) => Promise<void>
 } => {
   const { computeClearing, matchedAt } = deps
   // Injected client overrides the module-private one (test fake / boot client).
@@ -361,7 +384,42 @@ export const createAgent = (
   // private client + deadline as proposeClearing; keyless/malformed/thrown → null.
   const parseOrder = (text: string): Promise<ParsedOrder | null> => parseOrderWith(client, text, timeoutMs)
 
-  return { proposeClearing, parseOrder }
+  // ── WOW-04: streamRationale — proxy the model's live rationale as text deltas ──────
+  // Forwards each Claude `text` delta via onDelta; on completion calls onDone; on ANY
+  // error (or a keyless / stream-less client) calls onError EXACTLY ONCE. It NEVER
+  // throws into the caller and NEVER passes err.message / the prompt / the key to
+  // onError — the SSE route turns onError into a fixed deterministic fallback frame.
+  const streamRationale = async (views: OrderView[], handlers: StreamHandlers): Promise<void> => {
+    // Keyless / no streaming capability → the single graceful fallback (mirrors the
+    // keyless short-circuit in proposeClearing / parseOrder).
+    if (!client || typeof client.messages.stream !== 'function') {
+      handlers.onError()
+      return
+    }
+    try {
+      // Call through client.messages so the SDK stream keeps its `this` binding.
+      const stream = client.messages.stream({
+        model: 'claude-haiku-4-5', // alias; pinned snapshot claude-haiku-4-5-20251001
+        max_tokens: 512, // ample for a 2–3 sentence rationale
+        temperature: 0, // deterministic narration
+        system: SYSTEM_PROMPT, // §8 rules verbatim (same as proposeClearing)
+        messages: [{ role: 'user', content: buildBatchMessage(views) }],
+      })
+      stream.on('text', (delta) => handlers.onDelta(delta))
+      await stream.finalMessage()
+      handlers.onDone()
+    } catch (err) {
+      // Log ONLY a fixed secret-free string + at most err.name (mirrors proposeClearing's
+      // catch); NEVER err.message, the raw object, the prompt, or the key.
+      console.error(
+        '[agent] rationale stream unavailable — single-shot fallback',
+        err instanceof Error ? err.name : 'unknown',
+      )
+      handlers.onError()
+    }
+  }
+
+  return { proposeClearing, parseOrder, streamRationale }
 }
 
 // ── Top-level parseOrder — bound to the module-private client for a direct import ──

@@ -383,3 +383,111 @@ describe('AI Solver Agent — parseOrder (NL → validated {side,qty,limit})', (
     }
   })
 })
+
+// ── WOW-04: streamRationale (messages.stream → onDelta/onDone/onError) ───────────────
+describe('AI Solver Agent — streamRationale (live rationale as text deltas)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  // A fake MessageStream: registers the text cb via .on, then fires the deltas when
+  // finalMessage() awaits (mirrors the real SDK where deltas arrive during streaming).
+  const fakeStreamClient = (deltas: string[]) => {
+    let onText: (d: string) => void = () => {}
+    const stream = {
+      on(_event: 'text', cb: (d: string) => void) {
+        onText = cb
+        return stream
+      },
+      async finalMessage() {
+        void SENTINEL_KEY // held in the closure exactly as the real key is; never leaks
+        for (const d of deltas) onText(d)
+        return {}
+      },
+    }
+    return {
+      messages: {
+        parse: vi.fn(async () => ({ parsed_output: null })),
+        stream: vi.fn(() => stream),
+      },
+    }
+  }
+
+  const fakeStreamThrowing = () => ({
+    messages: {
+      parse: vi.fn(async () => ({ parsed_output: null })),
+      stream: vi.fn(() => {
+        void SENTINEL_KEY
+        throw new Error('stream boom')
+      }),
+    },
+  })
+
+  it('forwards each text delta then calls onDone (no onError)', async () => {
+    const client = fakeStreamClient(['Cleared ', 'at 100.00.'])
+    const agent = createAgent({ client, computeClearing, matchedAt })
+
+    const deltas: string[] = []
+    let done = false
+    let errored = false
+    await agent.streamRationale(SECTION4_VIEWS, {
+      onDelta: (d) => deltas.push(d),
+      onDone: () => {
+        done = true
+      },
+      onError: () => {
+        errored = true
+      },
+    })
+
+    expect(deltas).toEqual(['Cleared ', 'at 100.00.'])
+    expect(done).toBe(true)
+    expect(errored).toBe(false)
+  })
+
+  it('keyless: no client injected → onError exactly once, no delta/done, no network', async () => {
+    const agent = createAgent({ computeClearing, matchedAt })
+
+    let deltas = 0
+    let done = 0
+    let err = 0
+    await agent.streamRationale(SECTION4_VIEWS, {
+      onDelta: () => {
+        deltas++
+      },
+      onDone: () => {
+        done++
+      },
+      onError: () => {
+        err++
+      },
+    })
+
+    expect(deltas).toBe(0)
+    expect(done).toBe(0)
+    expect(err).toBe(1)
+  })
+
+  it('stream error → onError, never throws, no secret leak in logs', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const client = fakeStreamThrowing()
+    const agent = createAgent({ client, computeClearing, matchedAt })
+
+    let err = 0
+    // RESOLVES (never rejects) even though the underlying stream threw.
+    await agent.streamRationale(SECTION4_VIEWS, {
+      onDelta: () => {},
+      onDone: () => {},
+      onError: () => {
+        err++
+      },
+    })
+
+    expect(err).toBe(1)
+    for (const call of [...logSpy.mock.calls, ...errSpy.mock.calls]) {
+      expect(JSON.stringify(call)).not.toContain(SENTINEL_KEY)
+    }
+  })
+})

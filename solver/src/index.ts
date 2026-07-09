@@ -60,6 +60,11 @@ export interface BuildDepsArgs {
   // WOW-03: the agent's server-side NL order parser (agent.ts). Same boot agent, same
   // module-private key; keyless-degrades to null. The unit test injects a stub.
   parseOrder: AppDeps['parseOrder']
+  // WOW-04: the agent's live rationale streamer (agent.ts messages.stream) + the pure
+  // post-round brief composer (brief.ts). Same boot agent for the stream; the brief is
+  // a pure import. The unit test injects stubs.
+  streamRationale: AppDeps['streamRationale']
+  composeBrief: AppDeps['composeBrief']
 }
 
 // Assemble the AppDeps so the API routes are wired to the ledger + clock.
@@ -71,7 +76,8 @@ export interface BuildDepsArgs {
 // is the single path index.ts and index.test.ts both use, so the test's spies prove
 // the live wiring.
 export const buildDeps = (args: BuildDepsArgs): AppDeps => {
-  const { ledger, math, clock, openRoundClock, roundSeconds, proposeClearing, parseOrder } = args
+  const { ledger, math, clock, openRoundClock, roundSeconds, proposeClearing, parseOrder, streamRationale, composeBrief } =
+    args
   return {
     // POST /round → ledger create THEN timer start (both).
     openRound: async (roundId, desks, windowSeconds): Promise<RoundView> => {
@@ -94,6 +100,9 @@ export const buildDeps = (args: BuildDepsArgs): AppDeps => {
     proposeClearing,
     // WOW-03: server-side NL order parsing (same boot agent, key module-private).
     parseOrder,
+    // WOW-04: live rationale streaming (same boot agent) + the pure brief composer.
+    streamRationale,
+    composeBrief,
     computeClearing: math.computeClearing,
     matchedAt: math.matchedAt,
     demandAt: math.demandAt,
@@ -115,6 +124,7 @@ const main = async (): Promise<void> => {
   const auction = await import('./auction.js')
   const { createClock } = await import('./clock.js')
   const { createAgent } = await import('./agent.js')
+  const { composeBrief } = await import('./brief.js')
 
   // Construct the real AI Solver Agent ONCE at boot. No `client` is passed — agent.ts
   // resolves its own module-private ANTHROPIC_API_KEY (or runs keyless: the §4 fixture
@@ -202,6 +212,8 @@ const main = async (): Promise<void> => {
     roundSeconds,
     proposeClearing: agent.proposeClearing,
     parseOrder: agent.parseOrder,
+    streamRationale: agent.streamRationale,
+    composeBrief,
   })
 
   const app = createApp(deps)

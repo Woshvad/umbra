@@ -24,6 +24,7 @@ import {
   type OrderView,
 } from './auction.js'
 import type { AgentResult } from './agent.js'
+import { composeBrief } from './brief.js'
 import {
   createApp,
   type AppDeps,
@@ -92,6 +93,17 @@ const makeDeps = (overrides: Partial<AppDeps>): AppDeps => ({
   proposeClearing: vi.fn(async (): Promise<AgentResult> => FALLBACK_AGENT_RESULT()),
   // NL parse stub — defaults to null (keyless / unparseable); /parse-order tests override.
   parseOrder: vi.fn(async (): Promise<{ side: 'Buy' | 'Sell'; qty: number; limit: number } | null> => null),
+  // WOW-04: default stream stub — no deltas, immediate completion; SSE tests override.
+  streamRationale: vi.fn(
+    async (
+      _views: OrderView[],
+      handlers: { onDelta: (d: string) => void; onDone: () => void; onError: () => void },
+    ): Promise<void> => {
+      handlers.onDone()
+    },
+  ),
+  // WOW-04: the REAL brief composer (pure) so the settled-body brief is genuine.
+  composeBrief,
   // Real pure §8 helpers — solve-preview asserts true deterministic clearing.
   computeClearing,
   matchedAt,
@@ -464,6 +476,104 @@ describe('solver §11 HTTP API', () => {
     // Neither the parsed order nor the failure envelope carries the key sentinel.
     expect(JSON.stringify(okJson)).not.toContain(SENTINEL_API_KEY)
     expect(JSON.stringify(failJson)).not.toContain(SENTINEL_API_KEY)
+  })
+
+  it('GET /round/:id/rationale-stream emits each delta then the done sentinel (SSE)', async () => {
+    // A mocked streamRationale that forwards two deltas then completes.
+    const streamRationale = vi.fn(
+      async (
+        _views: OrderView[],
+        handlers: { onDelta: (d: string) => void; onDone: () => void; onError: () => void },
+      ): Promise<void> => {
+        handlers.onDelta('Cleared ')
+        handlers.onDelta('at 100.00.')
+        handlers.onDone()
+      },
+    )
+    const deps = makeDeps({
+      readSealedOrders: vi.fn(async (): Promise<SealedOrder[]> => SECTION4_SEALED),
+      streamRationale,
+    })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/rationale-stream`)
+    const text = await res.text()
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toContain('text/event-stream')
+    // Both deltas arrived as their own data: frames (JSON-encoded), then the done sentinel.
+    expect(text).toContain('data: "Cleared "')
+    expect(text).toContain('data: "at 100.00."')
+    expect(text).toContain('event: done')
+    // The stream was driven from the round's own sealed views.
+    expect(streamRationale).toHaveBeenCalledWith(SECTION4_VIEWS, expect.anything())
+  })
+
+  it('GET /round/:id/rationale-stream error path → ONE deterministic fallback frame, no key', async () => {
+    // The stream closes over the sentinel key (as agent.ts holds the real one) then errors;
+    // the route must emit exactly one secret-free fallback frame (the browser still gets text).
+    const streamRationale = vi.fn(
+      async (
+        _views: OrderView[],
+        handlers: { onDelta: (d: string) => void; onDone: () => void; onError: () => void },
+      ): Promise<void> => {
+        void SENTINEL_API_KEY // held in the closure, must NOT reach the wire
+        handlers.onError()
+      },
+    )
+    const deps = makeDeps({
+      readSealedOrders: vi.fn(async (): Promise<SealedOrder[]> => SECTION4_SEALED),
+      streamRationale,
+    })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/rationale-stream`)
+    const text = await res.text()
+
+    expect(res.status).toBe(200)
+    // EXACTLY one data: frame (the deterministic single-shot fallback) — no done sentinel.
+    const dataFrames = text.split('\n\n').filter((f) => f.startsWith('data:'))
+    expect(dataFrames).toHaveLength(1)
+    expect(dataFrames[0]).toContain('$100.00') // the §4 deterministic brief
+    expect(text).not.toContain('event: done')
+    // The key sentinel never appears in the streamed bytes.
+    expect(text).not.toContain(SENTINEL_API_KEY)
+  })
+
+  it('GET /round/:id (settled) surfaces a shareable brief with no secret (WOW-04)', async () => {
+    const rationale = 'Cleared at 100.00 on the deterministic §8 result, settled atomically.'
+    const proposeClearing = vi.fn(async (): Promise<AgentResult> => {
+      void SENTINEL_API_KEY
+      const { clearingPrice, allocations } = computeClearing(SECTION4_VIEWS)
+      return {
+        clearingPrice,
+        allocations,
+        matchedVolume: matchedAt(SECTION4_VIEWS, clearingPrice),
+        rationale,
+        verified: true,
+        source: 'claude',
+      }
+    })
+    const deps = makeDeps({
+      queryRound: vi.fn(async (roundId: string) => ({ roundId, status: 'Settled' })),
+      readSealedOrders: vi.fn(async (): Promise<SealedOrder[]> => SECTION4_SEALED),
+      refreshStats: vi.fn(async (): Promise<number> => 3),
+      proposeClearing,
+    })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1`)
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    // The additive brief is present, names the $100.00 clear, and carries no secret.
+    expect(typeof body.brief).toBe('string')
+    expect(body.brief).toContain('$100.00')
+    expect(body.brief).toContain(rationale)
+    expect(JSON.stringify(body)).not.toContain(SENTINEL_API_KEY)
   })
 
   it('POST /round/:id/settle returns 409 on double-settle (round already Settled)', async () => {

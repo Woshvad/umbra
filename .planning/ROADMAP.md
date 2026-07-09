@@ -317,7 +317,7 @@ Plans:
 **Wave 4** *(blocked on 09-03, 09-04)*
 
 - [x] 09-05-PLAN.md — AUCT-04 TCA receipt + on-ledger surplusVsLimit≥0 proof (TradeConfirmation fields + Round.Clear) + solver/proof-pack surface + SettlementView two-distinct-surplus receipt [AUCT-04]
-- [ ] 09-06-PLAN.md — AUCT-01 order-type entry UI: OrderTicket LIMIT·NONCOMP·MAQ·COND selector + per-type params + type-aware SubmitOrder (desk plane) [AUCT-01]
+- [x] 09-06-PLAN.md — AUCT-01 order-type entry UI: OrderTicket LIMIT·NONCOMP·MAQ·COND selector + per-type params + type-aware SubmitOrder (desk plane) [AUCT-01]
 
 **Wave 5** *(blocked on 09-05)*
 

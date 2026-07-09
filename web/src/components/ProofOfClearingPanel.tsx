@@ -29,11 +29,14 @@ import {
   generateProof,
   verifyProof,
   anchorProof,
+  tamperProof,
+  proofPackUrl,
   SolverError,
   OFFLINE_CAPTION,
   type ProofArtifact,
   type ProofEnvelope,
   type AnchorResult,
+  type TamperProofResponse,
   type VKey,
 } from '../solver'
 import type { OperatorViewState } from '../operatorState'
@@ -60,6 +63,10 @@ const STATEMENT =
 const OFF_LEDGER_PROSE =
   'Verified by an off-ledger verifier — Canton has no zk-verifier precompile, so on-ledger ' +
   'we anchor only the proof hash. On-ledger native verification is the production path.'
+
+// Verbatim WOW-05 proof-pack export error copy (08-UI-SPEC / ProofPackButton), secret-free.
+const EXPORT_ERROR_COPY =
+  'Proof-pack couldn’t be generated. Check the solver on the configured port and try again.'
 
 // The ink "evidence" surface — same tokens as AgentRationale / PeekConsole / BreakTheAiPanel
 // (#0A0A0A bg / #F4F1EA text, pre-wrap, tabular; raw crypto renders literally, never a badge).
@@ -148,6 +155,9 @@ export default function ProofOfClearingPanel({ roundId, phase, preview, offline 
   const [verifying, setVerifying] = useState(false)
   const [anchor, setAnchor] = useState<AnchorResult | null>(null)
   const [anchoring, setAnchoring] = useState(false)
+  const [tamper, setTamper] = useState<TamperProofResponse | null>(null)
+  const [tampering, setTampering] = useState(false)
+  const [exportState, setExportState] = useState<'ready' | 'preparing' | 'error'>('ready')
   const [offlineHit, setOfflineHit] = useState(false)
 
   // Gate: the panel is a POST-CLEAR surface — hidden until the batch has cleared/settled.
@@ -216,6 +226,51 @@ export default function ProofOfClearingPanel({ roundId, phase, preview, offline 
       if (e instanceof SolverError && e.code === 'OFFLINE') setOfflineHit(true)
     } finally {
       setAnchoring(false)
+    }
+  }
+
+  // RUN TAMPERED CLEARING — the "break the proof" demo (mirrors Break-the-AI). The solver
+  // perturbs a PUBLIC input and re-verifies → false; nothing settles, nothing anchors. The
+  // verbatim (secret-free) rejection IS the credibility — render it, never summarize it.
+  async function onTamper(): Promise<void> {
+    if (tampering) return
+    setTampering(true)
+    setOfflineHit(false)
+    try {
+      const result = await tamperProof(roundId)
+      setTamper(result)
+    } catch (e) {
+      if (e instanceof SolverError && e.code === 'OFFLINE') setOfflineHit(true)
+      // A structured (secret-free) error still renders verbatim as the rejection body.
+      else setTamper({ rejected: true, verified: false, error: e instanceof Error ? e.message : 'rejected' })
+    } finally {
+      setTampering(false)
+    }
+  }
+
+  // EXPORT PROOF ↓ — bundle proof + public inputs + anchor into the WOW-05 proof-pack
+  // (reuse the ProofPackButton proofPackUrl fetch→blob→<a download> mechanism; no auth
+  // header, no operator/Anthropic credential). Never red/lime — ink-ghost only.
+  async function onExport(): Promise<void> {
+    if (exportState === 'preparing') return
+    setExportState('preparing')
+    try {
+      const res = await fetch(proofPackUrl(roundId))
+      if (!res.ok) throw new Error('proof-pack fetch failed')
+      const blob = await res.blob()
+      const ct = res.headers.get('content-type') ?? ''
+      const ext = ct.includes('pdf') ? 'pdf' : 'html'
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `Umbra-Proof-${roundId}.${ext}`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      setExportState('ready')
+    } catch {
+      setExportState('error')
     }
   }
 
@@ -415,6 +470,75 @@ export default function ProofOfClearingPanel({ roundId, phase, preview, offline 
                       {`VKEY HASH   ${middleTruncate(anchor.vkeyHash, 12, 8)}`}
                     </div>
                   </div>
+                )}
+              </div>
+
+              {/* ── Tamper-rejection demo (proves the proof is REAL, not a stub) ───────── */}
+              <div style={{ marginTop: '18px', border: '1px dashed #0A0A0A', padding: '22px 24px' }}>
+                <div className="flex items-center" style={{ gap: '10px' }}>
+                  <EvidenceCaption>Tamper Rejection</EvidenceCaption>
+                  <ProvenanceTag label="DEMO · ADVERSARIAL" tone="red" />
+                </div>
+
+                <div style={{ margin: '16px 0 0' }}>
+                  <button
+                    type="button"
+                    onClick={() => void onTamper()}
+                    disabled={tampering}
+                    className="break-ai-force font-mono text-13 font-bold uppercase disabled:opacity-40"
+                    style={{
+                      padding: '13px 24px',
+                      letterSpacing: '.14em',
+                      cursor: tampering ? 'default' : 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                    }}
+                  >
+                    {tampering && (
+                      <span
+                        className={reduced ? '' : 'animate-umbra-pulse'}
+                        style={{ display: 'inline-block', width: '8px', height: '8px', background: '#E2231A' }}
+                      />
+                    )}
+                    {tampering ? 'TAMPERING…' : 'RUN TAMPERED CLEARING'}
+                  </button>
+                </div>
+
+                {tamper && (
+                  <div style={{ margin: '16px 0 0' }}>
+                    <div style={{ marginBottom: '8px' }}>
+                      <RedSquareRow label="TAMPERED CLEARING → PROOF REJECTED" />
+                    </div>
+                    <div className="font-mono text-13 tabular-nums" style={INK_SURFACE}>
+                      {tamper.error || '// (no rejection captured)'}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ── EXPORT PROOF ↓ — ink-ghost; bundles into the WOW-05 proof-pack ─────── */}
+              <div style={{ marginTop: '18px' }}>
+                <button
+                  type="button"
+                  onClick={() => void onExport()}
+                  disabled={exportState === 'preparing'}
+                  className="umbra-ink-ghost font-mono text-13 font-bold uppercase disabled:opacity-40"
+                  style={{
+                    padding: '15px 28px',
+                    letterSpacing: '.14em',
+                    cursor: exportState === 'preparing' ? 'default' : 'pointer',
+                  }}
+                >
+                  {exportState === 'preparing' ? 'PREPARING PROOF…' : 'EXPORT PROOF ↓'}
+                </button>
+                {exportState === 'error' && (
+                  <p
+                    className="font-body text-13"
+                    style={{ margin: '12px 0 0', opacity: 0.7, lineHeight: 1.6, maxWidth: '520px' }}
+                  >
+                    {EXPORT_ERROR_COPY}
+                  </p>
                 )}
               </div>
             </>

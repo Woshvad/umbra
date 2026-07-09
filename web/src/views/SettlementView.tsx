@@ -26,6 +26,7 @@ import AtomicStamp from '../components/AtomicStamp'
 import RoundBrief from '../components/RoundBrief'
 import ProofPackButton from '../components/ProofPackButton'
 import TcaReceipts from '../components/TcaReceipts'
+import ProofOfClearingPanel from '../components/ProofOfClearingPanel'
 
 type Props = OperatorViewState
 
@@ -238,6 +239,19 @@ export default function SettlementView({
                 <LeakageSimPanel preview={preview} />
               </>
             )}
+
+            {/* CRYP-03 — Proof of Correct Clearing. A POST-CLEAR block (self-gated to
+                phase cleared|settled) sitting BELOW the SOLID on-ledger settlement record /
+                RoundBrief / receipts / proof-pack / leakage sim — visually DISTINCT (dashed
+                T3 off-ledger verify pane) from the solid record above. Operator plane
+                (:4100) via solver.ts — no operator token; never disturbs the shipped
+                simultaneous-settle beat or the money-shot reveal. */}
+            <ProofOfClearingPanel
+              roundId={roundId}
+              phase={phase}
+              preview={preview}
+              offline={offline}
+            />
           </div>
 
           {/* Right — before → after balances (lerp in lockstep with settleProgress) */}

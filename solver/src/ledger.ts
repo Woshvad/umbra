@@ -444,12 +444,17 @@ export const tamperClear = async (
       buyerUsdcCid,
       sellerBondCids,
     })
-    // Should NEVER happen — the on-ledger recompute-and-assert must reject a tampered clear.
-    return { rejected: true, error: 'UNEXPECTED: ledger accepted a tampered clear' }
   } catch (e) {
-    // submitAndWait throws `submit HTTP <status>: <body>` — the body carries the verbatim
-    // assertMsg and is already a secret-free ledger slice (the token lives only in the
-    // Authorization header, never in the request body or the echoed error).
+    // The EXPECTED path: submitAndWait throws `submit HTTP <status>: <body>` — the body
+    // carries the verbatim assertMsg and is already a secret-free ledger slice (the token
+    // lives only in the Authorization header, never in the request body or the echoed
+    // error). `rejected: true` is therefore truthful — the ledger genuinely rejected.
     return { rejected: true, error: e instanceof Error ? e.message : 'rejected' }
   }
+  // Reached ONLY if the exercise RESOLVED — i.e. the on-ledger recompute-and-assert failed
+  // to reject a tampered clear and the round just settled at a WRONG price / over-filled
+  // allocation. Reporting `rejected: true` here (the old behavior) would mask the exact
+  // backstop regression WOW-02 exists to detect. Throw loudly so `rejected` can NEVER be a
+  // lie — the caller surfaces a real error instead of a fake "REJECTED" (WR-05).
+  throw new Error('SAFETY REGRESSION: on-ledger Round.Clear ACCEPTED a tampered proposal')
 }

@@ -339,6 +339,37 @@ Plans:
 
   *Gate: a cryptographer's review is required before any of this crypto guards real value (tracked in Phase 13 / Track B).*
 
+**Plans**: 10 plans (5 waves)
+Plans:
+
+**Wave 1**
+
+- [ ] 10-01-PLAN.md — CRYP-01 Daml: OrderCommitment + CommitOrder/RevealOrder (on-ledger sha256 binding) + ForfeitBond slash + ProofAnchor + §4 commit→reveal→clear seed + 5 Daml tests; Round.Clear byte-unchanged [CRYP-01, CRYP-03]
+- [ ] 10-02-PLAN.md — Crypto toolchain install (blocking legitimacy checkpoint + tlock-js/snarkjs/circomlibjs/circomlib + prebuilt circom.exe + Wave-0 test scaffolds) [CRYP-02, CRYP-03]
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 10-03-PLAN.md — CRYP-02 tlock.ts: quicknet timelock seal/open + drand round metadata + labeled offline fallback + tests [CRYP-02]
+- [ ] 10-04-PLAN.md — CRYP-03 zk: reduced clearing.circom + build + ESM prove/verify + anchor hashes + §4 fixtures + accept/tamper-reject tests [CRYP-03]
+- [ ] 10-05-PLAN.md — Solver ledger (bond forfeit + proof anchor + currentOffset) + timemachine stage→offset map + regenerate/commit web/daml.js [CRYP-01, VIZ-02]
+
+**Wave 3** *(blocked on 10-03, 10-04, 10-05)*
+
+- [ ] 10-06-PLAN.md — Solver crypto API + index wiring: timelock / prove-verify-anchor-tamper / stage-offsets endpoints (zod + secret-safe) + api.test.ts secret sweep [CRYP-02, CRYP-03, VIZ-02]
+
+**Wave 4** *(blocked on 10-06)*
+
+- [ ] 10-07-PLAN.md — web/src/solver.ts Phase-10 crypto client surface + pure no-credential URL test [CRYP-01, CRYP-02, CRYP-03, VIZ-02]
+
+**Wave 5** *(blocked on 10-07; 10-08/10-10 also on 10-05)*
+
+- [ ] 10-08-PLAN.md — CRYP-01/02 OrderTicket commit→committed→timelocked→revealed/forfeited lifecycle (desk plane, T1/T2/T3 honest labeling) [CRYP-01, CRYP-02]
+- [ ] 10-09-PLAN.md — CRYP-03 ProofOfClearingPanel in SettlementView (T2 proof / T3 off-ledger verify / T1 anchor / tamper-reject / export) [CRYP-03]
+- [ ] 10-10-PLAN.md — VIZ-02 TimeMachineView (view 06) + Nav + App route + per-party redaction test [VIZ-02]
+
+**UI hint**: yes
+
+
 ### Phase 11: Settlement & Institutional Grade
 
 **Goal**: Replace the MVP settlement primitives with a production-grade, multi-party, compliance-gated settlement stack, and prove it across nodes.
@@ -387,7 +418,7 @@ Build waves run in numeric order 8 → 9 → 10 → 11. Track A (Phase 12) runs 
 |-------|----------------|--------|-----------|
 | 8. Demo Hardening | 7/7 | Built · live UAT pending | 2026-07-09 |
 | 9. Auction Depth & Live Viz | 7/7 | Built · live UAT pending | 2026-07-09 |
-| 10. Cryptographic Privacy | 0/— | Not started | — |
+| 10. Cryptographic Privacy | 0/10 | Planned (5 waves) | — |
 | 11. Settlement & Institutional Grade | 0/— | Not started | — |
 | 12. Real On-Chain (Canton DevNet) | 0/— | Not started (external gate) | — |
 | 13. Platform Baseline & Adjacent | 0/— | Not started (ongoing) | — |

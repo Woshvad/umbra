@@ -26,6 +26,13 @@ import { z } from 'zod'
 import type { OrderView, Allocation, ClearingResult } from './auction.js'
 import type { AgentResult } from './agent.js'
 import type { ProofBundle } from './proof.js'
+// CRYP-02/03 + VIZ-02 crypto types (TYPE-ONLY imports — erased at compile, so pulling
+// them in NEVER triggers tlock-js / snarkjs / circomlibjs module evaluation here; the real
+// implementations are dependency-injected via AppDeps, exactly like the ledger client).
+import type { SealResult, DrandRoundInfo } from './tlock.js'
+import type { ClearingProof, Groth16Proof, PublicSignals, VKey } from './zk/prove.js'
+import type { ProofAnchor } from './zk/verify.js'
+import type { StageOffsets } from './timemachine.js'
 
 // The Vite dev origin — the ONLY allowed CORS origin (never '*').
 export const ALLOWED_ORIGIN = 'http://localhost:5173'
@@ -131,6 +138,52 @@ export interface AppDeps {
   // choosePStar). Reused UNCHANGED for the OPEN-window aggregate indicative feed; never
   // emits a candidate-price curve, only the single scalar (small-N guarded downstream).
   choosePStar: (orders: OrderView[]) => number
+
+  // ── CRYP-02 timelock (tlock.ts) ────────────────────────────────────────────────
+  // Seal a payload to a FUTURE drand round — undecryptable (by ANYONE, including the
+  // solver holding the ciphertext) until that beacon publishes. Returns ciphertext +
+  // public round metadata + a `mode` ('drand' | 'offline'); the drand path holds NO
+  // long-term secret and the weaker offline-fallback held key stays module-private in
+  // tlock.ts. Only ciphertext + PUBLIC round metadata cross out — never a key.
+  timelockEncrypt: (payload: string, windowMs: number) => Promise<SealResult>
+  // Recover the plaintext. REJECTS (throws) with a message containing "too early" when the
+  // target beacon has not published yet — the handler maps that to a fixed 425 (no err text
+  // is echoed). The offline held key opens offline ciphertexts inside tlock.ts, never here.
+  timelockDecrypt: (ciphertext: string) => Promise<{ plaintext: string }>
+  // Public drand round metadata (target round + ms-to-beacon + chain hash) for a window —
+  // drives the UI countdown. No secret; pure public-beacon math.
+  drandRoundInfo: (windowMs: number) => Promise<DrandRoundInfo>
+
+  // ── CRYP-03 zero-knowledge (zk/prove.ts + zk/verify.ts) ──────────────────────────
+  // Generate a REAL Groth16 proof that the round's published (p*, matched, commitments)
+  // is a fair, conserving clearing of the COMMITTED batch. The PRIVATE witness (every
+  // order's side/qty/limit/salt/fill) NEVER crosses out — only { proof, publicSignals,
+  // sizeBytes, ms }. The commitments are irreversible Poseidon hashes (reveal no order).
+  generateProof: (roundId: string) => Promise<ClearingProof>
+  // OFF-LEDGER Groth16 verification. Returns ONLY a boolean verdict — a forged public
+  // signal → false. This is DISTINCT from anchorProof: Canton has no zk precompile, so
+  // verification is off-ledger; anchoring records only hashes on-ledger.
+  verifyProof: (vkey: VKey, publicSignals: PublicSignals, proof: Groth16Proof) => Promise<boolean>
+  // ON-LEDGER anchor. Computes sha256(proof ‖ publicSignals) + sha256(vkey) and records
+  // ONLY those hashes on-ledger (no proof bytes / witness). Returns the anchored hashes.
+  // Kept DISTINCT from verifyProof: a hash anchored on-ledger is NOT a claim the proof
+  // verified — the off-ledger verdict and the on-ledger hash-anchor are separate acts.
+  anchorProof: (
+    roundId: string,
+    proof: Groth16Proof,
+    publicSignals: PublicSignals,
+    vkey: VKey,
+  ) => Promise<ProofAnchor>
+  // The "break the proof" demo seam (mirrors tamperClear's NEVER-throw contract): generate
+  // a valid proof, perturb a PUBLIC input, re-verify → expect false. Returns the verbatim
+  // (secret-free) rejection. NEVER throws, NEVER anchors — purely off the honest paths.
+  tamperProof: (roundId: string) => Promise<{ rejected: boolean; verified: false; error: string }>
+
+  // ── VIZ-02 stage→offset map (timemachine.ts) ─────────────────────────────────────
+  // The recorded ledger offset at each lifecycle stage of a round (open → sealed →
+  // cleared → settled). The browser replays these offsets per-party to reconstruct
+  // "what desk X could see at stage N". Numeric bookmarks only — never a token.
+  getStageOffsets: (roundId: string) => Promise<StageOffsets> | StageOffsets
 }
 
 // ── A typed application error that maps cleanly onto the secret-safe envelope ────
@@ -174,6 +227,41 @@ const tamperClearBody = z
     mode: z.enum(['wrong-price', 'overfill']),
   })
   .strict()
+
+// ── zod schema for POST /round/:id/timelock-encrypt (CRYP-02) ────────────────────
+// Cap the payload (ASVS V5 input-size limit) and the window. A malformed/oversized
+// body → a sanitized 400; the raw env/headers are never echoed.
+const timelockEncryptBody = z
+  .object({
+    payload: z.string().min(1).max(8192),
+    // Optional window in ms; capped at 24h so a hostile value can't push the target
+    // round absurdly far. Defaults downstream when omitted.
+    windowMs: z.number().int().positive().max(86_400_000).optional(),
+  })
+  .strict()
+
+// ── zod schema for POST /timelock-decrypt (CRYP-02) ──────────────────────────────
+// The AGE-armored (or offline-prefixed) ciphertext — a few KB at most; cap it.
+const timelockDecryptBody = z
+  .object({
+    ciphertext: z.string().min(1).max(100_000),
+  })
+  .strict()
+
+// ── zod schema for the ZK proof envelope (CRYP-03: verify-proof + anchor-proof) ──
+// A Groth16 proof + its public signals + the verification key. proof/vkey are opaque
+// JSON objects (validated as records); publicSignals are decimal-string field elements.
+// Size caps (ASVS V5) bound the blast radius of a hostile body.
+const proofEnvelopeBody = z
+  .object({
+    vkey: z.record(z.string(), z.unknown()),
+    publicSignals: z.array(z.string().max(256)).min(1).max(256),
+    proof: z.record(z.string(), z.unknown()),
+  })
+  .strict()
+
+// Default timelock window (ms) when a request omits windowMs — one short demo batch.
+const DEFAULT_TIMELOCK_WINDOW_MS = 30_000
 
 // Statuses that mean the round has already been cleared/settled (double-settle guard).
 const TERMINAL_STATUSES = new Set(['Cleared', 'Settled'])
@@ -603,6 +691,155 @@ export const createApp = (deps: AppDeps): Express => {
       }
       // Graceful fallback: the on-brand HTML for window.print().
       res.status(200).type('html').send(result.html)
+    }),
+  )
+
+  // ══ CRYP-02 / CRYP-03 / VIZ-02 crypto endpoints (ADDITIVE — off the §11/settle path) ══
+  // The browser talks ONLY to the solver for operator-plane crypto (tlock seals, proof
+  // generation/verification, the stage→offset map). Every body below is zod-validated and
+  // every response rides the SAME secret-safe envelope — no tlock held key, operator token,
+  // ANTHROPIC_API_KEY, salt, or proof witness ever crosses out.
+
+  // POST /round/:id/timelock-encrypt — CRYP-02 seal a payload to a FUTURE drand round.
+  // Undecryptable (by anyone, incl. the solver) until that beacon publishes. Returns the
+  // ciphertext + public round metadata; enriches with best-effort beacon timing for the UI
+  // countdown (drand mode only — never fatal). `mode:'offline'` carries the weaker-than-drand
+  // warning tlock.ts attaches (the UI MUST surface it).
+  app.post(
+    '/round/:id/timelock-encrypt',
+    wrap(async (req, res) => {
+      const { id } = req.params
+      const parsed = timelockEncryptBody.safeParse(req.body ?? {})
+      if (!parsed.success) {
+        const issue = parsed.error.issues[0]
+        const path = issue?.path.join('.') || '(body)'
+        throw new ApiError(400, 'INVALID_BODY', `invalid request body: ${path} — ${issue?.message ?? 'invalid'}`)
+      }
+      const windowMs = parsed.data.windowMs ?? DEFAULT_TIMELOCK_WINDOW_MS
+      const seal = await deps.timelockEncrypt(parsed.data.payload, windowMs)
+      // Best-effort public beacon metadata (drand path only); a drand outage must not fail
+      // the seal (tlock already fell back to the labeled offline mode in that case).
+      let beacon: { chainHash?: string; timeToBeaconMs?: number } = {}
+      if (seal.mode === 'drand') {
+        try {
+          const info = await deps.drandRoundInfo(windowMs)
+          beacon = { chainHash: info.chainHash, timeToBeaconMs: info.timeToBeaconMs }
+        } catch {
+          beacon = {}
+        }
+      }
+      res.json({ roundId: id, ...seal, ...beacon })
+    }),
+  )
+
+  // POST /timelock-decrypt — CRYP-02 recover a sealed payload. A drand ciphertext whose
+  // target beacon has NOT published yet rejects with a message containing "too early"; we
+  // map that to a fixed 425 (no underlying error text is ever echoed — it could carry
+  // internals). Any other failure collapses to a generic secret-free 422.
+  app.post(
+    '/timelock-decrypt',
+    wrap(async (req, res) => {
+      const parsed = timelockDecryptBody.safeParse(req.body ?? {})
+      if (!parsed.success) {
+        const issue = parsed.error.issues[0]
+        const path = issue?.path.join('.') || '(body)'
+        throw new ApiError(400, 'INVALID_BODY', `invalid request body: ${path} — ${issue?.message ?? 'invalid'}`)
+      }
+      let result: { plaintext: string }
+      try {
+        result = await deps.timelockDecrypt(parsed.data.ciphertext)
+      } catch (err) {
+        // Classify ONLY on the presence of the cryptographic early-decrypt marker; the raw
+        // message is NEVER interpolated into the response (T-10-17).
+        const msg = err instanceof Error ? err.message.toLowerCase() : ''
+        if (msg.includes('too early')) {
+          throw new ApiError(
+            425,
+            'TOO_EARLY',
+            'ciphertext not yet decryptable — the drand beacon for its target round has not published',
+          )
+        }
+        throw new ApiError(422, 'DECRYPT_FAILED', 'could not decrypt the ciphertext')
+      }
+      res.json({ plaintext: result.plaintext })
+    }),
+  )
+
+  // POST /round/:id/prove — CRYP-03 generate a REAL Groth16 proof of the round's clearing.
+  // The PRIVATE witness stays inside zk/prove.ts — only { proof, publicSignals, sizeBytes,
+  // ms } cross out. The trusted setup behind it is PoC-grade (label it wherever surfaced).
+  app.post(
+    '/round/:id/prove',
+    wrap(async (req, res) => {
+      const { id } = req.params
+      const { proof, publicSignals, sizeBytes, ms } = await deps.generateProof(id)
+      res.json({ roundId: id, proof, publicSignals, sizeBytes, ms })
+    }),
+  )
+
+  // POST /round/:id/verify-proof — CRYP-03 OFF-LEDGER Groth16 verification. Returns ONLY a
+  // boolean verdict. DISTINCT from anchor-proof: this is the off-ledger check (Canton has no
+  // zk precompile), NOT an on-ledger record. A forged public signal → { verified:false }.
+  app.post(
+    '/round/:id/verify-proof',
+    wrap(async (req, res) => {
+      const { id } = req.params
+      const parsed = proofEnvelopeBody.safeParse(req.body ?? {})
+      if (!parsed.success) {
+        const issue = parsed.error.issues[0]
+        const path = issue?.path.join('.') || '(body)'
+        throw new ApiError(400, 'INVALID_BODY', `invalid request body: ${path} — ${issue?.message ?? 'invalid'}`)
+      }
+      const { vkey, publicSignals, proof } = parsed.data
+      const verified = await deps.verifyProof(vkey, publicSignals, proof)
+      // Off-ledger verdict shape: { verified } — NO on-ledger hashes here (that is anchor's job).
+      res.json({ roundId: id, verified })
+    }),
+  )
+
+  // POST /round/:id/anchor-proof — CRYP-03 ON-LEDGER anchor. Records ONLY sha256(proof ‖
+  // publicSignals) + sha256(vkey) on-ledger — no proof bytes, no witness. Returns the anchored
+  // hashes. DISTINCT from verify-proof: anchoring a hash is NOT a verification claim (the two
+  // acts are deliberately separate — an anchored hash records "a proof against this circuit
+  // existed", the off-ledger verify is what actually checks it).
+  app.post(
+    '/round/:id/anchor-proof',
+    wrap(async (req, res) => {
+      const { id } = req.params
+      const parsed = proofEnvelopeBody.safeParse(req.body ?? {})
+      if (!parsed.success) {
+        const issue = parsed.error.issues[0]
+        const path = issue?.path.join('.') || '(body)'
+        throw new ApiError(400, 'INVALID_BODY', `invalid request body: ${path} — ${issue?.message ?? 'invalid'}`)
+      }
+      const { vkey, publicSignals, proof } = parsed.data
+      const anchor = await deps.anchorProof(id, proof, publicSignals, vkey)
+      // On-ledger anchor shape: the recorded hashes — NO boolean verdict (that is verify's job).
+      res.json({ roundId: id, proofHash: anchor.proofHash, vkeyHash: anchor.vkeyHash })
+    }),
+  )
+
+  // POST /round/:id/tamper-proof — CRYP-03 "break the proof" demo. Perturbs a PUBLIC input and
+  // re-verifies → the Groth16 check rejects it. Mirrors /tamper-clear: the dep NEVER throws and
+  // NEVER anchors; the verbatim (secret-free) rejection is the payload.
+  app.post(
+    '/round/:id/tamper-proof',
+    wrap(async (req, res) => {
+      const { id } = req.params
+      const result = await deps.tamperProof(id)
+      res.json({ rejected: result.rejected, verified: result.verified, error: result.error })
+    }),
+  )
+
+  // GET /round/:id/stage-offsets — VIZ-02 the recorded stage→ledger-offset map for a round.
+  // Numeric bookmarks only (open/sealed/cleared/settled); the browser replays them per-party.
+  // An unknown round / un-recorded stage is simply absent (never a secret, never a token).
+  app.get(
+    '/round/:id/stage-offsets',
+    wrap(async (req, res) => {
+      const { id } = req.params
+      const offsets = await deps.getStageOffsets(id)
+      res.json({ roundId: id, offsets })
     }),
   )
 

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Progress
 status: executing
-stopped_at: Completed 10-03-PLAN.md
-last_updated: "2026-07-09T21:16:08.261Z"
-last_activity: 2026-07-09 -- Phase 10 execution started
+stopped_at: Completed 10-04-PLAN.md
+last_updated: "2026-07-09T21:31:00.000Z"
+last_activity: 2026-07-09 -- Completed 10-04 (CRYP-03 ZK proof-of-correct-clearing PoC)
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 24
-  completed_plans: 17
-  percent: 33
+  completed_plans: 18
+  percent: 34
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 ## Current Position
 
 Phase: 10 (cryptographic-privacy) — EXECUTING
-Plan: 4 of 10
+Plan: 5 of 10
 Status: Ready to execute
-Last activity: 2026-07-09 -- Phase 10 execution started
+Last activity: 2026-07-09 -- Completed 10-04 (CRYP-03 ZK proof-of-correct-clearing PoC)
 
 ## Performance Metrics
 
@@ -83,6 +83,7 @@ Last activity: 2026-07-09 -- Phase 10 execution started
 | Phase 10 P01 | 24min | 3 tasks | 6 files |
 | Phase 10 P02 | 6 min | 2 tasks tasks | 7 files files |
 | Phase 10 P03 | ~20 min | 2 tasks | 3 files |
+| Phase 10 P04 | ~12 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -143,6 +144,7 @@ Recent decisions affecting current work:
 - [Phase 10]: [10-01 / CRYP-01,CRYP-03]: On-ledger commit–reveal via DA.Crypto.Text.sha256 (alpha, -Wno-crypto-text-is-alpha). Single canonical serializeOrder shared by commit+reveal; bond uses operator-custody LOCK (not escrow-by-reassign — an operator-owned Asset is invisible to the desk). OrderCommitment/RevealOrder/ForfeitBond + ProofAnchor/Venue.AnchorProof (hashes only). Round.Clear + §8 byte-unchanged; §4 clears 100.00/A=10/B=8/C=2 through commit→reveal→clear. Bindings regen deferred to 10-05.
 - [Phase ?]: [10-02 / CRYP-02,CRYP-03]: Installed the pure-JS crypto toolchain (tlock-js@0.9.0, snarkjs@0.7.6, circomlibjs@0.1.7 deps; circomlib@2.0.5 dev) + pinned prebuilt circom v2.2.3 exe (sha256 e43f132e…d185e1) into solver/ via --legacy-peer-deps (the @anthropic-ai/sdk/zod@3.23.8 peer, 05-01 precedent; core deps untouched, exact-pinned). zk BUILD artifacts gitignored, §4 fixtures + circom.exe force-kept. Two INTENTIONAL Wave-0 red scaffolds (solver/src/tlock.test.ts, solver/src/zk/verify.test.ts) — green in 10-03/10-04; rest of suite 95 green, tsc clean. Package-legitimacy gate satisfied by orchestrator registry vet (all iden3/drand official).
 - [Phase 10]: CRYP-02 timelock: drand quicknet primary + labeled weaker AES-256-GCM offline fallback; CI determinism via a locally-signed BLS12-381 chain (mocked beacon)
+- [10-04 / CRYP-03]: REAL circom/snarkjs Groth16 proof-of-correct-clearing in solver/src/zk/. clearing.circom (verbatim from RESEARCH, 1221 non-linear constraints, public signals exactly [pStar, matched, comm…]) proves Poseidon(4) commitment binding + fill≤qty + side-gated limit-vs-p* + Σbuy=Σsell=matched over the COMMITTED batch — a REDUCED statement (fairness+conservation at the published p*, NOT volume-maximality; the in-circuit §8 sort is the documented production path, A4). build.mjs compiles via the pinned circom.exe (-l ../../node_modules for circomlib) then runs a single-contributor LOCAL pow-12 powers-of-tau → Groth16 setup → clearing_final.zkey/vkey.json — labeled PoC trusted setup / cryptographer-review-gated (A5). clearing.wasm/clearing_final.zkey/vkey.json COMMITTED as §4 CI fixtures (gitignore negations added). prove.ts generateClearingProof computes host-side Poseidon (circomlibjs, matching in-circuit params) then snarkjs.groth16.fullProve (ESM — NEVER generate_witness.js, Pitfall 3); the private witness (side/qty/limit/salt/fill) NEVER enters a return value or log (T-10-11). verify.ts verifyClearingProof (real groth16.verify, OFF-LEDGER by design — Canton has NO zk precompile, a documented HARD limitation; on-ledger anchors only proofHash/vkeyHash via proofAnchorHashes/node:crypto sha256). verify.test.ts: real §4 proof ACCEPTED (p*=100, matched=10, no losing value in public signals), forged p*=99 REJECTED (verify false), matched=12 REJECTED (witness-gen throws at conservation constraint line 62). Full solver suite 104 green, tsc clean. Live proof gen/verify/tamper = end-of-phase human-verify.
 
 ### Pending Todos
 
@@ -168,6 +170,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-09T21:16:08.237Z
-Stopped at: Completed 10-03-PLAN.md
-Resume file: .planning/phases/10-cryptographic-privacy/10-UI-SPEC.md
+Last session: 2026-07-09T21:31:00.000Z
+Stopped at: Completed 10-04-PLAN.md
+Resume file: .planning/phases/10-cryptographic-privacy/10-05-PLAN.md

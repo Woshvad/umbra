@@ -262,3 +262,32 @@ Daml's disclosure rules and keeps the `Asset` settlement primitive byte-unchange
 `RevealOrder`/`ForfeitBond` and the `Venue.CommitOrder` lock. The canonical fixture
 still clears **$100.00 / A=10 / B=8 / C=2** through commit → reveal → clear
 (`test_commit_reveal_clears_at_100`).
+
+## CRYP-02 — Timelock module (`solver/src/tlock.ts`)
+
+**drand endpoint + chain (env-overridable):** the primary timelock rides drand
+**quicknet** — URL `https://api.drand.sh`, chain hash
+`52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971`, period 3s,
+genesis 1692803367, scheme `bls-unchained-g1-rfc9380` (RFC9380 unchained). Resolved
+via `DRAND_URL` / `DRAND_CHAIN_HASH` (mirroring `ledger.ts` PARTICIPANT resolution);
+the quicknet default uses tlock-js `mainnetClient()` directly, a custom hash builds an
+`HttpCachingChain`. `tlock-js@0.9.0` is CommonJS — imported by named CJS interop
+(`defaultChainOptions` is NOT exported; use `mainnetClient()`).
+
+**The guarantee is cryptographic, not app-level:** a payload sealed to a FUTURE round is
+undecryptable by ANYONE holding the ciphertext (operator/solver included) until that
+round's threshold beacon publishes — `timelockOpen` throws `"too early"` before it, and
+recovers the EXACT payload after. Determinism in CI is achieved with a locally-signed
+BLS12-381 chain (a "mocked beacon"), not live quicknet; the real-time quicknet round-trip
+is an **end-of-phase human-verify**.
+
+**Offline fallback trust nuance (threat T-10-09, disposition ACCEPT):** when quicknet is
+unreachable, `timelockSeal` drops to a LOCAL held-key AES-256-GCM seal and flags
+`mode: 'offline'` + the literal label **`OFFLINE FALLBACK · WEAKER THAN DRAND`**. This is
+materially weaker — a single module-private server key gates it, with NO threshold
+guarantee. It is a liveness backstop for the demo, never the security claim.
+
+**Secret handling (threat T-10-08, mirrors `proof.ts`/`ledger.ts`):** the offline key is
+module-private (`node:crypto` `randomBytes`), NEVER exported/returned/logged; the drand
+path holds no long-term secret (the beacon is public). A secret-sweep test asserts no
+key/salt appears in any result, thrown error, or module export.

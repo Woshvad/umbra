@@ -274,7 +274,7 @@ Plans:
 
 **Wave 3** *(blocked on 08-03)*
 
-- [ ] 08-04-PLAN.md — WOW-04 streamRationale (SSE) + brief + WOW-02 tamperClear + POST /tamper-clear (verbatim on-ledger reject) [WOW-04, WOW-02]
+- [x] 08-04-PLAN.md — WOW-04 streamRationale (SSE) + brief + WOW-02 tamperClear + POST /tamper-clear (verbatim on-ledger reject) [WOW-04, WOW-02]
 
 **Wave 4** *(blocked on 08-04)*
 
@@ -358,7 +358,7 @@ Build waves run in numeric order 8 → 9 → 10 → 11. Track A (Phase 12) runs 
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 8. Demo Hardening | 3/7 | In Progress|  |
+| 8. Demo Hardening | 4/7 | In Progress|  |
 | 9. Auction Depth & Live Viz | 0/— | Not started | — |
 | 10. Cryptographic Privacy | 0/— | Not started | — |
 | 11. Settlement & Institutional Grade | 0/— | Not started | — |

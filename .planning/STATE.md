@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Progress
 status: executing
-stopped_at: Completed 08-02-PLAN.md (WOW-01 peek console)
-last_updated: "2026-07-09T11:56:32.348Z"
-last_activity: 2026-07-09 -- Phase 08 execution started
+stopped_at: Completed 08-04-PLAN.md (WOW-04 streamRationale/brief + WOW-02 tamperClear)
+last_updated: "2026-07-09T13:16:00.000Z"
+last_activity: 2026-07-09 -- Completed 08-04 (WOW-04 SSE rationale + brief, WOW-02 tamper-clear)
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 7
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 ## Current Position
 
 Phase: 08 (demo-hardening) — EXECUTING
-Plan: 4 of 7
+Plan: 5 of 7
 Status: Ready to execute
-Last activity: 2026-07-09 -- Phase 08 execution started
+Last activity: 2026-07-09 -- Completed 08-04 (WOW-04 SSE rationale + brief, WOW-02 tamper-clear)
 
 ## Performance Metrics
 
@@ -69,6 +69,7 @@ Last activity: 2026-07-09 -- Phase 08 execution started
 | Phase 08 P01 | 12min | 2 tasks | 9 files |
 | Phase 08 P02 | 9min | 2 tasks | 4 files |
 | Phase 08 P03 | 9 min | 3 tasks | 6 files |
+| Phase 08 P04 | 16 min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -113,6 +114,7 @@ Recent decisions affecting current work:
 - [Phase ?]: [08-01]: Killed the :4000->:4100 port drift in web/src via a single derived source — web/src/solver.ts parses SOLVER_BASE_URL once into exported solverPort + OFFLINE_CAPTION; AgentView/SettlementView/TheatreView import OFFLINE_CAPTION (no caption carries a literal port digit). solver/src/index.ts DEFAULT_SOLVER_PORT=4100; solver/proofs/ gitignored; web/.env.example documents VITE_SOLVER_URL=http://localhost:4100.
 - [Phase 08]: [08-02 / WOW-01]: PeekConsole fires a raw per-party JSON Ledger API v2 active-contracts POST as the selected desk's OWN token for a rival's Order/TradeConfirmation; empty []/403 rendered verbatim + red-square verdict. Pure lib/peek.ts (buildPeekRequest/classifyPeekResult/elideBearer) unit-tested; token never in body, node/CORS error rendered distinct from the privacy verdict (Pitfall 4). No operator token in the browser.
 - [Phase ?]: [08-03 / TRUST-02, WOW-03]: proposeClearing now imposes a Promise.race deadline (withTimeout rejects AgentTimeoutError into the existing catch -> deterministic §4 fallback); AGENT_TIMEOUT_MS env / AgentDeps.timeoutMs override, default 8000ms. Six-rung ladder (keyless/malformed/zod-invalid/disagreement/SDK-error/TIMEOUT) all clear 100.00, locked by a ladder-table test. parseOrder(text) mirrors proposeClearing (messages.parse + jsonSchemaOutputFormat + orderSchema.safeParse; NOT zodOutputFormat) -> validated {side,qty,limit}|null, key module-private, never auto-submits; POST /parse-order (zod .strict {text:min1max280}, 422 PARSE_FAILED, 400 INVALID_BODY) wired via AppDeps.parseOrder=agent.parseOrder. Secret sweep extended to /parse-order. 49 vitest green, tsc clean; /settle byte-unchanged.
+- [Phase 08]: [08-04 / WOW-04, WOW-02]: agent.streamRationale(views,{onDelta,onDone,onError}) proxies client.messages.stream().on('text'); keyless/stream-less/thrown -> onError EXACTLY once, never leaking key/prompt (AgentClient.messages.stream is OPTIONAL so a parse-only fake still typechecks; call through client.messages.stream to keep the SDK `this`). GET /round/:id/rationale-stream is SSE (NOT wrap()): text/event-stream data: delta frames + `event: done` sentinel; onError writes ONE deterministic composeBrief fallback frame then ends (no sentinel). New pure brief.ts composeBrief(price,matched,allocs,rationale) -> shareable NL summary, secret-free, no number drift; surfaced additively as `brief` on the terminal-settled GET body. WOW-02: DEDICATED ledger.tamperClear(roundId,'wrong-price'|'overfill') copies settle()'s exact cid-gathering but perturbs ONLY numeric values (badPrice=p*-1 / Buy filledQty+2, Pitfall 3), attempts Round.Clear, catches the verbatim submitAndWait reject, resolves {rejected,error} — never throws, never settles; POST /round/:id/tamper-clear (zod .strict {mode}) returns the verbatim body. settle() (ledger.ts + api.ts) BYTE-UNCHANGED (git-diff verified); §4 still $100.00. Overfill's faithful first-firing assert is 'allocations do not match recomputed §8' (Daml checks alloc-match before conservation). Secret sweep extended to /rationale-stream + /tamper-clear. 62 vitest green, tsc clean.
 
 ### Pending Todos
 
@@ -138,6 +140,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-09T11:55:18.504Z
-Stopped at: Completed 08-02-PLAN.md (WOW-01 peek console)
+Last session: 2026-07-09T13:16:00.000Z
+Stopped at: Completed 08-04-PLAN.md (WOW-04 streamRationale/brief + WOW-02 tamperClear)
 Resume file: None

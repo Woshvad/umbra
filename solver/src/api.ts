@@ -61,6 +61,14 @@ export interface SettledConfirmation {
   side: Allocation['side']
   filledQty: number
   clearingPrice: number
+  // AUCT-04 best-ex / TCA fields (present once the on-ledger TradeConfirmation carries them).
+  // Optional so existing stubs/tests that omit them still type-check. `surplusVsLimit` is the
+  // PROVEN, on-ledger ≥0 number; `improvementVsReferenceBp` is the SIGNED, may-be-negative benchmark.
+  ownLimit?: number | null
+  referencePrice?: number
+  surplusVsLimit?: number
+  improvementVsLimitBp?: number
+  improvementVsReferenceBp?: number
 }
 
 export interface AppDeps {
@@ -338,6 +346,20 @@ export const createApp = (deps: AppDeps): Express => {
           body.matchedVolume = matchedVolume
           body.allocations = allocations
           body.curve = []
+          // AUCT-04: surface the per-desk best-ex / TCA receipts (two DISTINCT surplus
+          // numbers — proven vs-LIMIT and the labeled benchmark vs-REFERENCE). Numbers
+          // and desk ids only; the confirmation observer is the desk (privacy structural).
+          body.receipts = confs.map((c) => ({
+            desk: c.desk,
+            side: c.side,
+            filledQty: c.filledQty,
+            clearingPrice: c.clearingPrice,
+            ownLimit: c.ownLimit ?? null,
+            referencePrice: c.referencePrice ?? clearingPrice,
+            surplusVsLimit: c.surplusVsLimit ?? 0,
+            improvementVsLimitBp: c.improvementVsLimitBp ?? 0,
+            improvementVsReferenceBp: c.improvementVsReferenceBp ?? 0,
+          }))
           // The settled numbers ARE the deterministic on-ledger result (Round.Clear
           // re-verified §8 before settling) — surface a factual settled rationale + the
           // deterministic provenance (no fresh AI call post-settle).

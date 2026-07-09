@@ -254,6 +254,18 @@ const main = async (): Promise<void> => {
       matchedVolume,
       allocations,
       brief,
+      // AUCT-04: embed the per-desk TCA receipts (two-distinct-surplus) in bundle 02.
+      receipts: confs.map((c) => ({
+        desk: c.desk,
+        side: c.side,
+        filledQty: c.filledQty,
+        clearingPrice: c.clearingPrice,
+        ownLimit: c.ownLimit ?? null,
+        referencePrice: c.referencePrice ?? c.clearingPrice,
+        surplusVsLimit: c.surplusVsLimit ?? 0,
+        improvementVsLimitBp: c.improvementVsLimitBp ?? 0,
+        improvementVsReferenceBp: c.improvementVsReferenceBp ?? 0,
+      })),
       aiBundle: {
         modelId: bundle?.modelId ?? 'claude-haiku-4-5',
         verified: bundle?.verified ?? false,

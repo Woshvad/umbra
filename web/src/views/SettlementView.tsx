@@ -24,6 +24,7 @@ import BalanceTable, { type BalanceRow } from '../components/BalanceTable'
 import AtomicStamp from '../components/AtomicStamp'
 import RoundBrief from '../components/RoundBrief'
 import ProofPackButton from '../components/ProofPackButton'
+import TcaReceipts from '../components/TcaReceipts'
 
 type Props = OperatorViewState
 
@@ -226,6 +227,8 @@ export default function SettlementView({
             {settled && (
               <>
                 <RoundBrief roundId={roundId} fallback={composeFallbackBrief(preview)} />
+                {/* AUCT-04 — per-desk best-ex / TCA receipts (two-distinct-surplus + export). */}
+                <TcaReceipts roundId={roundId} />
                 <ProofPackButton roundId={roundId} />
               </>
             )}

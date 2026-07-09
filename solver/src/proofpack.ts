@@ -39,12 +39,32 @@ export interface ProofPackAiBundle {
   source?: string
 }
 
+// AUCT-04 — a per-desk best-ex / TCA receipt for the proof-pack's bundle 02. Carries the
+// two DISTINCT surplus numbers: `surplusVsLimit` is the PROVEN, on-ledger ≥0 number, and
+// `improvementVsReferenceBp` is the SIGNED benchmark vs the labeled reference stub (may be
+// negative). Numbers only — the pack NEVER interpolates a secret.
+export interface ProofPackReceipt {
+  desk: string
+  side: Allocation['side']
+  filledQty: number
+  clearingPrice: number
+  ownLimit?: number | null
+  referencePrice?: number
+  surplusVsLimit?: number
+  improvementVsLimitBp?: number
+  improvementVsReferenceBp?: number
+}
+
 export interface RenderProofPackParams {
   clearingPrice: number
   matchedVolume: number
   allocations: Allocation[]
   brief: string
   aiBundle: ProofPackAiBundle
+  // AUCT-04: when present, bundle 02 renders the full TCA receipt (fill · limit · reference ·
+  // proven surplus + bp · signed benchmark bp). When absent it falls back to the shipped
+  // BOUGHT/SOLD qty @ price receipts (backward-compatible with pre-AUCT-04 callers/tests).
+  receipts?: ProofPackReceipt[]
 }
 
 // A DvP settlement leg (buyer receives bond from seller; cash flows the other way) at the
@@ -85,14 +105,44 @@ const esc = (s: string): string =>
 
 // ── renderProofPackHtml — the pure on-brand HTML string ───────────────────────────
 export const renderProofPackHtml = (params: RenderProofPackParams): string => {
-  const { clearingPrice, matchedVolume, allocations, brief, aiBundle } = params
+  const { clearingPrice, matchedVolume, allocations, brief, aiBundle, receipts } = params
   const price2 = clearingPrice.toFixed(2)
   const filled = allocations.filter((a) => a.filledQty > 0)
   const legs = deriveDvpLegs(allocations, clearingPrice)
 
   const verb = (side: Allocation['side']): string => (side === 'Buy' ? 'BOUGHT' : 'SOLD')
 
-  const receiptsRows = filled
+  // AUCT-04: signed vs-reference surplus for the desk (buyer improves when p* below the
+  // reference; seller when above) — a DIFFERENT number from the proven vs-limit surplus.
+  const refSurplus = (r: ProofPackReceipt): number => {
+    const ref = r.referencePrice ?? r.clearingPrice
+    return r.side === 'Buy'
+      ? (ref - r.clearingPrice) * r.filledQty
+      : (r.clearingPrice - ref) * r.filledQty
+  }
+  const signed = (n: number): string => (n >= 0 ? `+${n}` : `${n}`)
+
+  // Prefer the full TCA receipts (two-distinct-surplus split); fall back to the shipped
+  // BOUGHT/SOLD line when no receipts were supplied (backward-compatible).
+  const receiptsRows = (receipts && receipts.length ? receipts.filter((r) => r.filledQty > 0) : [])
+    .map((r) => {
+      const limitTxt = r.ownLimit == null ? 'NO LIMIT' : r.ownLimit.toFixed(2)
+      const surplus = r.surplusVsLimit ?? 0
+      const bpLimit = r.improvementVsLimitBp ?? 0
+      const bpRef = r.improvementVsReferenceBp ?? 0
+      return (
+        `<div class="tca"><div class="row"><span class="who">${esc(r.desk)}</span>` +
+        `<span class="act">${verb(r.side)} ${r.filledQty}</span>` +
+        `<span class="px">@ ${r.clearingPrice.toFixed(2)}</span></div>` +
+        `<div class="tcaMeta">LIMIT ${limitTxt} · REF ${(r.referencePrice ?? r.clearingPrice).toFixed(2)} (STUB)</div>` +
+        `<div class="tcaMeta">PROVEN vs-LIMIT · SURPLUS ≥ 0 &nbsp; ${signed(surplus)} &nbsp; ${signed(bpLimit)} bp</div>` +
+        `<div class="tcaMeta">BENCHMARK vs-REFERENCE (MAY BE NEGATIVE) &nbsp; ${signed(refSurplus(r))} &nbsp; ${signed(bpRef)} bp</div>` +
+        `</div>`
+      )
+    })
+    .join('\n')
+
+  const fallbackReceiptsRows = filled
     .map(
       (a) =>
         `<div class="row"><span class="who">${esc(a.desk)}</span>` +
@@ -100,6 +150,8 @@ export const renderProofPackHtml = (params: RenderProofPackParams): string => {
         `<span class="px">@ ${price2}</span></div>`,
     )
     .join('\n')
+
+  const bundle02Rows = receiptsRows || fallbackReceiptsRows
 
   const legsRows = legs
     .map(
@@ -143,6 +195,9 @@ export const renderProofPackHtml = (params: RenderProofPackParams): string => {
   .bh{ font-family:var(--mono); font-size:11px; letter-spacing:.28em; text-transform:uppercase; opacity:.55; margin-bottom:14px; }
   .row,.leg{ display:flex; justify-content:space-between; align-items:center; padding:11px 0; border-bottom:1px solid rgba(10,10,10,.14); font-family:var(--mono); font-size:15px; }
   .row .who{ font-weight:600; letter-spacing:.04em; }
+  .tca{ padding:11px 0; border-bottom:1px solid rgba(10,10,10,.14); }
+  .tca .row{ border-bottom:none; padding:0 0 4px; }
+  .tcaMeta{ font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; opacity:.6; padding:2px 0; }
   .leg .pair{ font-weight:600; letter-spacing:.06em; }
   .atomic{ display:inline-block; margin-top:16px; padding:8px 14px; background:var(--ink); color:var(--lime); font-family:var(--mono); font-size:12px; letter-spacing:.2em; text-transform:uppercase; }
   .ai .kv{ display:flex; justify-content:space-between; padding:9px 0; border-bottom:1px solid rgba(10,10,10,.14); font-family:var(--mono); font-size:13px; }
@@ -170,7 +225,7 @@ export const renderProofPackHtml = (params: RenderProofPackParams): string => {
       <!-- (2) BEST-EX RECEIPTS -->
       <div class="bundle">
         <div class="bh">02 — Per-Desk Best-Ex Receipts</div>
-        ${receiptsRows || '<div class="row"><span class="who">—</span><span class="act">no fills</span><span class="px"></span></div>'}
+        ${bundle02Rows || '<div class="row"><span class="who">—</span><span class="act">no fills</span><span class="px"></span></div>'}
       </div>
 
       <!-- (3) FINALITY RECORD -->

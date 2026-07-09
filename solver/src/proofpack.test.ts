@@ -22,6 +22,15 @@ const SECTION4_ALLOCS: Allocation[] = [
   { desk: 'BankC', side: 'Sell', filledQty: 2 },
 ]
 
+// AUCT-04 — the §4 per-desk TCA receipts (A buy 10 @limit 101, B sell 8 @99, C sell 2 @100),
+// referencePrice stub 100. surplusVsLimit: A=(101-100)*10=10, B=(100-99)*8=8, C=0. bp vs limit:
+// A=100, B=100, C=0. vs-reference bp = 0 on §4 (ref == p*).
+const SECTION4_RECEIPTS = [
+  { desk: 'BankA', side: 'Buy' as const, filledQty: 10, clearingPrice: 100, ownLimit: 101, referencePrice: 100, surplusVsLimit: 10, improvementVsLimitBp: 100, improvementVsReferenceBp: 0 },
+  { desk: 'BankB', side: 'Sell' as const, filledQty: 8, clearingPrice: 100, ownLimit: 99, referencePrice: 100, surplusVsLimit: 8, improvementVsLimitBp: 100, improvementVsReferenceBp: 0 },
+  { desk: 'BankC', side: 'Sell' as const, filledQty: 2, clearingPrice: 100, ownLimit: 100, referencePrice: 100, surplusVsLimit: 0, improvementVsLimitBp: 0, improvementVsReferenceBp: 0 },
+]
+
 const SENTINEL_API_KEY = 'sk-ant-SENTINEL-API-KEY-do-not-leak-9c4e2d'
 const SENTINEL_TOKEN = 'SENTINEL-OPERATOR-TOKEN-do-not-leak-7f3a9b'
 
@@ -71,6 +80,29 @@ describe('WOW-05 proof-pack HTML (renderProofPackHtml)', () => {
     expect(html).toContain('BOUGHT 10')
     expect(html).toContain('SOLD 8')
     expect(html).toContain('SOLD 2')
+  })
+
+  it('AUCT-04: bundle 02 renders the TCA fields (limit · reference stub · two-distinct-surplus)', () => {
+    const html = renderProofPackHtml({
+      clearingPrice: 100,
+      matchedVolume: 10,
+      allocations: SECTION4_ALLOCS,
+      receipts: SECTION4_RECEIPTS,
+      brief: 'Settled at 100.00.',
+      aiBundle: { modelId: 'claude-haiku-4-5', verified: true, source: 'claude' },
+    })
+    // The proven vs-limit surplus is emphasized and NON-NEGATIVE (A = +10, +100 bp).
+    expect(html).toContain('PROVEN vs-LIMIT')
+    expect(html).toContain('+10')
+    expect(html).toContain('+100 bp')
+    // The labeled benchmark vs-reference is a DISTINCT row + the stub tag.
+    expect(html).toContain('BENCHMARK vs-REFERENCE')
+    expect(html).toContain('(STUB)')
+    // Fill vs limit surfaced (A's own limit 101.00).
+    expect(html).toContain('LIMIT 101.00')
+    // NO secret leaks into the TCA render.
+    expect(html).not.toContain(SENTINEL_API_KEY)
+    expect(html).not.toContain(SENTINEL_TOKEN)
   })
 
   it('carries bundle 03 — the DvP finality legs + one-atomic-transaction stamp', () => {

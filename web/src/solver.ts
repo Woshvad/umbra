@@ -53,6 +53,23 @@ export type IndicativeMeta = {
   estMatched: number
 }
 
+// AUCT-04 per-desk best-ex / TCA receipt — present ONLY on the post-settle GET body
+// (reconstructed from the on-ledger TradeConfirmations). Two DISTINCT surplus numbers:
+// `surplusVsLimit` is the PROVEN, on-ledger ≥0 best-ex (never negative); the vs-REFERENCE
+// benchmark (`improvementVsReferenceBp`, SIGNED) is a labeled stub that MAY be negative —
+// the two must never be conflated. `ownLimit` is null for a noncompetitive order.
+export type Receipt = {
+  desk: string
+  side: 'Buy' | 'Sell'
+  filledQty: number
+  clearingPrice: number
+  ownLimit: number | null
+  referencePrice: number
+  surplusVsLimit: number
+  improvementVsLimitBp: number
+  improvementVsReferenceBp: number
+}
+
 export type RoundStatus = 'Open' | 'Closed' | 'Cleared' | 'Settled'
 
 // GET /round/:id — status + sealedOrderCount always; the result fields are attached
@@ -74,6 +91,9 @@ export type RoundResponse = {
   // (Cleared/Settled) GET body, composed server-side from the settled numbers +
   // verified rationale (solver/src/brief.ts composeBrief; secret-free, no drift).
   brief?: string
+  // AUCT-04: per-desk best-ex / TCA receipts — present ONLY on the POST-settle GET body
+  // (reconstructed from the on-ledger TradeConfirmations; two-distinct-surplus).
+  receipts?: Receipt[]
 }
 
 // GET /round/:id/solve-preview — the full deterministic §8 proposal (always present).

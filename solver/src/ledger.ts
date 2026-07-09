@@ -31,6 +31,13 @@ const BOND_SYMBOL = 'BONDX'
 const CASH_SYMBOL = 'USDCx'
 const PKG = '#umbra' // package-name reference form for templateIds
 
+// AUCT-04 — the LABELED benchmark reference price (a config STUB ≈ pre-auction mid).
+// Passed into every Round.Clear as the `referencePrice` choice arg (a choice body
+// cannot read config, so the solver supplies it). This drives ONLY the SIGNED,
+// clearly-labeled `improvementVsReferenceBp` benchmark — NEVER the proven, on-ledger
+// `surplusVsLimit >= 0` number. A real market-data feed is deferred to Track B.
+const REFERENCE_PRICE_STUB = 100.0
+
 // ── Participant base URL ─────────────────────────────────────────────────────────
 // The app-provider participant's JSON Ledger API v2 (LocalNet default :3975). Trailing
 // slashes are stripped because every call appends an absolute `/v2/...` path.
@@ -243,9 +250,25 @@ export const readSealedOrders = async (
     }))
 
 // ── Read ALL TradeConfirmations for a round (Operator is a stakeholder of each) ───
+// AUCT-04: the appended TCA fields flow out here → api.ts settled body → the browser
+// receipt + proof-pack. `ownLimit` is Optional (null → undefined for a noncompetitive
+// order); numeric fields arrive as strings on the v2 wire → Number(). `surplusVsLimit`
+// is the PROVEN, on-ledger ≥0 number; `improvementVsReferenceBp` is the SIGNED benchmark.
 export const readTradeConfirmations = async (
   roundId: string,
-): Promise<{ desk: string; side: Side; filledQty: number; clearingPrice: number }[]> =>
+): Promise<
+  {
+    desk: string
+    side: Side
+    filledQty: number
+    clearingPrice: number
+    ownLimit: number | null
+    referencePrice: number
+    surplusVsLimit: number
+    improvementVsLimitBp: number
+    improvementVsReferenceBp: number
+  }[]
+> =>
   (await queryByEntity('TradeConfirmation'))
     .filter((c) => c.createArgument.roundId === roundId)
     .map((c) => ({
@@ -253,6 +276,11 @@ export const readTradeConfirmations = async (
       side: c.createArgument.side as Side,
       filledQty: Number(c.createArgument.filledQty),
       clearingPrice: Number(c.createArgument.clearingPrice),
+      ownLimit: c.createArgument.ownLimit != null ? Number(c.createArgument.ownLimit) : null,
+      referencePrice: Number(c.createArgument.referencePrice),
+      surplusVsLimit: Number(c.createArgument.surplusVsLimit),
+      improvementVsLimitBp: Number(c.createArgument.improvementVsLimitBp),
+      improvementVsReferenceBp: Number(c.createArgument.improvementVsReferenceBp),
     }))
 
 // ── Find the CURRENT RoundStats contract for a round ─────────────────────────────
@@ -358,6 +386,7 @@ export const settle = async (
     orderCids,
     buyerUsdcCid,
     sellerBondCids,
+    referencePrice: REFERENCE_PRICE_STUB, // AUCT-04 labeled benchmark stub (drives only the SIGNED vs-reference bp)
   })
 
   // 7. The Round was recreated as Settled. The verified result is reconstructed
@@ -449,6 +478,7 @@ export const tamperClear = async (
       orderCids,
       buyerUsdcCid,
       sellerBondCids,
+      referencePrice: REFERENCE_PRICE_STUB, // additive arg; the tampered numeric values are still what the backstop rejects
     })
   } catch (e) {
     // The EXPECTED path: submitAndWait throws `submit HTTP <status>: <body>` — the body

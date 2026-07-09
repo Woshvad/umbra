@@ -135,13 +135,20 @@ rationByPriority (o :: rest) remaining =
   let f = min o.quantity remaining
   in (o, f) :: rationByPriority rest (remaining - f)
 
--- §8 steps 4-5 — clear the batch: pick p*, compute traded volume, ration both
--- sides by price priority, and emit an Allocation for EVERY participating
--- eligible order (including 0-fill / partially-filled ones like C, whose
--- residual is `order.quantity - filledQty`) so Plan 02's `Round.Clear` can mark
--- each Order's status.
-computeClearing : [OrderView] -> (Decimal, [Allocation])
-computeClearing orders =
+-- §8 steps 4-5 (SINGLE-PASS CORE) — clear the batch: pick p*, compute traded
+-- volume, ration both sides by price priority, and emit an Allocation for EVERY
+-- participating eligible order (including 0-fill / partially-filled ones like C,
+-- whose residual is `order.quantity - filledQty`) so Plan 02's `Round.Clear` can
+-- mark each Order's status.
+--
+-- `coreClear` is the extracted pure §8 kernel (09-02): it is the ONE function
+-- that does candidate-price selection + eligibility + priority rationing. The
+-- public `computeClearing` (below) is a TWO-PASS WRAPPER over it (the seam that
+-- 09-03 conditional auto-firming rides on). Extracting it is behavior-preserving:
+-- with no conditional orders, `computeClearing == coreClear` exactly, so the §4
+-- fixture is byte-identical before and after the refactor.
+coreClear : [OrderView] -> (Decimal, [Allocation])
+coreClear orders =
   let pStar  = choosePStar orders
       traded = matchedAt orders pStar
       -- eligible buys sorted DESCENDING by limit (most-aggressive buy first);
@@ -154,3 +161,25 @@ computeClearing orders =
         [ Allocation with desk = o.desk; side = Buy;  filledQty = f | (o, f) <- buyFills  ] ++
         [ Allocation with desk = o.desk; side = Sell; filledQty = f | (o, f) <- sellFills ]
   in (pStar, allocs)
+
+-- §8 public entry point — a deterministic TWO-PASS wrapper over `coreClear`
+-- (09-02 scaffold; `Round.Clear` re-verifies via THIS function, so on-ledger and
+-- solver agree). PASS 1 computes a provisional clear over the FIRM (non-conditional)
+-- orders; PASS 2 firms each conditional whose `firmIf` qualifies versus the
+-- PROVISIONAL p*, drops the rest, and re-clears `firm ++ firmed`.
+--
+-- In THIS plan the firming rule is not yet implemented: `qualifies` is a TOTAL
+-- pass-through (True for every conditional against any provisional price), so
+-- `firmed == conditional`, `final == firm ++ conditional == orders`, and the
+-- wrapper reduces to a single `coreClear` — i.e. no observable behavior change
+-- (the §4 canary stays $100.00 / A=10 / B=8 / C=2). The real `firmIf` test lands
+-- in 09-03; the provisional p* it fires against is `provP` here.
+computeClearing : [OrderView] -> (Decimal, [Allocation])
+computeClearing orders =
+  let firm        = [ v | v <- orders, v.orderType /= Conditional ]
+      conditional = [ v | v <- orders, v.orderType == Conditional ]
+      (provP, _)  = coreClear firm          -- PASS 1: provisional over firm only
+      qualifies _v _p = True                -- 09-03 hook: total pass-through today
+      firmed      = [ v | v <- conditional, qualifies v provP ]  -- PASS 2 (inert now)
+      final       = firm ++ firmed          -- == orders while no conditional firms
+  in coreClear final

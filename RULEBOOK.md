@@ -85,10 +85,36 @@ tie on the long side). Strict pro-rata with deterministic
 both planes together, with a matching golden fixture) if a future fixture needs
 it.
 
-- Rationing: `Clearing.daml::rationByPriority` (lines 115–119) and the eligible
-  buy/sell sort in `computeClearing` (lines 126–139) ⇄
-  `auction.ts::rationByPriority` (lines 87–99) and the sort in `computeClearing`
-  (lines 105–122).
+- Rationing: `Clearing.daml::rationByPriority` and the eligible buy/sell sort in
+  `coreClear` ⇄ `auction.ts::rationByPriority` and the sort in `coreClear`.
+
+### `coreClear` + the two-pass `computeClearing` wrapper (09-02)
+
+The §8 kernel is factored into a single-pass `coreClear : [OrderView] → (price,
+allocations)` — candidate-price selection + eligibility + priority rationing —
+and a public `computeClearing` that is a deterministic **two-pass wrapper** over
+it (the seam conditional auto-firming rides on, 09-03):
+
+1. **PASS 1 — provisional.** Partition the book into `firm` (non-conditional) and
+   `conditional`; clear the firm orders with `coreClear` to get a provisional
+   `p*` (`provP`).
+2. **PASS 2 — final.** Firm each conditional whose `firmIf` qualifies versus the
+   **provisional** `p*`, drop the rest, and re-clear `firm ++ firmed` with
+   `coreClear`. The provisional `p*` is the firming reference even if the final
+   `p*` moves (single pass, NOT a fixpoint).
+
+As of 09-02 the firming test (`qualifies`) is a **total pass-through** — no
+order type firms or drops yet — so `firmed == conditional`, `final == the whole
+book`, and `computeClearing` reduces to exactly one `coreClear`. The canonical §4
+book (all `Limit`, no conditional) therefore clears **byte-identically** to the
+pre-refactor single-pass form ($100.00 / A=10 / B=8 / C=2). The real `firmIf`
+rule lands in 09-03; `Round.Clear` auto-covers it because it re-verifies through
+this same two-pass `computeClearing`.
+
+- Kernel + wrapper: `Clearing.daml::coreClear` / `computeClearing` ⇄
+  `auction.ts::coreClear` / `computeClearing`. The partition (`firm` /
+  `conditional`), the PASS-1 `provP = coreClear firm`, and the pass-through
+  `qualifies` are mirrored function-for-function in both planes.
 
 ## Worked example — the canonical §4 fixture (the continuous canary)
 

@@ -22,6 +22,8 @@ import { deskBalancesFromAllocations, type DeskBalances } from '../lib/balance'
 import DvpLegs, { type DvpLeg } from '../components/DvpLegs'
 import BalanceTable, { type BalanceRow } from '../components/BalanceTable'
 import AtomicStamp from '../components/AtomicStamp'
+import RoundBrief from '../components/RoundBrief'
+import ProofPackButton from '../components/ProofPackButton'
 
 type Props = OperatorViewState
 
@@ -64,6 +66,26 @@ function legsFromPreview(preview: SolvePreviewResponse): DvpLeg[] {
       qty: a.filledQty,
       cash: a.filledQty * preview.clearingPrice,
     }))
+}
+
+// Client-side fallback brief — a secret-free NL summary composed from the SETTLED preview
+// numbers (mirrors solver/src/brief.ts composeBrief; never drifts the §4 clearing). Used
+// only if the server brief (getBrief) is unreachable so the Round Brief block never stalls.
+function composeFallbackBrief(preview: SolvePreviewResponse): string {
+  const price = preview.clearingPrice.toFixed(2)
+  const units = `${preview.matchedVolume} unit${preview.matchedVolume === 1 ? '' : 's'}`
+  const filled = codeAllocations(preview).filter((a) => a.filledQty > 0)
+  const perDesk = filled
+    .map((a) => `${a.desk} ${a.side === 'Buy' ? 'bought' : 'sold'} ${a.filledQty}`)
+    .join(', ')
+  const headline =
+    `This round cleared at a single uniform price of $${price}, ` +
+    `matching ${units} of the bond and settling delivery-versus-payment atomically in one transaction.`
+  const fills = perDesk
+    ? `Per-desk outcomes: ${perDesk}.`
+    : `No orders crossed this round, so no desk was filled.`
+  const tail = preview.rationale?.trim() ? ` ${preview.rationale.trim()}` : ''
+  return `${headline} ${fills}${tail}`
 }
 
 // Build the before→after balance rows from the allocations (the aggregate via :4100).
@@ -197,6 +219,16 @@ export default function SettlementView({
                 </button>
               )}
             </div>
+
+            {/* WOW-04 / WOW-05 — post-settle only (hidden pre-settle). The shareable
+                Round Brief (copy/download) + the one-click on-brand proof-pack PDF.
+                Both on the operator plane (:4100) via solver.ts — no operator token. */}
+            {settled && (
+              <>
+                <RoundBrief roundId={roundId} fallback={composeFallbackBrief(preview)} />
+                <ProofPackButton roundId={roundId} />
+              </>
+            )}
           </div>
 
           {/* Right — before → after balances (lerp in lockstep with settleProgress) */}

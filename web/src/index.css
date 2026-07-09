@@ -30,6 +30,20 @@ input {
   background: #e2231a;
   color: #f4f1ea;
 }
+/* WOW-04/WOW-05 ink-ghost controls — COPY BRIEF · DOWNLOAD BRIEF ↓ · DOWNLOAD
+   PROOF-PACK ↓: ink 1px border → hover ink fill / paper text (existing tokens only:
+   #0A0A0A ink, #F4F1EA paper). Distinct from the primary ink-FILL SETTLE ATOMICALLY;
+   never red/lime (08-UI-SPEC WOW-05 / Color). Inline styles can't express :hover. */
+.umbra-ink-ghost {
+  border: 1px solid #0a0a0a;
+  background: transparent;
+  color: #0a0a0a;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.umbra-ink-ghost:not(:disabled):hover {
+  background: #0a0a0a;
+  color: #f4f1ea;
+}
 #root {
   min-height: 100vh;
   background: #f4f1ea;

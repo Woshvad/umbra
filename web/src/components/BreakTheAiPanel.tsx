@@ -72,6 +72,7 @@ export default function BreakTheAiPanel({ roundId, offline }: Props) {
   const [rejection, setRejection] = useState<string>('') // the VERBATIM ledger reject
   const [clearingPrice, setClearingPrice] = useState<number | null>(null)
   const [offlineHit, setOfflineHit] = useState(false)
+  const [settleError, setSettleError] = useState<string>('') // a REAL (non-offline) settle failure
 
   const attempting = phase === 'attempting'
   const clearing = phase === 'clearing'
@@ -83,6 +84,7 @@ export default function BreakTheAiPanel({ roundId, offline }: Props) {
     setPhase('attempting')
     setOfflineHit(false)
     setRejection('')
+    setSettleError('')
     try {
       const result = await tamperClear(roundId, mode)
       setRejection(result.error)
@@ -104,6 +106,7 @@ export default function BreakTheAiPanel({ roundId, offline }: Props) {
     if (attempting || clearing) return
     setPhase('clearing')
     setOfflineHit(false)
+    setSettleError('')
     try {
       const result = await settle(roundId)
       setClearingPrice(result.clearingPrice)
@@ -114,9 +117,14 @@ export default function BreakTheAiPanel({ roundId, offline }: Props) {
         setPhase(rejection ? 'rejected' : 'idle')
         return
       }
-      // Any other solver error — fall back to the §4 invariant price for the reveal.
-      setClearingPrice(100)
-      setPhase('corrected')
+      // A REAL settle failure (insufficient holding, ledger error, 500, …) — do NOT
+      // fabricate a SETTLED reveal. The panel's whole claim is "the ledger is the
+      // backstop", so asserting a $100.00 settle that never happened destroys exactly
+      // that credibility (WR-02). Surface the solver's secret-free message (the API
+      // envelope guarantees no key/token) and return to the prior state — the lime
+      // 100.00 slab renders ONLY on an actual success.
+      setSettleError(e instanceof Error ? e.message : 'clear failed')
+      setPhase(rejection ? 'rejected' : 'idle')
     }
   }
 
@@ -280,6 +288,26 @@ export default function BreakTheAiPanel({ roundId, offline }: Props) {
                 </span>
               </div>
               <RedSquareRow label={`VERIFIED · SETTLED @ ${price}`} />
+            </div>
+          )}
+
+          {/* Correct-clear FAILURE — a real (non-offline) settle error. Renders the honest
+              failure instead of a fabricated SETTLED slab (WR-02). Same ink-evidence
+              treatment as the rejection; the message is the solver's secret-free envelope. */}
+          {settleError && phase !== 'corrected' && (
+            <div style={{ margin: '26px 0 0' }}>
+              <div
+                className="font-mono text-12 uppercase opacity-60"
+                style={{ letterSpacing: '.16em', marginBottom: '8px' }}
+              >
+                Correct Clear
+              </div>
+              <div style={{ marginBottom: '8px' }}>
+                <RedSquareRow label="CLEAR FAILED" />
+              </div>
+              <div className="font-mono text-13 tabular-nums" style={INK_SURFACE}>
+                {settleError}
+              </div>
             </div>
           )}
 

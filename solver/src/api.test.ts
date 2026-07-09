@@ -36,6 +36,10 @@ import {
   type RoundView,
   type SettleResult,
 } from './api.js'
+import type { SealResult, DrandRoundInfo } from './tlock.js'
+import type { ClearingProof } from './zk/prove.js'
+import type { ProofAnchor } from './zk/verify.js'
+import type { StageOffsets } from './timemachine.js'
 
 // The §4 canonical fixture: A Buy 10 @101, B Sell 8 @99, C Sell 5 @100 → clears 100,
 // matchedVolume = min(demand@100=10, supply@100=13) = 10.
@@ -57,6 +61,14 @@ const SENTINEL_TOKEN = 'SENTINEL-OPERATOR-TOKEN-do-not-leak-7f3a9b'
 // A sentinel ANTHROPIC_API_KEY — the agent's secret. proposeClearing stubs close over
 // it the way agent.ts holds the module-private key; it must NEVER reach any response.
 const SENTINEL_API_KEY = 'sk-ant-SENTINEL-API-KEY-do-not-leak-9c4e2d'
+
+// CRYP-02: a sentinel tlock offline held-key — tlock.ts keeps the real one module-private
+// (node:crypto randomBytes). Crypto stubs close over it; it must NEVER reach the wire.
+const SENTINEL_TLOCK_KEY = 'TLOCK-OFFLINE-HELD-KEY-do-not-leak-3e8f1a'
+
+// CRYP-03: a sentinel proof WITNESS (an order's private salt/fill) — zk/prove.ts keeps the
+// witness inside the module; only proof + public signals cross out. It must NEVER leak.
+const SENTINEL_WITNESS = 'WITNESS-SALT-FILL-do-not-leak-6b2d9c'
 
 // The deterministic §4 result the agent returns on the fallback path (no key / mismatch /
 // SDK error). The NUMBERS are always deterministic; only `rationale`/`verified`/`source`
@@ -114,6 +126,33 @@ const makeDeps = (overrides: Partial<AppDeps>): AppDeps => ({
   readProofBundle: vi.fn(async () => null),
   // WOW-05: proof-pack builder — defaults to the on-brand HTML fallback; /proof-pack.pdf tests override.
   buildProofPack: vi.fn(async () => ({ pdf: false as const, html: '<html>fallback</html>' })),
+  // CRYP-02 timelock stubs — inert defaults (drand mode); crypto tests override per scenario.
+  timelockEncrypt: vi.fn(
+    async (payload: string): Promise<SealResult> => ({
+      ciphertext: `-----BEGIN AGE ENCRYPTED FILE-----(${payload.length})`,
+      targetRound: 12_345,
+      mode: 'drand',
+    }),
+  ),
+  timelockDecrypt: vi.fn(async (): Promise<{ plaintext: string }> => ({ plaintext: '' })),
+  drandRoundInfo: vi.fn(
+    async (): Promise<DrandRoundInfo> => ({ targetRound: 12_345, timeToBeaconMs: 3_000, chainHash: 'quicknet-chain-hash' }),
+  ),
+  // CRYP-03 ZK stubs — inert defaults; crypto tests override to assert verdict/anchor shapes.
+  generateProof: vi.fn(
+    async (): Promise<ClearingProof> => ({ proof: { pi_a: ['1', '2'] }, publicSignals: ['100', '10'], sizeBytes: 806, ms: 7 }),
+  ),
+  verifyProof: vi.fn(async (): Promise<boolean> => true),
+  anchorProof: vi.fn(async (): Promise<ProofAnchor> => ({ proofHash: 'a'.repeat(64), vkeyHash: 'b'.repeat(64) })),
+  tamperProof: vi.fn(
+    async (): Promise<{ rejected: boolean; verified: false; error: string }> => ({
+      rejected: true,
+      verified: false,
+      error: 'Groth16 verification rejected the tampered public input (p* perturbed by +1).',
+    }),
+  ),
+  // VIZ-02 stage-offset stub — a representative recorded map; the stage-offsets test overrides.
+  getStageOffsets: vi.fn(async (): Promise<StageOffsets> => ({ open: 10, sealed: 24, settled: 42 })),
   // Real pure §8 helpers — solve-preview asserts true deterministic clearing.
   computeClearing,
   matchedAt,
@@ -1043,5 +1082,399 @@ describe('solver §11 HTTP API', () => {
       headers: { Origin: 'http://evil.example' },
     })
     expect(foreign.headers.get('access-control-allow-origin')).not.toBe('*')
+  })
+})
+
+// ── CRYP-02 / CRYP-03 / VIZ-02 crypto endpoints ─────────────────────────────────────
+// The operator-plane crypto surface: timelock seal/open, ZK prove/verify/anchor/tamper,
+// and the VIZ-02 stage→offset map. Every response rides the SAME secret-safe envelope; the
+// extended secret sweep proves no tlock held key / proof witness / operator token / API key
+// ever crosses out. verify-proof (off-ledger verdict) and anchor-proof (on-ledger hash) are
+// asserted DISTINCT (the honest split, threat T-10-19).
+describe('solver crypto endpoints (CRYP-02/03/VIZ-02)', () => {
+  let server: Server | undefined
+
+  beforeEach(() => {
+    server = undefined
+  })
+
+  afterEach(async () => {
+    if (server) {
+      await new Promise<void>((resolve) => server!.close(() => resolve()))
+      server = undefined
+    }
+  })
+
+  // ── CRYP-02 timelock ──────────────────────────────────────────────────────────────
+  it('POST /round/:id/timelock-encrypt returns the ciphertext + public round metadata', async () => {
+    const deps = makeDeps({})
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/timelock-encrypt`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ payload: 'BankB Sell 8 @99', windowMs: 30_000 }),
+    })
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    expect(body.roundId).toBe('R1')
+    expect(body.ciphertext).toContain('AGE ENCRYPTED FILE')
+    expect(body.mode).toBe('drand')
+    expect(body.targetRound).toBe(12_345)
+    // drandRoundInfo enrichment (best-effort beacon countdown) on the drand path.
+    expect(body.chainHash).toBe('quicknet-chain-hash')
+    expect(body.timeToBeaconMs).toBe(3_000)
+    expect(deps.timelockEncrypt).toHaveBeenCalledWith('BankB Sell 8 @99', 30_000)
+  })
+
+  it('POST /round/:id/timelock-encrypt surfaces the offline-fallback warning (weaker-than-drand)', async () => {
+    const timelockEncrypt = vi.fn(
+      async (): Promise<SealResult> => ({
+        ciphertext: 'UMBRA-OFFLINE-v1:abcd',
+        targetRound: 0,
+        mode: 'offline',
+        warning: 'OFFLINE FALLBACK · WEAKER THAN DRAND',
+      }),
+    )
+    const deps = makeDeps({ timelockEncrypt })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/timelock-encrypt`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ payload: 'x' }),
+    })
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    expect(body.mode).toBe('offline')
+    expect(body.warning).toContain('WEAKER THAN DRAND')
+    // drand enrichment is NOT attempted on the offline path.
+    expect(deps.drandRoundInfo).not.toHaveBeenCalled()
+  })
+
+  it('POST /round/:id/timelock-encrypt rejects a malformed / oversized body with a sanitized 400', async () => {
+    const deps = makeDeps({})
+    const started = await listen(deps)
+    server = started.server
+
+    // Missing payload → 400.
+    const res = await fetch(`${started.base}/round/R1/timelock-encrypt`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ windowMs: 30_000 }),
+    })
+    const body = await readJson(res)
+
+    expect(res.status).toBe(400)
+    expect(body.error).toHaveProperty('code', 'INVALID_BODY')
+    expect(deps.timelockEncrypt).not.toHaveBeenCalled()
+  })
+
+  it('POST /timelock-decrypt returns the recovered plaintext', async () => {
+    const timelockDecrypt = vi.fn(async (): Promise<{ plaintext: string }> => ({ plaintext: 'BankB Sell 8 @99' }))
+    const deps = makeDeps({ timelockDecrypt })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/timelock-decrypt`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ciphertext: '-----BEGIN AGE ENCRYPTED FILE-----...' }),
+    })
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    expect(body.plaintext).toBe('BankB Sell 8 @99')
+  })
+
+  it('POST /timelock-decrypt maps a not-yet-due beacon to a secret-free 425 TOO_EARLY', async () => {
+    // The real tlock.timelockOpen throws an error containing "too early" before the beacon.
+    const timelockDecrypt = vi.fn(async (): Promise<{ plaintext: string }> => {
+      throw new Error('unable to decrypt: too early — round 999 has not been published yet')
+    })
+    const deps = makeDeps({ timelockDecrypt })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/timelock-decrypt`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ciphertext: '-----BEGIN AGE ENCRYPTED FILE-----early' }),
+    })
+    const body = await readJson(res)
+
+    expect(res.status).toBe(425)
+    expect(body.error).toHaveProperty('code', 'TOO_EARLY')
+    // The raw thrown message (which named the round) is NOT echoed verbatim.
+    expect(JSON.stringify(body)).not.toContain('round 999')
+  })
+
+  it('POST /timelock-decrypt rejects a missing ciphertext with a sanitized 400', async () => {
+    const deps = makeDeps({})
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/timelock-decrypt`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+    const body = await readJson(res)
+
+    expect(res.status).toBe(400)
+    expect(body.error).toHaveProperty('code', 'INVALID_BODY')
+    expect(deps.timelockDecrypt).not.toHaveBeenCalled()
+  })
+
+  // ── CRYP-03 prove / verify / anchor / tamper ────────────────────────────────────────
+  it('POST /round/:id/prove returns proof + public signals + size/timing (no witness)', async () => {
+    const deps = makeDeps({})
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/prove`, { method: 'POST' })
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    expect(body.roundId).toBe('R1')
+    expect(body.proof).toHaveProperty('pi_a')
+    expect(body.publicSignals).toEqual(['100', '10'])
+    expect(body.sizeBytes).toBe(806)
+    expect(body.ms).toBe(7)
+    // No private-witness field ever appears on the wire.
+    expect(body).not.toHaveProperty('salt')
+    expect(body).not.toHaveProperty('fill')
+    expect(deps.generateProof).toHaveBeenCalledWith('R1')
+  })
+
+  it('POST /round/:id/verify-proof returns ONLY an off-ledger boolean verdict', async () => {
+    const verifyProof = vi.fn(async (): Promise<boolean> => true)
+    const deps = makeDeps({ verifyProof })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/verify-proof`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ vkey: { protocol: 'groth16' }, publicSignals: ['100', '10'], proof: { pi_a: ['1'] } }),
+    })
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    expect(body.verified).toBe(true)
+    // The off-ledger verdict does NOT carry on-ledger anchor hashes (the honest split).
+    expect(body).not.toHaveProperty('proofHash')
+    expect(body).not.toHaveProperty('vkeyHash')
+  })
+
+  it('POST /round/:id/verify-proof returns { verified:false } for a forged public signal', async () => {
+    const verifyProof = vi.fn(async (): Promise<boolean> => false)
+    const deps = makeDeps({ verifyProof })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/verify-proof`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ vkey: { protocol: 'groth16' }, publicSignals: ['99', '10'], proof: { pi_a: ['1'] } }),
+    })
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    expect(body.verified).toBe(false)
+  })
+
+  it('POST /round/:id/anchor-proof records the hashes on-ledger and returns ONLY them', async () => {
+    const anchorProof = vi.fn(
+      async (): Promise<ProofAnchor> => ({ proofHash: 'f'.repeat(64), vkeyHash: 'e'.repeat(64) }),
+    )
+    const deps = makeDeps({ anchorProof })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/anchor-proof`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ vkey: { protocol: 'groth16' }, publicSignals: ['100', '10'], proof: { pi_a: ['1'] } }),
+    })
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    expect(body.roundId).toBe('R1')
+    expect(body.proofHash).toBe('f'.repeat(64))
+    expect(body.vkeyHash).toBe('e'.repeat(64))
+    // The on-ledger anchor does NOT carry a verification verdict (the honest split).
+    expect(body).not.toHaveProperty('verified')
+    expect(anchorProof).toHaveBeenCalledWith('R1', { pi_a: ['1'] }, ['100', '10'], { protocol: 'groth16' })
+  })
+
+  it('verify-proof (off-ledger verdict) and anchor-proof (on-ledger hash) are DISTINCT shapes', async () => {
+    const deps = makeDeps({})
+    const started = await listen(deps)
+    server = started.server
+
+    const envelope = {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ vkey: { protocol: 'groth16' }, publicSignals: ['100', '10'], proof: { pi_a: ['1'] } }),
+    }
+    const verifyBody = await readJson(await fetch(`${started.base}/round/R1/verify-proof`, envelope))
+    const anchorBody = await readJson(await fetch(`${started.base}/round/R1/anchor-proof`, envelope))
+
+    // Off-ledger: a boolean verdict, no hashes. On-ledger: hashes, no verdict.
+    expect(verifyBody).toHaveProperty('verified')
+    expect(verifyBody).not.toHaveProperty('proofHash')
+    expect(anchorBody).toHaveProperty('proofHash')
+    expect(anchorBody).toHaveProperty('vkeyHash')
+    expect(anchorBody).not.toHaveProperty('verified')
+  })
+
+  it('POST /round/:id/verify-proof rejects a malformed proof envelope with a sanitized 400', async () => {
+    const deps = makeDeps({})
+    const started = await listen(deps)
+    server = started.server
+
+    // publicSignals missing → 400 (no verify call).
+    const res = await fetch(`${started.base}/round/R1/verify-proof`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ vkey: { protocol: 'groth16' }, proof: { pi_a: ['1'] } }),
+    })
+    const body = await readJson(res)
+
+    expect(res.status).toBe(400)
+    expect(body.error).toHaveProperty('code', 'INVALID_BODY')
+    expect(deps.verifyProof).not.toHaveBeenCalled()
+  })
+
+  it('POST /round/:id/tamper-proof returns the rejected/false verdict (mirrors tamper-clear)', async () => {
+    const deps = makeDeps({})
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/tamper-proof`, { method: 'POST' })
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    expect(body.rejected).toBe(true)
+    expect(body.verified).toBe(false)
+    expect(body.error).toContain('rejected the tampered')
+    expect(deps.tamperProof).toHaveBeenCalledWith('R1')
+  })
+
+  // ── VIZ-02 stage offsets ────────────────────────────────────────────────────────────
+  it('GET /round/:id/stage-offsets returns the recorded stage→offset map', async () => {
+    const getStageOffsets = vi.fn(async (): Promise<StageOffsets> => ({ open: 10, sealed: 24, cleared: 31, settled: 42 }))
+    const deps = makeDeps({ getStageOffsets })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/stage-offsets`)
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    expect(body.roundId).toBe('R1')
+    expect(body.offsets).toEqual({ open: 10, sealed: 24, cleared: 31, settled: 42 })
+    expect(getStageOffsets).toHaveBeenCalledWith('R1')
+  })
+
+  // ── Extended secret sweep (T-10-17) ─────────────────────────────────────────────────
+  it('no crypto endpoint response echoes the operator token, API key, tlock held key, or proof witness', async () => {
+    // Every crypto stub closes over ALL FOUR sentinels exactly as the real tlock/zk/ledger
+    // modules hold their real secrets; none may reach the wire on ANY crypto response.
+    const deps = makeDeps({
+      timelockEncrypt: vi.fn(async (): Promise<SealResult> => {
+        void SENTINEL_TOKEN
+        void SENTINEL_API_KEY
+        void SENTINEL_TLOCK_KEY
+        return { ciphertext: '-----BEGIN AGE ENCRYPTED FILE-----secret-free', targetRound: 12_345, mode: 'drand' }
+      }),
+      drandRoundInfo: vi.fn(async (): Promise<DrandRoundInfo> => {
+        void SENTINEL_TLOCK_KEY
+        return { targetRound: 12_345, timeToBeaconMs: 3_000, chainHash: 'quicknet' }
+      }),
+      timelockDecrypt: vi.fn(async (): Promise<{ plaintext: string }> => {
+        void SENTINEL_TLOCK_KEY
+        return { plaintext: 'BankB Sell 8 @99' }
+      }),
+      generateProof: vi.fn(async (): Promise<ClearingProof> => {
+        void SENTINEL_WITNESS // the private salt/fill witness — stays inside zk/prove.ts
+        return { proof: { pi_a: ['1'] }, publicSignals: ['100', '10'], sizeBytes: 806, ms: 7 }
+      }),
+      verifyProof: vi.fn(async (): Promise<boolean> => {
+        void SENTINEL_WITNESS
+        return true
+      }),
+      anchorProof: vi.fn(async (): Promise<ProofAnchor> => {
+        void SENTINEL_TOKEN
+        void SENTINEL_WITNESS
+        return { proofHash: 'a'.repeat(64), vkeyHash: 'b'.repeat(64) }
+      }),
+      tamperProof: vi.fn(async (): Promise<{ rejected: boolean; verified: false; error: string }> => {
+        void SENTINEL_WITNESS
+        return { rejected: true, verified: false, error: 'Groth16 rejected the tampered p*.' }
+      }),
+      getStageOffsets: vi.fn(async (): Promise<StageOffsets> => {
+        void SENTINEL_TOKEN
+        return { open: 10, sealed: 24, settled: 42 }
+      }),
+    })
+    const started = await listen(deps)
+    server = started.server
+
+    const envelope = {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ vkey: { protocol: 'groth16' }, publicSignals: ['100', '10'], proof: { pi_a: ['1'] } }),
+    }
+    const wires: string[] = await Promise.all([
+      fetch(`${started.base}/round/R1/timelock-encrypt`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ payload: 'BankB Sell 8 @99' }),
+      }).then((r) => r.text()),
+      fetch(`${started.base}/timelock-decrypt`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ciphertext: '-----BEGIN AGE ENCRYPTED FILE-----x' }),
+      }).then((r) => r.text()),
+      fetch(`${started.base}/round/R1/prove`, { method: 'POST' }).then((r) => r.text()),
+      fetch(`${started.base}/round/R1/verify-proof`, envelope).then((r) => r.text()),
+      fetch(`${started.base}/round/R1/anchor-proof`, envelope).then((r) => r.text()),
+      fetch(`${started.base}/round/R1/tamper-proof`, { method: 'POST' }).then((r) => r.text()),
+      fetch(`${started.base}/round/R1/stage-offsets`).then((r) => r.text()),
+    ])
+
+    const combined = wires.join('\n')
+    expect(combined).not.toContain(SENTINEL_TOKEN)
+    expect(combined).not.toContain(SENTINEL_API_KEY)
+    expect(combined).not.toContain(SENTINEL_TLOCK_KEY)
+    expect(combined).not.toContain(SENTINEL_WITNESS)
+  })
+
+  it('a crypto endpoint error body never echoes a secret (generic collapse on an internal throw)', async () => {
+    // generateProof throws an error whose message embeds a sentinel — the generic 500 collapse
+    // must ensure that raw text (and every other sentinel) never reaches the client.
+    const generateProof = vi.fn(async (): Promise<ClearingProof> => {
+      void SENTINEL_API_KEY
+      throw new Error(`snarkjs blew up holding witness ${SENTINEL_WITNESS} and token ${SENTINEL_TOKEN}`)
+    })
+    const deps = makeDeps({ generateProof })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/prove`, { method: 'POST' })
+    const body = await readJson(res)
+
+    expect(res.status).toBe(500)
+    expect(body.error).toHaveProperty('code', 'INTERNAL')
+    const wire = JSON.stringify(body)
+    expect(wire).not.toContain(SENTINEL_TOKEN)
+    expect(wire).not.toContain(SENTINEL_API_KEY)
+    expect(wire).not.toContain(SENTINEL_WITNESS)
   })
 })

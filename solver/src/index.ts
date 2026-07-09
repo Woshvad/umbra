@@ -75,6 +75,18 @@ export interface BuildDepsArgs {
   // WOW-05: compose + render the on-brand proof-pack PDF (proofpack.ts) for a settled round.
   // Optional for the same reason; buildDeps defaults it to the on-brand HTML fallback.
   buildProofPack?: AppDeps['buildProofPack']
+  // CRYP-02/03 + VIZ-02 crypto deps — ALL optional so the index.test.ts boot-wiring path
+  // (which never exercises the crypto endpoints) need not inject them; buildDeps defaults
+  // each to an inert secret-free stub, exactly like readProofBundle/buildProofPack above.
+  // main() supplies the real tlock.ts / zk/*.ts / timemachine.ts implementations.
+  timelockEncrypt?: AppDeps['timelockEncrypt']
+  timelockDecrypt?: AppDeps['timelockDecrypt']
+  drandRoundInfo?: AppDeps['drandRoundInfo']
+  generateProof?: AppDeps['generateProof']
+  verifyProof?: AppDeps['verifyProof']
+  anchorProof?: AppDeps['anchorProof']
+  tamperProof?: AppDeps['tamperProof']
+  getStageOffsets?: AppDeps['getStageOffsets']
 }
 
 // Assemble the AppDeps so the API routes are wired to the ledger + clock.
@@ -92,6 +104,20 @@ export const buildDeps = (args: BuildDepsArgs): AppDeps => {
   const readProofBundle: AppDeps['readProofBundle'] = args.readProofBundle ?? (() => null)
   // WOW-05: default to the on-brand HTML fallback when not injected (index.test.ts path).
   const buildProofPack: AppDeps['buildProofPack'] = args.buildProofPack ?? (async () => ({ pdf: false as const, html: '' }))
+  // CRYP-02/03 + VIZ-02: inert, secret-free defaults for the boot-wiring path (index.test.ts).
+  // main() overrides every one with the real tlock/zk/timemachine implementation.
+  const timelockEncrypt: AppDeps['timelockEncrypt'] =
+    args.timelockEncrypt ?? (async () => ({ ciphertext: '', targetRound: 0, mode: 'offline', warning: '' }))
+  const timelockDecrypt: AppDeps['timelockDecrypt'] = args.timelockDecrypt ?? (async () => ({ plaintext: '' }))
+  const drandRoundInfo: AppDeps['drandRoundInfo'] =
+    args.drandRoundInfo ?? (async () => ({ targetRound: 0, timeToBeaconMs: 0, chainHash: '' }))
+  const generateProof: AppDeps['generateProof'] =
+    args.generateProof ?? (async () => ({ proof: {}, publicSignals: [], sizeBytes: 0, ms: 0 }))
+  const verifyProof: AppDeps['verifyProof'] = args.verifyProof ?? (async () => false)
+  const anchorProof: AppDeps['anchorProof'] = args.anchorProof ?? (async () => ({ proofHash: '', vkeyHash: '' }))
+  const tamperProof: AppDeps['tamperProof'] =
+    args.tamperProof ?? (async () => ({ rejected: true, verified: false as const, error: '' }))
+  const getStageOffsets: AppDeps['getStageOffsets'] = args.getStageOffsets ?? (() => ({}))
   return {
     // POST /round → ledger create THEN timer start (both).
     openRound: async (roundId, desks, windowSeconds): Promise<RoundView> => {
@@ -123,6 +149,15 @@ export const buildDeps = (args: BuildDepsArgs): AppDeps => {
     readProofBundle,
     // WOW-05: on-brand proof-pack PDF for GET /round/:id/proof-pack.pdf.
     buildProofPack,
+    // CRYP-02/03 + VIZ-02: timelock, ZK prove/verify/anchor/tamper, stage offsets.
+    timelockEncrypt,
+    timelockDecrypt,
+    drandRoundInfo,
+    generateProof,
+    verifyProof,
+    anchorProof,
+    tamperProof,
+    getStageOffsets,
     computeClearing: math.computeClearing,
     matchedAt: math.matchedAt,
     demandAt: math.demandAt,
@@ -152,6 +187,18 @@ const main = async (): Promise<void> => {
   // WOW-05: the on-brand proof-pack renderer + headless-Chrome PDF spawn (proofpack.ts).
   const proofpack = await import('./proofpack.js')
   const { fileURLToPath } = await import('node:url')
+  // CRYP-02/03 + VIZ-02: the timelock (tlock.ts), ZK prover/verifier (zk/*.ts), and the
+  // VIZ-02 stage→offset capture map (timemachine.ts). Dynamically imported AFTER dotenv so
+  // tlock reads DRAND_URL and the zk modules' snarkjs/circomlibjs eval only at live boot
+  // (never on the index.test.ts import path). The verification key is the committed §4 fixture.
+  const tlock = await import('./tlock.js')
+  const zkProve = await import('./zk/prove.js')
+  const zkVerify = await import('./zk/verify.js')
+  const timemachine = await import('./timemachine.js')
+  const { readFileSync } = await import('node:fs')
+  const vkey = JSON.parse(
+    readFileSync(fileURLToPath(new URL('./zk/vkey.json', import.meta.url)), 'utf8'),
+  ) as Record<string, unknown>
 
   // Construct the real AI Solver Agent ONCE at boot. No `client` is passed — agent.ts
   // resolves its own module-private ANTHROPIC_API_KEY (or runs keyless: the §4 fixture
@@ -199,10 +246,17 @@ const main = async (): Promise<void> => {
   }
   const openRoundView: LedgerPort['openRound'] = async (roundId, desks, windowSeconds): Promise<RoundView> => {
     const r = await ledger.openRound(roundId, desks, windowSeconds)
+    // VIZ-02: capture the 'open' stage offset (best-effort; a live-ledger read that must
+    // NEVER break the open path — an offset is a numeric bookmark, not authority).
+    void timemachine.recordStage(roundId, 'open').catch(() => undefined)
     return { roundId: r.roundId, status: r.status }
   }
-  const closeRoundStr: LedgerPort['closeRound'] = async (roundId): Promise<string> =>
-    String(await ledger.closeRound(roundId))
+  const closeRoundStr: LedgerPort['closeRound'] = async (roundId): Promise<string> => {
+    const status = String(await ledger.closeRound(roundId))
+    // VIZ-02: capture the 'sealed' stage offset at close (best-effort, never fatal).
+    void timemachine.recordStage(roundId, 'sealed').catch(() => undefined)
+    return status
+  }
   const settleResult: LedgerPort['settle'] = async (roundId) => {
     // Capture the §8 allocation BEFORE settle retires the sealed orders (ClearResult
     // carries only the aggregate totalMatched, not per-desk fills). The deterministic
@@ -211,6 +265,9 @@ const main = async (): Promise<void> => {
     const clearing = auction.computeClearing(views)
     const { allocations } = clearing
     const { result } = await ledger.settle(roundId)
+
+    // VIZ-02: capture the 'settled' stage offset (best-effort; NEVER changes settle's return).
+    void timemachine.recordStage(roundId, 'settled').catch(() => undefined)
 
     // TRUST-03: ADDITIVELY persist the immutable decision proof bundle from the LIVE views +
     // the deterministic §8 recompute + an off-authority agent proposal (purely for provenance:
@@ -279,6 +336,64 @@ const main = async (): Promise<void> => {
     return proofpack.generateProofPackPdf(html, outPath)
   }
 
+  // ── CRYP-03 proof composition (zk/prove.ts over the round's sealed views) ─────────
+  // Build the §4 ClearingWitness from the LIVE sealed orders + the deterministic §8 fills,
+  // then produce a real Groth16 proof. The salt is a deterministic PoC field element (the
+  // real reveal salt is the desk's private witness; PoC-grade, labeled as such). The private
+  // witness never leaves zk/prove.ts — only { proof, publicSignals, sizeBytes, ms } return.
+  const generateProof: AppDeps['generateProof'] = async (roundId) => {
+    const views = (await ledger.readSealedOrders(roundId)).map((s) => s.view)
+    const clearing = auction.computeClearing(views)
+    const pStar = clearing.clearingPrice
+    const matched = auction.matchedAt(views, pStar)
+    const orders = views.map((v, i) => {
+      const alloc = clearing.allocations.find((a) => a.desk === v.desk && a.side === v.side)
+      return {
+        side: (v.side === 'Buy' ? 1 : 0) as 0 | 1,
+        qty: v.quantity,
+        limit: v.limit,
+        salt: String(i + 1), // deterministic PoC salt (never logged / returned)
+        fill: alloc?.filledQty ?? 0,
+      }
+    })
+    return zkProve.generateClearingProof({ pStar, matched, orders })
+  }
+
+  // CRYP-03 OFF-LEDGER verify — a thin pass-through to the real Groth16 check.
+  const verifyProof: AppDeps['verifyProof'] = (vk, publicSignals, proof) =>
+    zkVerify.verifyClearingProof(vk, publicSignals, proof)
+
+  // CRYP-03 ON-LEDGER anchor — compute the anchor hashes, record ONLY those on-ledger, and
+  // return them. DISTINCT from verify: this records "a proof against this circuit existed",
+  // it does NOT re-verify (the off-ledger verify is the separate act).
+  const anchorProof: AppDeps['anchorProof'] = async (roundId, proof, publicSignals, vk) => {
+    const hashes = zkVerify.proofAnchorHashes(proof, publicSignals, vk)
+    await ledger.anchorProof(roundId, hashes.proofHash, hashes.vkeyHash)
+    return hashes
+  }
+
+  // CRYP-03 "break the proof" — generate a valid proof, perturb the FIRST public signal (p*),
+  // re-verify → expect false. Mirrors tamperClear: NEVER throws, NEVER anchors; the verbatim
+  // (secret-free) rejection is the payload.
+  const tamperProof: AppDeps['tamperProof'] = async (roundId) => {
+    try {
+      const { proof, publicSignals } = await generateProof(roundId)
+      const tampered = [...publicSignals]
+      tampered[0] = String(BigInt(tampered[0] ?? '0') + 1n) // perturb p* by +1
+      const verified = await zkVerify.verifyClearingProof(vkey, tampered, proof)
+      return {
+        rejected: !verified,
+        verified: false as const,
+        error: verified
+          ? 'UNEXPECTED: the tampered public input verified — investigate the circuit'
+          : 'Groth16 verification rejected the tampered public input (p* perturbed by +1).',
+      }
+    } catch {
+      // Secret-free never-throw contract — a prover/verifier outage still yields a clean body.
+      return { rejected: true, verified: false as const, error: 'proof generation or verification unavailable' }
+    }
+  }
+
   const deps = buildDeps({
     ledger: {
       openRound: openRoundView,
@@ -309,6 +424,17 @@ const main = async (): Promise<void> => {
     readProofBundle: proof.readProofBundle,
     // WOW-05: serve the on-brand proof-pack PDF (window.print() HTML fallback).
     buildProofPack,
+    // CRYP-02: timelock seal/open + public drand round metadata (tlock.ts).
+    timelockEncrypt: (payload, windowMs) => tlock.timelockSeal(payload, windowMs),
+    timelockDecrypt: async (ciphertext) => ({ plaintext: await tlock.timelockOpen(ciphertext) }),
+    drandRoundInfo: (windowMs) => tlock.drandRoundInfo(windowMs),
+    // CRYP-03: ZK prove (off round views) / verify (off-ledger) / anchor (on-ledger) / tamper.
+    generateProof,
+    verifyProof,
+    anchorProof,
+    tamperProof,
+    // VIZ-02: the recorded stage→offset map for the round (timemachine.ts).
+    getStageOffsets: (roundId) => timemachine.getStageOffsets(roundId),
   })
 
   const app = createApp(deps)

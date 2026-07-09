@@ -20,7 +20,7 @@
 // spawn is DEPENDENCY-INJECTED so tests never launch a real browser or write a real PDF.
 
 import { execFile as nodeExecFile } from 'node:child_process'
-import { writeFileSync as nodeWriteFileSync, mkdirSync } from 'node:fs'
+import { writeFileSync as nodeWriteFileSync, mkdirSync, unlinkSync as nodeUnlinkSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { join, dirname } from 'node:path'
 import type { Allocation } from './auction.js'
@@ -211,6 +211,9 @@ export type ProofPackResult = { pdf: true; path: string } | { pdf: false; html: 
 export interface PdfSpawnDeps {
   execFile?: typeof nodeExecFile
   writeFile?: (path: string, data: string) => void
+  // Best-effort removal of the temp HTML after the browser loop (IN-02) — injectable so
+  // tests can assert/stub it. Defaults to a swallowing unlinkSync.
+  deleteFile?: (path: string) => void
   browserPaths?: string[]
   tmpDir?: string
 }
@@ -250,6 +253,15 @@ export const generateProofPackPdf = async (
 ): Promise<ProofPackResult> => {
   const execFileFn = deps.execFile ?? nodeExecFile
   const writeFile = deps.writeFile ?? defaultWriteHtml
+  // Best-effort temp-HTML cleanup (IN-02): swallow errors (ENOENT on a never-written temp
+  // in tests, or a locked file) so cleanup never masks the actual PDF/HTML result.
+  const deleteFile = deps.deleteFile ?? ((path: string): void => {
+    try {
+      nodeUnlinkSync(path)
+    } catch {
+      /* best-effort — an orphaned temp file is harmless, a throw here is not */
+    }
+  })
   const browserPaths = deps.browserPaths ?? CHROME_PATHS
   const tmpDir = deps.tmpDir ?? fileURLToPath(new URL('../.tmp', import.meta.url))
   const htmlPath = join(tmpDir, `proof-${Date.now()}.html`)
@@ -260,13 +272,20 @@ export const generateProofPackPdf = async (
     return { pdf: false, html }
   }
 
-  for (const browser of browserPaths) {
-    try {
-      await runBrowser(execFileFn, browser, htmlPath, outPath)
-      return { pdf: true, path: outPath }
-    } catch {
-      // try the next browser (Chrome → Edge); if all fail, fall through to the HTML fallback.
+  // The temp HTML is only ever an intermediate render input — remove it on EVERY exit
+  // (PDF success returns outPath, the distinct PDF file; failure returns the in-memory
+  // html string), so a working PDF path no longer leaks one orphan .html per request.
+  try {
+    for (const browser of browserPaths) {
+      try {
+        await runBrowser(execFileFn, browser, htmlPath, outPath)
+        return { pdf: true, path: outPath }
+      } catch {
+        // try the next browser (Chrome → Edge); if all fail, fall through to the HTML fallback.
+      }
     }
+    return { pdf: false, html }
+  } finally {
+    deleteFile(htmlPath)
   }
-  return { pdf: false, html }
 }

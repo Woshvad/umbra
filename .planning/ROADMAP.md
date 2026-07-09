@@ -270,7 +270,7 @@ Plans:
 
 **Wave 2** *(blocked on 08-01)*
 
-- [ ] 08-03-PLAN.md — TRUST-02 degradation ladder + timeout (agent.ts) + WOW-03 parseOrder + POST /parse-order [TRUST-02, WOW-03]
+- [x] 08-03-PLAN.md — TRUST-02 degradation ladder + timeout (agent.ts) + WOW-03 parseOrder + POST /parse-order [TRUST-02, WOW-03]
 
 **Wave 3** *(blocked on 08-03)*
 
@@ -358,7 +358,7 @@ Build waves run in numeric order 8 → 9 → 10 → 11. Track A (Phase 12) runs 
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 8. Demo Hardening | 2/7 | In Progress|  |
+| 8. Demo Hardening | 3/7 | In Progress|  |
 | 9. Auction Depth & Live Viz | 0/— | Not started | — |
 | 10. Cryptographic Privacy | 0/— | Not started | — |
 | 11. Settlement & Institutional Grade | 0/— | Not started | — |

@@ -4,13 +4,13 @@ milestone: v2.0
 milestone_name: Progress
 status: executing
 stopped_at: Completed 08-02-PLAN.md (WOW-01 peek console)
-last_updated: "2026-07-09T11:39:02.461Z"
+last_updated: "2026-07-09T11:56:32.348Z"
 last_activity: 2026-07-09 -- Phase 08 execution started
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 7
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 ## Current Position
 
 Phase: 08 (demo-hardening) — EXECUTING
-Plan: 3 of 7
+Plan: 4 of 7
 Status: Ready to execute
 Last activity: 2026-07-09 -- Phase 08 execution started
 
@@ -68,6 +68,7 @@ Last activity: 2026-07-09 -- Phase 08 execution started
 | Phase 07 P02 | 6 min | 2 tasks | 3 files |
 | Phase 08 P01 | 12min | 2 tasks | 9 files |
 | Phase 08 P02 | 9min | 2 tasks | 4 files |
+| Phase 08 P03 | 9 min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -111,6 +112,7 @@ Recent decisions affecting current work:
 - [Phase ?]: [08-01 / TRUST-01]: Reused the existing auction.test.ts §4 fixture (clears 100.00, A=10/B=8/C=2 + the 99-vs-100 tie-break trap) as the CI golden gate — no new golden file; the vitest suite IS the regression gate. .github/workflows/ci.yml runs golden vitest on every push/PR touching solver/** or daml/**; daml build+test gated to main push (SDK install is heavy).
 - [Phase ?]: [08-01]: Killed the :4000->:4100 port drift in web/src via a single derived source — web/src/solver.ts parses SOLVER_BASE_URL once into exported solverPort + OFFLINE_CAPTION; AgentView/SettlementView/TheatreView import OFFLINE_CAPTION (no caption carries a literal port digit). solver/src/index.ts DEFAULT_SOLVER_PORT=4100; solver/proofs/ gitignored; web/.env.example documents VITE_SOLVER_URL=http://localhost:4100.
 - [Phase 08]: [08-02 / WOW-01]: PeekConsole fires a raw per-party JSON Ledger API v2 active-contracts POST as the selected desk's OWN token for a rival's Order/TradeConfirmation; empty []/403 rendered verbatim + red-square verdict. Pure lib/peek.ts (buildPeekRequest/classifyPeekResult/elideBearer) unit-tested; token never in body, node/CORS error rendered distinct from the privacy verdict (Pitfall 4). No operator token in the browser.
+- [Phase ?]: [08-03 / TRUST-02, WOW-03]: proposeClearing now imposes a Promise.race deadline (withTimeout rejects AgentTimeoutError into the existing catch -> deterministic §4 fallback); AGENT_TIMEOUT_MS env / AgentDeps.timeoutMs override, default 8000ms. Six-rung ladder (keyless/malformed/zod-invalid/disagreement/SDK-error/TIMEOUT) all clear 100.00, locked by a ladder-table test. parseOrder(text) mirrors proposeClearing (messages.parse + jsonSchemaOutputFormat + orderSchema.safeParse; NOT zodOutputFormat) -> validated {side,qty,limit}|null, key module-private, never auto-submits; POST /parse-order (zod .strict {text:min1max280}, 422 PARSE_FAILED, 400 INVALID_BODY) wired via AppDeps.parseOrder=agent.parseOrder. Secret sweep extended to /parse-order. 49 vitest green, tsc clean; /settle byte-unchanged.
 
 ### Pending Todos
 
@@ -136,6 +138,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-09T11:39:02.226Z
+Last session: 2026-07-09T11:55:18.504Z
 Stopped at: Completed 08-02-PLAN.md (WOW-01 peek console)
 Resume file: None

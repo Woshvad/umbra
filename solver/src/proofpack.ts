@@ -105,7 +105,7 @@ export const renderProofPackHtml = (params: RenderProofPackParams): string => {
     .map(
       (l) =>
         `<div class="leg"><span class="pair">${esc(shortDesk(l.buyer))}↔${esc(shortDesk(l.seller))}</span>` +
-        `<span class="lq">${l.qty}@${l.price}</span></div>`,
+        `<span class="lq">${l.qty}@${l.price.toFixed(2)}</span></div>`,
     )
     .join('\n')
 

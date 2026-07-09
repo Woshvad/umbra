@@ -351,6 +351,15 @@ export const createApp = (deps: AppDeps): Express => {
     res.setHeader('Connection', 'keep-alive')
     res.flushHeaders?.()
 
+    // Client-disconnect teardown (WR-03): when the browser EventSource closes (AgentRationale
+    // unmount, view switch, React StrictMode double-mount, or navigation) stop writing to the
+    // now half-closed socket. `aborted` gates every write below so no delta lands on a dead
+    // connection and the handler stops driving output for a client that has gone away.
+    let aborted = false
+    req.on('close', () => {
+      aborted = true
+    })
+
     void (async () => {
       // The round's sealed views drive both the model batch and the deterministic fallback.
       let views: OrderView[] = []
@@ -362,13 +371,13 @@ export const createApp = (deps: AppDeps): Express => {
 
       let closed = false
       const finishDone = (): void => {
-        if (closed) return
+        if (closed || aborted) return
         closed = true
         res.write('event: done\ndata: {}\n\n')
         res.end()
       }
       const finishFallback = (): void => {
-        if (closed) return
+        if (closed || aborted) return
         // A deterministic, secret-free single-shot rationale frame (§8 numbers only).
         const { clearingPrice, allocations } = deps.computeClearing(views)
         const matchedVolume = deps.matchedAt(views, clearingPrice)
@@ -385,12 +394,18 @@ export const createApp = (deps: AppDeps): Express => {
 
       await deps.streamRationale(views, {
         onDelta: (delta) => {
-          if (!closed) res.write(`data: ${JSON.stringify(delta)}\n\n`)
+          if (aborted || closed) return
+          res.write(`data: ${JSON.stringify(delta)}\n\n`)
         },
         onDone: finishDone,
         onError: finishFallback,
       })
-    })()
+    })().catch(() => {
+      // Guard the IIFE (WR-03): a throw from streamRationale or the fallback's
+      // computeClearing (contractually shouldn't happen) must not become an unhandled
+      // promise rejection — end the response instead of crashing the process.
+      if (!res.writableEnded) res.end()
+    })
   })
 
   // POST /round/:id/settle — run Round.Clear. 409 if already Cleared/Settled.

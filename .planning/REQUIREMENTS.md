@@ -101,7 +101,7 @@ Scoped for milestone v2.0. Grounded in the **current** stack (Daml 3.4.11 + Cant
 
 - [x] **TRUST-01**: The §8 clearing fixtures run as a CI golden-eval suite that must pass on every solver change (regression gate for the clearing math + the AI verify gate)
 - [x] **TRUST-02**: The Claude call uses strict structured outputs and gracefully degrades to the pure deterministic §8 solver on API unavailability/timeout/over-budget, so a round never stalls (canonical case still clears $100.00)
-- [ ] **TRUST-03**: Every round records an immutable "decision proof bundle" (prompt, model ID, raw AI proposal, deterministic recompute, on-ledger clearing hash) as a first-class auditable artifact
+- [x] **TRUST-03**: Every round records an immutable "decision proof bundle" (prompt, model ID, raw AI proposal, deterministic recompute, on-ledger clearing hash) as a first-class auditable artifact
 
 ### Auction Depth (AUCT)
 

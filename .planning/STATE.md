@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Progress
 status: executing
-stopped_at: Completed 08-04-PLAN.md (WOW-04 streamRationale/brief + WOW-02 tamperClear)
-last_updated: "2026-07-09T13:16:00.000Z"
-last_activity: 2026-07-09 -- Completed 08-04 (WOW-04 SSE rationale + brief, WOW-02 tamper-clear)
+stopped_at: Completed 08-05-PLAN.md (TRUST-03 decision proof bundle + WOW-05 proof-pack PDF backend)
+last_updated: "2026-07-09T12:37:00.000Z"
+last_activity: 2026-07-09 -- Completed 08-05 (TRUST-03 proof.ts bundle + GET /round/:id/proof; WOW-05 proofpack.ts + GET /round/:id/proof-pack.pdf)
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 7
-  completed_plans: 4
+  completed_plans: 5
   percent: 0
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 ## Current Position
 
 Phase: 08 (demo-hardening) — EXECUTING
-Plan: 5 of 7
+Plan: 6 of 7
 Status: Ready to execute
-Last activity: 2026-07-09 -- Completed 08-04 (WOW-04 SSE rationale + brief, WOW-02 tamper-clear)
+Last activity: 2026-07-09 -- Completed 08-05 (TRUST-03 proof bundle + WOW-05 proof-pack PDF backend)
 
 ## Performance Metrics
 
@@ -70,6 +70,7 @@ Last activity: 2026-07-09 -- Completed 08-04 (WOW-04 SSE rationale + brief, WOW-
 | Phase 08 P02 | 9min | 2 tasks | 4 files |
 | Phase 08 P03 | 9 min | 3 tasks | 6 files |
 | Phase 08 P04 | 16 min | 3 tasks | 9 files |
+| Phase 08 P05 | 12 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -114,6 +115,7 @@ Recent decisions affecting current work:
 - [Phase ?]: [08-01]: Killed the :4000->:4100 port drift in web/src via a single derived source — web/src/solver.ts parses SOLVER_BASE_URL once into exported solverPort + OFFLINE_CAPTION; AgentView/SettlementView/TheatreView import OFFLINE_CAPTION (no caption carries a literal port digit). solver/src/index.ts DEFAULT_SOLVER_PORT=4100; solver/proofs/ gitignored; web/.env.example documents VITE_SOLVER_URL=http://localhost:4100.
 - [Phase 08]: [08-02 / WOW-01]: PeekConsole fires a raw per-party JSON Ledger API v2 active-contracts POST as the selected desk's OWN token for a rival's Order/TradeConfirmation; empty []/403 rendered verbatim + red-square verdict. Pure lib/peek.ts (buildPeekRequest/classifyPeekResult/elideBearer) unit-tested; token never in body, node/CORS error rendered distinct from the privacy verdict (Pitfall 4). No operator token in the browser.
 - [Phase ?]: [08-03 / TRUST-02, WOW-03]: proposeClearing now imposes a Promise.race deadline (withTimeout rejects AgentTimeoutError into the existing catch -> deterministic §4 fallback); AGENT_TIMEOUT_MS env / AgentDeps.timeoutMs override, default 8000ms. Six-rung ladder (keyless/malformed/zod-invalid/disagreement/SDK-error/TIMEOUT) all clear 100.00, locked by a ladder-table test. parseOrder(text) mirrors proposeClearing (messages.parse + jsonSchemaOutputFormat + orderSchema.safeParse; NOT zodOutputFormat) -> validated {side,qty,limit}|null, key module-private, never auto-submits; POST /parse-order (zod .strict {text:min1max280}, 422 PARSE_FAILED, 400 INVALID_BODY) wired via AppDeps.parseOrder=agent.parseOrder. Secret sweep extended to /parse-order. 49 vitest green, tsc clean; /settle byte-unchanged.
+- [Phase 08]: [08-05 / TRUST-03, WOW-05]: NEW solver/src/proof.ts writeProofBundle/readProofBundle (node:crypto sha256) writes an immutable secret-free bundle to solver/proofs/<id>.json at settle — {roundId,timestamp,modelId,systemPromptHash=sha(SYSTEM_PROMPT),batchHash=sha(buildBatchMessage),rawAiProposal(numbers+rationale+source),deterministicRecompute,verified,clearingHash}; stores systemPromptHash NOT the raw prompt/key; roundId sanitized (path-traversal guard). Settle-time write is an ADDITIVE side effect in index.ts settleResult (calls agent.proposeClearing off-authority for provenance); api.ts /settle handler + ledger.ts settle() BYTE-UNCHANGED (0 deletions in api.ts). GET /round/:id/proof serves it read-only (404 absent). NEW solver/src/proofpack.ts renderProofPackHtml copies the deck :root tokens verbatim (#F4F1EA/#0A0A0A/#D6FB3C + Google-Fonts + -webkit-print-color-adjust:exact) with four bundles (clearing proof lime 100.00 hero + §4 fills A=10/B=8/C=2 / best-ex receipts / DvP finality legs A↔B 8@100·A↔C 2@100 + atomic stamp / AI decision bundle); generateProofPackPdf spawns Chrome→Edge --print-to-pdf, ENOENT→{pdf:false,html} window.print() fallback (zero new npm deps; execFile+writer injected, mocked in tests). GET /round/:id/proof-pack.pdf streams the PDF (attachment) or serves the HTML fallback; secret-free PROOFPACK_FAILED 500. 83 vitest green, tsc clean; §4 still $100.00.
 - [Phase 08]: [08-04 / WOW-04, WOW-02]: agent.streamRationale(views,{onDelta,onDone,onError}) proxies client.messages.stream().on('text'); keyless/stream-less/thrown -> onError EXACTLY once, never leaking key/prompt (AgentClient.messages.stream is OPTIONAL so a parse-only fake still typechecks; call through client.messages.stream to keep the SDK `this`). GET /round/:id/rationale-stream is SSE (NOT wrap()): text/event-stream data: delta frames + `event: done` sentinel; onError writes ONE deterministic composeBrief fallback frame then ends (no sentinel). New pure brief.ts composeBrief(price,matched,allocs,rationale) -> shareable NL summary, secret-free, no number drift; surfaced additively as `brief` on the terminal-settled GET body. WOW-02: DEDICATED ledger.tamperClear(roundId,'wrong-price'|'overfill') copies settle()'s exact cid-gathering but perturbs ONLY numeric values (badPrice=p*-1 / Buy filledQty+2, Pitfall 3), attempts Round.Clear, catches the verbatim submitAndWait reject, resolves {rejected,error} — never throws, never settles; POST /round/:id/tamper-clear (zod .strict {mode}) returns the verbatim body. settle() (ledger.ts + api.ts) BYTE-UNCHANGED (git-diff verified); §4 still $100.00. Overfill's faithful first-firing assert is 'allocations do not match recomputed §8' (Daml checks alloc-match before conservation). Secret sweep extended to /rationale-stream + /tamper-clear. 62 vitest green, tsc clean.
 
 ### Pending Todos
@@ -140,6 +142,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-09T13:16:00.000Z
-Stopped at: Completed 08-04-PLAN.md (WOW-04 streamRationale/brief + WOW-02 tamperClear)
+Last session: 2026-07-09T12:37:00.000Z
+Stopped at: Completed 08-05-PLAN.md (TRUST-03 decision proof bundle + WOW-05 proof-pack PDF backend)
 Resume file: None

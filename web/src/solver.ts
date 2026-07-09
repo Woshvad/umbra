@@ -40,6 +40,19 @@ export type Allocation = { desk: string; side: 'Buy' | 'Sell'; filledQty: number
 // agent provenance block — VERIFIED from solver/src/agent.ts.
 export type AgentMeta = { verified: boolean; source: 'claude' | 'deterministic-fallback' }
 
+// AUCT-03 aggregate indicative block — SCALARS ONLY, present on the OPEN-window GET body
+// (mirrors solver/src/api.ts buildIndicative). NEVER an individual order or a candidate-
+// price curve. `indicativePrice` is published only past the small-N guard (≥2 orders on
+// both sides); otherwise `coarse:true` + a wide-bucket `band` (the UI labels the guard).
+// `netImbalance` (Σbuy − Σsell) and `estMatched` are aggregate counts, always present.
+export type IndicativeMeta = {
+  indicativePrice?: number
+  coarse?: boolean
+  band?: number
+  netImbalance: number
+  estMatched: number
+}
+
 export type RoundStatus = 'Open' | 'Closed' | 'Cleared' | 'Settled'
 
 // GET /round/:id — status + sealedOrderCount always; the result fields are attached
@@ -54,6 +67,9 @@ export type RoundResponse = {
   curve?: CurvePoint[]
   rationale?: string
   agent?: AgentMeta
+  // AUCT-03: the aggregate indicative block — present ONLY on the OPEN-window GET body
+  // (scalars only, small-N guarded; never a curve or an individual order).
+  indicative?: IndicativeMeta
   // WOW-04: the shareable natural-language brief — present ONLY on the terminal
   // (Cleared/Settled) GET body, composed server-side from the settled numbers +
   // verified rationale (solver/src/brief.ts composeBrief; secret-free, no drift).

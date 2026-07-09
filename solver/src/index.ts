@@ -46,6 +46,7 @@ export interface MathPort {
   demandAt: AppDeps['demandAt']
   supplyAt: AppDeps['supplyAt']
   candidatePrices: AppDeps['candidatePrices']
+  choosePStar: AppDeps['choosePStar']
 }
 
 export interface BuildDepsArgs {
@@ -127,6 +128,7 @@ export const buildDeps = (args: BuildDepsArgs): AppDeps => {
     demandAt: math.demandAt,
     supplyAt: math.supplyAt,
     candidatePrices: math.candidatePrices,
+    choosePStar: math.choosePStar,
   }
 }
 
@@ -282,6 +284,7 @@ const main = async (): Promise<void> => {
       demandAt: auction.demandAt,
       supplyAt: auction.supplyAt,
       candidatePrices: auction.candidatePrices,
+      choosePStar: auction.choosePStar,
     },
     clock,
     openRoundClock: (roundId, windowSeconds) => clock.openRoundClock(roundId, windowSeconds),

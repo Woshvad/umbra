@@ -24,6 +24,7 @@ import {
   demandAt,
   supplyAt,
   candidatePrices,
+  choosePStar,
   type OrderView,
 } from './auction.js'
 import type { AgentResult } from './agent.js'
@@ -119,6 +120,7 @@ const makeDeps = (overrides: Partial<AppDeps>): AppDeps => ({
   demandAt,
   supplyAt,
   candidatePrices,
+  choosePStar,
   ...overrides,
 })
 
@@ -382,6 +384,111 @@ describe('solver §11 HTTP API', () => {
     // The extended ANTHROPIC_API_KEY sentinel sweep — neither response carries the key.
     expect(JSON.stringify(getJson)).not.toContain(SENTINEL_API_KEY)
     expect(JSON.stringify(previewJson)).not.toContain(SENTINEL_API_KEY)
+  })
+
+  // ── AUCT-03: the OPEN-window aggregate indicative feed (scalars only, small-N guard) ──
+  // A two-sided crossing book with ≥2 orders on BOTH sides — the guard PASSES so the exact
+  // indicative price is published. A@101/B@100 buy · C@99/D@100 sell → p*=100, matched=10,
+  // netImbalance = (6+4) − (5+5) = 0. Distinct desk names let the test prove NO order leaks.
+  const CROSSING_VIEWS: OrderView[] = [
+    { desk: 'DeskBuyOne', side: 'Buy', quantity: 6, limit: 101.0 },
+    { desk: 'DeskBuyTwo', side: 'Buy', quantity: 4, limit: 100.0 },
+    { desk: 'DeskSellOne', side: 'Sell', quantity: 5, limit: 99.0 },
+    { desk: 'DeskSellTwo', side: 'Sell', quantity: 5, limit: 100.0 },
+  ]
+  const CROSSING_SEALED: SealedOrder[] = CROSSING_VIEWS.map((view, i) => ({
+    contractId: `#cross-${i}`,
+    view,
+  }))
+
+  it('GET /round/:id (open) publishes the aggregate indicative block — SCALARS ONLY, no curve/candidate-price leak', async () => {
+    const deps = makeDeps({
+      queryRound: vi.fn(async (roundId: string) => ({ roundId, status: 'Open' })),
+      readSealedOrders: vi.fn(async (): Promise<SealedOrder[]> => CROSSING_SEALED),
+      refreshStats: vi.fn(async (): Promise<number> => CROSSING_SEALED.length),
+    })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1`)
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    expect(body.status).toBe('Open')
+    // The indicative block is present with the exact price (guard passes at 2×2 orders).
+    expect(body.indicative).toBeDefined()
+    expect(body.indicative.indicativePrice).toBe(100) // choosePStar over the crossing book.
+    expect(body.indicative.coarse).toBeUndefined()
+    expect(body.indicative.band).toBeUndefined()
+    expect(body.indicative.netImbalance).toBe(0) // (6+4) − (5+5).
+    expect(body.indicative.estMatched).toBe(10) // matchedAt(views, 100).
+    // PRIVACY (T-09-04-01/03): NO candidate-price curve / individual-order fields cross the
+    // wire during the open window — those exist only at terminal status.
+    expect(body).not.toHaveProperty('curve')
+    expect(body).not.toHaveProperty('candidatePrices')
+    expect(body).not.toHaveProperty('allocations')
+    expect(body.indicative).not.toHaveProperty('curve')
+    expect(body.indicative).not.toHaveProperty('orders')
+    // No individual order's desk identity appears anywhere in the response.
+    const wire = JSON.stringify(body)
+    for (const v of CROSSING_VIEWS) expect(wire).not.toContain(v.desk)
+  })
+
+  it('GET /round/:id (open) small-N guard — coarse band, never an exact price, with <2 orders on a side', async () => {
+    // The §4 book has ONE buyer (A) — a singleton buy side. The exact indicative price
+    // would BE that order's limit, so the guard withholds it and emits a coarse band.
+    const deps = makeDeps({
+      queryRound: vi.fn(async (roundId: string) => ({ roundId, status: 'Open' })),
+      readSealedOrders: vi.fn(async (): Promise<SealedOrder[]> => SECTION4_SEALED),
+      refreshStats: vi.fn(async (): Promise<number> => SECTION4_SEALED.length),
+    })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1`)
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    expect(body.indicative).toBeDefined()
+    // GUARD STATE: coarse band, NO exact price (the single-order back-out is prevented).
+    expect(body.indicative.coarse).toBe(true)
+    expect(typeof body.indicative.band).toBe('number')
+    expect(body.indicative.indicativePrice).toBeUndefined()
+    // Aggregate counts still cross (accepted residual — T-09-04-04).
+    expect(body.indicative.netImbalance).toBe(-3) // 10 buy − (8+5) sell.
+    expect(body.indicative.estMatched).toBe(10)
+    // Still no candidate-price curve during the open window.
+    expect(body).not.toHaveProperty('curve')
+    expect(body).not.toHaveProperty('candidatePrices')
+  })
+
+  it('GET /round/:id (open) response never echoes the operator token or ANTHROPIC_API_KEY (secret sweep on the indicative body)', async () => {
+    const deps = makeDeps({
+      queryRound: vi.fn(async (roundId: string) => {
+        void SENTINEL_TOKEN
+        return { roundId, status: 'Open' }
+      }),
+      readSealedOrders: vi.fn(async (): Promise<SealedOrder[]> => {
+        void SENTINEL_TOKEN
+        void SENTINEL_API_KEY
+        return CROSSING_SEALED
+      }),
+      refreshStats: vi.fn(async (): Promise<number> => {
+        void SENTINEL_TOKEN
+        return CROSSING_SEALED.length
+      }),
+    })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1`)
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    expect(body.indicative).toBeDefined()
+    const wire = JSON.stringify(body)
+    expect(wire).not.toContain(SENTINEL_TOKEN)
+    expect(wire).not.toContain(SENTINEL_API_KEY)
   })
 
   it('POST /parse-order returns the zod-validated order (200) for well-formed English', async () => {

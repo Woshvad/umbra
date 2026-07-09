@@ -119,6 +119,10 @@ export interface AppDeps {
   demandAt: (orders: OrderView[], p: number) => number
   supplyAt: (orders: OrderView[], p: number) => number
   candidatePrices: (orders: OrderView[]) => number[]
+  // AUCT-03: choose p* — the max-matched / min-imbalance / lower-price winner (auction.ts
+  // choosePStar). Reused UNCHANGED for the OPEN-window aggregate indicative feed; never
+  // emits a candidate-price curve, only the single scalar (small-N guarded downstream).
+  choosePStar: (orders: OrderView[]) => number
 }
 
 // ── A typed application error that maps cleanly onto the secret-safe envelope ────
@@ -189,6 +193,49 @@ const buildCurve = (
     supply: deps.supplyAt(views, price),
   }))
 
+// ── AUCT-03 aggregate indicative block (OPEN window, SCALARS ONLY) ────────────────
+// The load-bearing privacy surface (threat T-09-04-01/03): during the open window the
+// solver holds the WHOLE sealed batch, but ONLY aggregate scalars may cross the wire —
+// NEVER an individual order and NEVER a candidate-price curve (each candidate price is
+// one desk's limit; see Pitfall 1). This computes:
+//   • indicativePrice = choosePStar(views)  — published EXACT only past the small-N guard
+//   • netImbalance    = Σ buy qty − Σ sell qty  (aggregate count, always)
+//   • estMatched      = matchedAt(views, p*)     (aggregate count, always)
+// Small-N guard: the exact indicativePrice is withheld unless there are ≥2 orders on
+// BOTH sides of the crossing — with a singleton side, p* could BE that order's limit, so
+// a coarse wide-bucket band + `coarse:true` is emitted instead (the UI labels the guard).
+// buildCurve is deliberately NOT called here — the curve stays terminal-status-only.
+const INDICATIVE_BAND_BUCKET = 5
+
+// The scalars-only shape returned during the open window (mirrored by web IndicativeMeta).
+type IndicativeBlock = {
+  indicativePrice?: number
+  coarse?: boolean
+  band?: number
+  netImbalance: number
+  estMatched: number
+}
+
+const buildIndicative = (deps: AppDeps, views: OrderView[]): IndicativeBlock => {
+  const buys = views.filter((v) => v.side === 'Buy')
+  const sells = views.filter((v) => v.side === 'Sell')
+  const netImbalance =
+    buys.reduce((s, v) => s + v.quantity, 0) - sells.reduce((s, v) => s + v.quantity, 0)
+  const pStar = deps.choosePStar(views)
+  const estMatched = deps.matchedAt(views, pStar)
+  // Guard: a singleton side would let the published price back out that order's limit.
+  const guarded = buys.length < 2 || sells.length < 2
+  if (guarded) {
+    return {
+      coarse: true,
+      band: Math.round(pStar / INDICATIVE_BAND_BUCKET) * INDICATIVE_BAND_BUCKET,
+      netImbalance,
+      estMatched,
+    }
+  }
+  return { indicativePrice: pStar, netImbalance, estMatched }
+}
+
 export const createApp = (deps: AppDeps): Express => {
   const app = express()
   app.use(express.json())
@@ -236,6 +283,16 @@ export const createApp = (deps: AppDeps): Express => {
         roundId: round.roundId,
         status: round.status,
         sealedOrderCount,
+      }
+      // AUCT-03: during the OPEN window (with ≥1 sealed order) attach the aggregate
+      // indicative block — SCALARS ONLY, small-N guarded, NO candidate-price curve
+      // (Pitfall 1). Mutually exclusive with the terminal-status branch below (Open is
+      // not a terminal status), so no curve/candidate data ever coexists with it.
+      if (round.status === 'Open') {
+        const sealed = await deps.readSealedOrders(id)
+        if (sealed.length > 0) {
+          body.indicative = buildIndicative(deps, sealed.map((s) => s.view))
+        }
       }
       // After clear/settle, surface the result. Two sources, because Round.Clear RETIRES
       // the sealed Orders on settle:

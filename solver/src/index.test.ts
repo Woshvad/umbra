@@ -18,6 +18,7 @@ import {
   demandAt,
   supplyAt,
   candidatePrices,
+  choosePStar,
 } from './auction.js'
 import { createApp, type RoundView, type SealedOrder, type SettleResult } from './api.js'
 import { buildDeps, type LedgerPort, type MathPort } from './index.js'
@@ -27,7 +28,7 @@ import type { Clock, RoundState } from './clock.js'
 const ROUND_SECONDS = 60
 
 // The real §8 helpers (the API math is never stubbed — keeps shapes honest).
-const math: MathPort = { computeClearing, matchedAt, demandAt, supplyAt, candidatePrices }
+const math: MathPort = { computeClearing, matchedAt, demandAt, supplyAt, candidatePrices, choosePStar }
 
 // A keyless-safe agent stub — buildDeps requires proposeClearing; the boot-wiring
 // proofs below never exercise the terminal/solve-preview path, so a deterministic

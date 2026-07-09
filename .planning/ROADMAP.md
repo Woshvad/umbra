@@ -279,7 +279,7 @@ Plans:
 **Wave 4** *(blocked on 08-04)*
 
 - [x] 08-05-PLAN.md — TRUST-03 decision proof bundle (proof.ts, GET /round/:id/proof) + WOW-05 proof-pack PDF backend (proofpack.ts) [TRUST-03, WOW-05]
-- [ ] 08-06-PLAN.md — WOW-02 BreakTheAiPanel + WOW-03 NL sub-block + web solver.ts tamperClear/parseOrder [WOW-02, WOW-03]
+- [x] 08-06-PLAN.md — WOW-02 BreakTheAiPanel + WOW-03 NL sub-block + web solver.ts tamperClear/parseOrder [WOW-02, WOW-03]
 
 **Wave 5** *(blocked on 08-05, 08-06)*
 

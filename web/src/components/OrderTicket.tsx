@@ -109,13 +109,18 @@ export default function OrderTicket({ ctx, deskKey, order }: Props) {
       const venues = await ledger.query(Venue)
       const venueCid = venues[0]?.contractId
       if (!venueCid) return
-      // Int/Numeric as STRINGS (RESEARCH Pitfall 1).
+      // Int/Numeric as STRINGS (RESEARCH Pitfall 1). AUCT-01: the ticket submits a
+      // plain Limit — orderType='Limit', minQty/firmIf null (the order-type
+      // selector UI is plan 09-06; these satisfy the regenerated required args).
       await ledger.exercise(Venue.SubmitOrder, venueCid, {
         desk: tokens[deskKey].party,
         roundId: 'R1',
         side,
         quantity: String(qtyInt),
         limit: limitNum.toFixed(1),
+        orderType: 'Limit',
+        minQty: null,
+        firmIf: null,
       })
       setReopened(false)
       setSubmitted(true)

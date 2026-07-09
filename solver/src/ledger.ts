@@ -22,7 +22,7 @@
 // reference form `#umbra:Module:Entity` (package-id form is deprecated in 3.4).
 
 import { readFileSync } from 'node:fs'
-import type { OrderView, Side } from './auction.js'
+import type { OrderType, OrderView, Side } from './auction.js'
 import { computeClearing, matchedAt } from './auction.js'
 
 export type RoundStatus = 'Open' | 'Closed' | 'Cleared' | 'Settled'
@@ -233,6 +233,12 @@ export const readSealedOrders = async (
         side: c.createArgument.side as Side,
         quantity: Number(c.createArgument.quantity),
         limit: Number(c.createArgument.limit),
+        // AUCT-01 additive fields (inert until 09-02/09-03). orderType defaults to
+        // 'Limit' when absent; minQty/firmIf decode from the Optional v2 wire
+        // (null → undefined) and numeric fields arrive as strings → Number().
+        orderType: (c.createArgument.orderType ?? 'Limit') as OrderType,
+        minQty: c.createArgument.minQty != null ? Number(c.createArgument.minQty) : undefined,
+        firmIf: c.createArgument.firmIf != null ? Number(c.createArgument.firmIf) : undefined,
       },
     }))
 

@@ -1,3 +1,3 @@
 import * as Umbra from './Umbra';
 export { Umbra } ;
-export declare const packageId = 'ba79017a89c595cab162d9bab15ae17f0c979f3960d088c830ec7636caa0c861';
+export declare const packageId = 'cb6868841df214064827686a172576c0ecd840dc678e43a3105787d4ef909c12';

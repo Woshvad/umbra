@@ -9,11 +9,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 var jtv = require('@mojotech/json-type-validation');
 /* eslint-disable-next-line no-unused-vars */
 var damlTypes = require('@daml/types');
-/* eslint-disable-next-line no-unused-vars */
-var damlLedger = require('@daml/ledger');
 
-var pkg40f452260bef3f29dede136108fc08a88d5a5250310281067087da6f0baddff7 = require('@daml.js/40f452260bef3f29dede136108fc08a88d5a5250310281067087da6f0baddff7');
-var pkgd14e08374fc7197d6a0de468c968ae8ba3aadbf9315476fd39071831f5923662 = require('@daml.js/d14e08374fc7197d6a0de468c968ae8ba3aadbf9315476fd39071831f5923662');
+var pkg5aee9b21b8e9a4c4975b5f4c4198e6e6e8469df49e2010820e792f393db870f4 = require('@daml.js/daml-prim-DA-Types-1.0.0');
+var pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69 = require('@daml.js/ghc-stdlib-DA-Internal-Template-1.0.0');
 
 
 exports.Reassign = {
@@ -54,7 +52,8 @@ exports.Split = {
 
 exports.Asset = damlTypes.assembleTemplate(
 {
-  templateId: 'ba79017a89c595cab162d9bab15ae17f0c979f3960d088c830ec7636caa0c861:Umbra.Asset:Asset',
+  templateId: '#umbra:Umbra.Asset:Asset',
+  templateIdWithPackageId: 'cb6868841df214064827686a172576c0ecd840dc678e43a3105787d4ef909c12:Umbra.Asset:Asset',
   keyDecoder: damlTypes.lazyMemo(function () { return jtv.constant(undefined); }),
   keyEncode: function () { throw 'EncodeError'; },
   decoder: damlTypes.lazyMemo(function () { return jtv.object({operator: damlTypes.Party.decoder, owner: damlTypes.Party.decoder, symbol: damlTypes.Text.decoder, quantity: damlTypes.Numeric(10).decoder, }); }),
@@ -72,8 +71,8 @@ exports.Asset = damlTypes.assembleTemplate(
     choiceName: 'Split',
     argumentDecoder: damlTypes.lazyMemo(function () { return exports.Split.decoder; }),
     argumentEncode: function (__typed__) { return exports.Split.encode(__typed__); },
-    resultDecoder: damlTypes.lazyMemo(function () { return pkg40f452260bef3f29dede136108fc08a88d5a5250310281067087da6f0baddff7.DA.Types.Tuple2(damlTypes.ContractId(exports.Asset), damlTypes.ContractId(exports.Asset)).decoder; }),
-    resultEncode: function (__typed__) { return pkg40f452260bef3f29dede136108fc08a88d5a5250310281067087da6f0baddff7.DA.Types.Tuple2(damlTypes.ContractId(exports.Asset), damlTypes.ContractId(exports.Asset)).encode(__typed__); },
+    resultDecoder: damlTypes.lazyMemo(function () { return pkg5aee9b21b8e9a4c4975b5f4c4198e6e6e8469df49e2010820e792f393db870f4.DA.Types.Tuple2(damlTypes.ContractId(exports.Asset), damlTypes.ContractId(exports.Asset)).decoder; }),
+    resultEncode: function (__typed__) { return pkg5aee9b21b8e9a4c4975b5f4c4198e6e6e8469df49e2010820e792f393db870f4.DA.Types.Tuple2(damlTypes.ContractId(exports.Asset), damlTypes.ContractId(exports.Asset)).encode(__typed__); },
   },
   Merge: {
     template: function () { return exports.Asset; },
@@ -86,8 +85,8 @@ exports.Asset = damlTypes.assembleTemplate(
   Archive: {
     template: function () { return exports.Asset; },
     choiceName: 'Archive',
-    argumentDecoder: damlTypes.lazyMemo(function () { return pkgd14e08374fc7197d6a0de468c968ae8ba3aadbf9315476fd39071831f5923662.DA.Internal.Template.Archive.decoder; }),
-    argumentEncode: function (__typed__) { return pkgd14e08374fc7197d6a0de468c968ae8ba3aadbf9315476fd39071831f5923662.DA.Internal.Template.Archive.encode(__typed__); },
+    argumentDecoder: damlTypes.lazyMemo(function () { return pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69.DA.Internal.Template.Archive.decoder; }),
+    argumentEncode: function (__typed__) { return pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69.DA.Internal.Template.Archive.encode(__typed__); },
     resultDecoder: damlTypes.lazyMemo(function () { return damlTypes.Unit.decoder; }),
     resultEncode: function (__typed__) { return damlTypes.Unit.encode(__typed__); },
   },
@@ -104,5 +103,5 @@ exports.Asset = damlTypes.assembleTemplate(
 );
 
 
-damlTypes.registerTemplate(exports.Asset, ['ba79017a89c595cab162d9bab15ae17f0c979f3960d088c830ec7636caa0c861', 'ba79017a89c595cab162d9bab15ae17f0c979f3960d088c830ec7636caa0c861']);
+damlTypes.registerTemplate(exports.Asset, ['cb6868841df214064827686a172576c0ecd840dc678e43a3105787d4ef909c12', '#umbra']);
 

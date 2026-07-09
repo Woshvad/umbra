@@ -66,13 +66,18 @@ function ActiveBody({ ctx, deskKey }: { ctx: Ctx; deskKey: DeskKey }) {
       const venues = await ledger.query(Venue)
       const venueCid = venues[0]?.contractId
       if (!venueCid) return
-      // Int/Decimal as STRINGS (RESEARCH Pitfall 8).
+      // Int/Decimal as STRINGS (RESEARCH Pitfall 8). AUCT-01: plain Limit order
+      // (orderType='Limit', minQty/firmIf null) — satisfies the regenerated
+      // required SubmitOrder args; the order-type selector UI is plan 09-06.
       await ledger.exercise(Venue.SubmitOrder, venueCid, {
         desk: tokens[deskKey].party,
         roundId: 'R1',
         side: Side.Buy,
         quantity: '10',
         limit: '101.0',
+        orderType: 'Limit',
+        minQty: null,
+        firmIf: null,
       })
       setSubmitted(true)
     } finally {

@@ -4,10 +4,8 @@
 /* eslint-disable @typescript-eslint/no-use-before-define */
 import * as jtv from '@mojotech/json-type-validation';
 import * as damlTypes from '@daml/types';
-/* eslint-disable-next-line @typescript-eslint/no-unused-vars */
-import * as damlLedger from '@daml/ledger';
 
-import * as pkgd14e08374fc7197d6a0de468c968ae8ba3aadbf9315476fd39071831f5923662 from '@daml.js/d14e08374fc7197d6a0de468c968ae8ba3aadbf9315476fd39071831f5923662';
+import * as pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69 from '@daml.js/ghc-stdlib-DA-Internal-Template-1.0.0';
 
 import * as Umbra_Auction from '../../Umbra/Auction/module';
 import * as Umbra_Clearing from '../../Umbra/Clearing/module';
@@ -18,6 +16,9 @@ export declare type SubmitOrder = {
   side: Umbra_Clearing.Side;
   quantity: damlTypes.Int;
   limit: damlTypes.Numeric;
+  orderType: Umbra_Clearing.OrderType;
+  minQty: damlTypes.Optional<damlTypes.Int>;
+  firmIf: damlTypes.Optional<damlTypes.Numeric>;
 };
 
 export declare const SubmitOrder:
@@ -32,19 +33,15 @@ export declare type Venue = {
 };
 
 export declare interface VenueInterface {
-  Archive: damlTypes.Choice<Venue, pkgd14e08374fc7197d6a0de468c968ae8ba3aadbf9315476fd39071831f5923662.DA.Internal.Template.Archive, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Venue, undefined>>;
+  Archive: damlTypes.Choice<Venue, pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69.DA.Internal.Template.Archive, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Venue, undefined>>;
   SubmitOrder: damlTypes.Choice<Venue, SubmitOrder, damlTypes.ContractId<Umbra_Auction.Order>, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Venue, undefined>>;
 }
 export declare const Venue:
-  damlTypes.Template<Venue, undefined, 'ba79017a89c595cab162d9bab15ae17f0c979f3960d088c830ec7636caa0c861:Umbra.Roles:Venue'> &
+  damlTypes.Template<Venue, undefined, '#umbra:Umbra.Roles:Venue'> &
   damlTypes.ToInterface<Venue, never> &
   VenueInterface;
 
 export declare namespace Venue {
-  export type CreateEvent = damlLedger.CreateEvent<Venue, undefined, typeof Venue.templateId>
-  export type ArchiveEvent = damlLedger.ArchiveEvent<Venue, typeof Venue.templateId>
-  export type Event = damlLedger.Event<Venue, undefined, typeof Venue.templateId>
-  export type QueryResult = damlLedger.QueryResult<Venue, undefined, typeof Venue.templateId>
 }
 
 

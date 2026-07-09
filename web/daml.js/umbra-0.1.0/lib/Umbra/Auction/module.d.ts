@@ -4,11 +4,9 @@
 /* eslint-disable @typescript-eslint/no-use-before-define */
 import * as jtv from '@mojotech/json-type-validation';
 import * as damlTypes from '@daml/types';
-/* eslint-disable-next-line @typescript-eslint/no-unused-vars */
-import * as damlLedger from '@daml/ledger';
 
-import * as pkg40f452260bef3f29dede136108fc08a88d5a5250310281067087da6f0baddff7 from '@daml.js/40f452260bef3f29dede136108fc08a88d5a5250310281067087da6f0baddff7';
-import * as pkgd14e08374fc7197d6a0de468c968ae8ba3aadbf9315476fd39071831f5923662 from '@daml.js/d14e08374fc7197d6a0de468c968ae8ba3aadbf9315476fd39071831f5923662';
+import * as pkg5aee9b21b8e9a4c4975b5f4c4198e6e6e8469df49e2010820e792f393db870f4 from '@daml.js/daml-prim-DA-Types-1.0.0';
+import * as pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69 from '@daml.js/ghc-stdlib-DA-Internal-Template-1.0.0';
 
 import * as Umbra_Asset from '../../Umbra/Asset/module';
 import * as Umbra_Clearing from '../../Umbra/Clearing/module';
@@ -18,7 +16,7 @@ export declare type Clear = {
   allocations: Umbra_Clearing.Allocation[];
   orderCids: damlTypes.ContractId<Order>[];
   buyerUsdcCid: damlTypes.ContractId<Umbra_Asset.Asset>;
-  sellerBondCids: pkg40f452260bef3f29dede136108fc08a88d5a5250310281067087da6f0baddff7.DA.Types.Tuple2<damlTypes.Party, damlTypes.ContractId<Umbra_Asset.Asset>>[];
+  sellerBondCids: pkg5aee9b21b8e9a4c4975b5f4c4198e6e6e8469df49e2010820e792f393db870f4.DA.Types.Tuple2<damlTypes.Party, damlTypes.ContractId<Umbra_Asset.Asset>>[];
 };
 
 export declare const Clear:
@@ -48,19 +46,15 @@ export declare type Round = {
 
 export declare interface RoundInterface {
   Clear: damlTypes.Choice<Round, Clear, ClearResult, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Round, undefined>>;
-  Archive: damlTypes.Choice<Round, pkgd14e08374fc7197d6a0de468c968ae8ba3aadbf9315476fd39071831f5923662.DA.Internal.Template.Archive, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Round, undefined>>;
+  Archive: damlTypes.Choice<Round, pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69.DA.Internal.Template.Archive, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Round, undefined>>;
   CloseRound: damlTypes.Choice<Round, CloseRound, damlTypes.ContractId<Round>, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Round, undefined>>;
 }
 export declare const Round:
-  damlTypes.Template<Round, undefined, 'ba79017a89c595cab162d9bab15ae17f0c979f3960d088c830ec7636caa0c861:Umbra.Auction:Round'> &
+  damlTypes.Template<Round, undefined, '#umbra:Umbra.Auction:Round'> &
   damlTypes.ToInterface<Round, never> &
   RoundInterface;
 
 export declare namespace Round {
-  export type CreateEvent = damlLedger.CreateEvent<Round, undefined, typeof Round.templateId>
-  export type ArchiveEvent = damlLedger.ArchiveEvent<Round, typeof Round.templateId>
-  export type Event = damlLedger.Event<Round, undefined, typeof Round.templateId>
-  export type QueryResult = damlLedger.QueryResult<Round, undefined, typeof Round.templateId>
 }
 
 
@@ -86,18 +80,14 @@ export declare type RoundStats = {
 };
 
 export declare interface RoundStatsInterface {
-  Archive: damlTypes.Choice<RoundStats, pkgd14e08374fc7197d6a0de468c968ae8ba3aadbf9315476fd39071831f5923662.DA.Internal.Template.Archive, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<RoundStats, undefined>>;
+  Archive: damlTypes.Choice<RoundStats, pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69.DA.Internal.Template.Archive, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<RoundStats, undefined>>;
 }
 export declare const RoundStats:
-  damlTypes.Template<RoundStats, undefined, 'ba79017a89c595cab162d9bab15ae17f0c979f3960d088c830ec7636caa0c861:Umbra.Auction:RoundStats'> &
+  damlTypes.Template<RoundStats, undefined, '#umbra:Umbra.Auction:RoundStats'> &
   damlTypes.ToInterface<RoundStats, never> &
   RoundStatsInterface;
 
 export declare namespace RoundStats {
-  export type CreateEvent = damlLedger.CreateEvent<RoundStats, undefined, typeof RoundStats.templateId>
-  export type ArchiveEvent = damlLedger.ArchiveEvent<RoundStats, typeof RoundStats.templateId>
-  export type Event = damlLedger.Event<RoundStats, undefined, typeof RoundStats.templateId>
-  export type QueryResult = damlLedger.QueryResult<RoundStats, undefined, typeof RoundStats.templateId>
 }
 
 
@@ -114,18 +104,14 @@ export declare type TradeConfirmation = {
 };
 
 export declare interface TradeConfirmationInterface {
-  Archive: damlTypes.Choice<TradeConfirmation, pkgd14e08374fc7197d6a0de468c968ae8ba3aadbf9315476fd39071831f5923662.DA.Internal.Template.Archive, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<TradeConfirmation, undefined>>;
+  Archive: damlTypes.Choice<TradeConfirmation, pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69.DA.Internal.Template.Archive, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<TradeConfirmation, undefined>>;
 }
 export declare const TradeConfirmation:
-  damlTypes.Template<TradeConfirmation, undefined, 'ba79017a89c595cab162d9bab15ae17f0c979f3960d088c830ec7636caa0c861:Umbra.Auction:TradeConfirmation'> &
+  damlTypes.Template<TradeConfirmation, undefined, '#umbra:Umbra.Auction:TradeConfirmation'> &
   damlTypes.ToInterface<TradeConfirmation, never> &
   TradeConfirmationInterface;
 
 export declare namespace TradeConfirmation {
-  export type CreateEvent = damlLedger.CreateEvent<TradeConfirmation, undefined, typeof TradeConfirmation.templateId>
-  export type ArchiveEvent = damlLedger.ArchiveEvent<TradeConfirmation, typeof TradeConfirmation.templateId>
-  export type Event = damlLedger.Event<TradeConfirmation, undefined, typeof TradeConfirmation.templateId>
-  export type QueryResult = damlLedger.QueryResult<TradeConfirmation, undefined, typeof TradeConfirmation.templateId>
 }
 
 
@@ -147,22 +133,21 @@ export declare type Order = {
   quantity: damlTypes.Int;
   limit: damlTypes.Numeric;
   status: OrderStatus;
+  orderType: Umbra_Clearing.OrderType;
+  minQty: damlTypes.Optional<damlTypes.Int>;
+  firmIf: damlTypes.Optional<damlTypes.Numeric>;
 };
 
 export declare interface OrderInterface {
   Retire: damlTypes.Choice<Order, Retire, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Order, undefined>>;
-  Archive: damlTypes.Choice<Order, pkgd14e08374fc7197d6a0de468c968ae8ba3aadbf9315476fd39071831f5923662.DA.Internal.Template.Archive, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Order, undefined>>;
+  Archive: damlTypes.Choice<Order, pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69.DA.Internal.Template.Archive, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Order, undefined>>;
 }
 export declare const Order:
-  damlTypes.Template<Order, undefined, 'ba79017a89c595cab162d9bab15ae17f0c979f3960d088c830ec7636caa0c861:Umbra.Auction:Order'> &
+  damlTypes.Template<Order, undefined, '#umbra:Umbra.Auction:Order'> &
   damlTypes.ToInterface<Order, never> &
   OrderInterface;
 
 export declare namespace Order {
-  export type CreateEvent = damlLedger.CreateEvent<Order, undefined, typeof Order.templateId>
-  export type ArchiveEvent = damlLedger.ArchiveEvent<Order, typeof Order.templateId>
-  export type Event = damlLedger.Event<Order, undefined, typeof Order.templateId>
-  export type QueryResult = damlLedger.QueryResult<Order, undefined, typeof Order.templateId>
 }
 
 

@@ -9,21 +9,34 @@ Object.defineProperty(exports, "__esModule", { value: true });
 var jtv = require('@mojotech/json-type-validation');
 /* eslint-disable-next-line no-unused-vars */
 var damlTypes = require('@daml/types');
-/* eslint-disable-next-line no-unused-vars */
-var damlLedger = require('@daml/ledger');
 
 
 exports.OrderView = {
-  decoder: damlTypes.lazyMemo(function () { return jtv.object({desk: damlTypes.Party.decoder, side: exports.Side.decoder, quantity: damlTypes.Int.decoder, limit: damlTypes.Numeric(10).decoder, }); }),
+  decoder: damlTypes.lazyMemo(function () { return jtv.object({desk: damlTypes.Party.decoder, side: exports.Side.decoder, quantity: damlTypes.Int.decoder, limit: damlTypes.Numeric(10).decoder, orderType: exports.OrderType.decoder, minQty: jtv.Decoder.withDefault(null, damlTypes.Optional(damlTypes.Int).decoder), firmIf: jtv.Decoder.withDefault(null, damlTypes.Optional(damlTypes.Numeric(10)).decoder), }); }),
   encode: function (__typed__) {
   return {
     desk: damlTypes.Party.encode(__typed__.desk),
     side: exports.Side.encode(__typed__.side),
     quantity: damlTypes.Int.encode(__typed__.quantity),
     limit: damlTypes.Numeric(10).encode(__typed__.limit),
+    orderType: exports.OrderType.encode(__typed__.orderType),
+    minQty: damlTypes.Optional(damlTypes.Int).encode(__typed__.minQty),
+    firmIf: damlTypes.Optional(damlTypes.Numeric(10)).encode(__typed__.firmIf),
   };
 }
 ,
+};
+
+
+
+exports.OrderType = {
+  Limit: 'Limit',
+  Noncompetitive: 'Noncompetitive',
+  AllOrNone: 'AllOrNone',
+  Conditional: 'Conditional',
+  keys: ['Limit','Noncompetitive','AllOrNone','Conditional',],
+  decoder: damlTypes.lazyMemo(function () { return jtv.oneOf(jtv.constant(exports.OrderType.Limit), jtv.constant(exports.OrderType.Noncompetitive), jtv.constant(exports.OrderType.AllOrNone), jtv.constant(exports.OrderType.Conditional)); }),
+  encode: function (__typed__) { return __typed__; },
 };
 
 

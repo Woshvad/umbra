@@ -17,13 +17,25 @@
 // §7.3 — order side (Clearing.daml line 31).
 export type Side = 'Buy' | 'Sell'
 
+// §7.3 (AUCT-01) — the order-type discriminator, byte-mirroring Clearing.daml's
+// `data OrderType = Limit | Noncompetitive | AllOrNone | Conditional`. ADDITIVE:
+// the §4 orders are plain `Limit`, so the new fields are inert until the wave-2
+// clearing math (09-02/09-03) — the pure functions below do NOT read them.
+export type OrderType = 'Limit' | 'Noncompetitive' | 'AllOrNone' | 'Conditional'
+
 // A flattened view of one order, decoupled from the Daml `Order` template so the
-// math is a pure function of plain data (Clearing.daml lines 45-50).
+// math is a pure function of plain data (Clearing.daml lines 45-50). The three
+// appended fields mirror the Daml OrderView additions; they are OPTIONAL here so
+// the existing §4 test literals (which omit them) stay valid and `orderType`
+// defaults semantically to `Limit`. Inert until 09-02/09-03 (no math change).
 export interface OrderView {
   desk: string
   side: Side
   quantity: number
   limit: number
+  orderType?: OrderType // AUCT-01 discriminator (defaults to Limit)
+  minQty?: number // AllOrNone/MAQ only (inert until 09-02)
+  firmIf?: number // Conditional only (inert until 09-03)
 }
 
 // §7.7 — the solver's verified output, re-checked on-ledger (Clearing.daml 37-41).

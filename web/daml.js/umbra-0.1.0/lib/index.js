@@ -7,4 +7,4 @@ function __export(m) {
 Object.defineProperty(exports, "__esModule", { value: true });
 var Umbra = require('./Umbra');
 exports.Umbra = Umbra;
-exports.packageId = 'ba79017a89c595cab162d9bab15ae17f0c979f3960d088c830ec7636caa0c861';
+exports.packageId = 'cb6868841df214064827686a172576c0ecd840dc678e43a3105787d4ef909c12';

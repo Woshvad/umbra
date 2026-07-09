@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Progress
-status: verifying
+status: executing
 stopped_at: Phase 9 UI-SPEC approved
-last_updated: "2026-07-09T15:09:14.387Z"
-last_activity: 2026-07-09 -- Completed 08-07 (WOW-04 live SSE rationale + RoundBrief + WOW-05 ProofPackButton)
+last_updated: "2026-07-09T15:15:09.219Z"
+last_activity: 2026-07-09 -- Phase 09 execution started
 progress:
   total_phases: 6
   completed_phases: 1
-  total_plans: 7
+  total_plans: 14
   completed_plans: 7
   percent: 17
 ---
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-25)
 
 **Core value:** The privacy money shot — three desks submit sealed orders blind to each other, an AI solver clears them at one uniform price ($100.00 on the §4 fixture), and the whole batch settles atomically in a single Canton transaction.
-**Current focus:** Phase 08 — demo-hardening
+**Current focus:** Phase 09 — auction-depth-live-viz
 
 ## Current Position
 
-Phase: 08 (demo-hardening) — ALL PLANS COMPLETE (7/7)
-Plan: 7 of 7 — DONE
-Status: Phase 08 execution complete; ready for phase verification
-Last activity: 2026-07-09 -- Completed 08-07 (WOW-04 live SSE rationale + RoundBrief + WOW-05 ProofPackButton)
+Phase: 09 (auction-depth-live-viz) — EXECUTING
+Plan: 1 of 7
+Status: Executing Phase 09
+Last activity: 2026-07-09 -- Phase 09 execution started
 
 ## Performance Metrics
 

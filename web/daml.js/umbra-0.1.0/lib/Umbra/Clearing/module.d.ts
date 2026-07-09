@@ -4,19 +4,34 @@
 /* eslint-disable @typescript-eslint/no-use-before-define */
 import * as jtv from '@mojotech/json-type-validation';
 import * as damlTypes from '@daml/types';
-/* eslint-disable-next-line @typescript-eslint/no-unused-vars */
-import * as damlLedger from '@daml/ledger';
 
 export declare type OrderView = {
   desk: damlTypes.Party;
   side: Side;
   quantity: damlTypes.Int;
   limit: damlTypes.Numeric;
+  orderType: OrderType;
+  minQty: damlTypes.Optional<damlTypes.Int>;
+  firmIf: damlTypes.Optional<damlTypes.Numeric>;
 };
 
 export declare const OrderView:
   damlTypes.Serializable<OrderView> & {
   }
+;
+
+
+export declare type OrderType =
+  | 'Limit'
+  | 'Noncompetitive'
+  | 'AllOrNone'
+  | 'Conditional'
+;
+
+export declare const OrderType:
+  damlTypes.Serializable<OrderType> & {
+  }
+& { readonly keys: OrderType[] } & { readonly [e in OrderType]: e }
 ;
 
 

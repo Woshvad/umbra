@@ -129,7 +129,7 @@ Scoped for milestone v2.0. Grounded in the **current** stack (Daml 3.4.11 + Cant
 ### Visualization (VIZ)
 
 - [x] **VIZ-01**: A live supply/demand crossing visualization assembles the aggregate curve as orders arrive and locks the clearing price at close *(09-04; CrossingChart assembling↔locked, curve.ts §4 marker intact — live assemble = end-of-phase human-check)*
-- [ ] **VIZ-02**: A privacy "time-machine" replay reconstructs each party's exact view across the round timeline (open→sealed→cleared→settled) from ledger events
+- [x] **VIZ-02**: A privacy "time-machine" replay reconstructs each party's exact view across the round timeline (open→sealed→cleared→settled) from ledger events
 - [ ] **VIZ-03**: A live three-node topology view shows each desk's order resident on its own Canton participant and the settlement transaction spanning all three atomically
 
 ### On-Chain / Canton DevNet (CHAIN)

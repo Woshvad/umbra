@@ -350,8 +350,8 @@ Plans:
 **Wave 2** *(blocked on Wave 1)*
 
 - [x] 10-03-PLAN.md — CRYP-02 tlock.ts: quicknet timelock seal/open + drand round metadata + labeled offline fallback + tests [CRYP-02]
-- [ ] 10-04-PLAN.md — CRYP-03 zk: reduced clearing.circom + build + ESM prove/verify + anchor hashes + §4 fixtures + accept/tamper-reject tests [CRYP-03]
-- [ ] 10-05-PLAN.md — Solver ledger (bond forfeit + proof anchor + currentOffset) + timemachine stage→offset map + regenerate/commit web/daml.js [CRYP-01, VIZ-02]
+- [x] 10-04-PLAN.md — CRYP-03 zk: reduced clearing.circom + build + ESM prove/verify + anchor hashes + §4 fixtures + accept/tamper-reject tests [CRYP-03]
+- [x] 10-05-PLAN.md — Solver ledger (bond forfeit + proof anchor + currentOffset) + timemachine stage→offset map + regenerate/commit web/daml.js [CRYP-01, VIZ-02]
 
 **Wave 3** *(blocked on 10-03, 10-04, 10-05)*
 
@@ -417,7 +417,7 @@ Build waves run in numeric order 8 → 9 → 10 → 11. Track A (Phase 12) runs 
 |-------|----------------|--------|-----------|
 | 8. Demo Hardening | 7/7 | Built · live UAT pending | 2026-07-09 |
 | 9. Auction Depth & Live Viz | 7/7 | Built · live UAT pending | 2026-07-09 |
-| 10. Cryptographic Privacy | 4/10 | In Progress|  |
+| 10. Cryptographic Privacy | 5/10 | In Progress|  |
 | 11. Settlement & Institutional Grade | 0/— | Not started | — |
 | 12. Real On-Chain (Canton DevNet) | 0/— | Not started (external gate) | — |
 | 13. Platform Baseline & Adjacent | 0/— | Not started (ongoing) | — |

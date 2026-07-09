@@ -283,7 +283,7 @@ Plans:
 
 **Wave 5** *(blocked on 08-05, 08-06)*
 
-- [ ] 08-07-PLAN.md — WOW-04 AgentRationale live SSE + RoundBrief + WOW-05 ProofPackButton on SettlementView [WOW-04, WOW-05]
+- [x] 08-07-PLAN.md — WOW-04 AgentRationale live SSE + RoundBrief + WOW-05 ProofPackButton on SettlementView [WOW-04, WOW-05]
 
 ### Phase 9: Auction Depth & Live Viz
 

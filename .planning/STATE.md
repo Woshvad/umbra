@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Progress
 status: executing
-stopped_at: Completed 08-06-PLAN.md (WOW-02 BreakTheAiPanel + WOW-03 NL sub-block + web solver.ts tamperClear/parseOrder)
-last_updated: "2026-07-09T13:47:00.000Z"
-last_activity: 2026-07-09 -- Completed 08-06 (WOW-02 BreakTheAiPanel on AgentView + WOW-03 NL sub-block in OrderTicket + web/src/solver.ts parseOrder/tamperClear)
+stopped_at: Completed 08-07-PLAN.md (WOW-04 AgentRationale live SSE + RoundBrief + WOW-05 ProofPackButton on SettlementView) — Phase 08 plans 7/7 complete
+last_updated: "2026-07-09T14:02:00.000Z"
+last_activity: 2026-07-09 -- Completed 08-07 (WOW-04 live SSE rationale + RoundBrief copy/download + WOW-05 ProofPackButton on SettlementView + web solver.ts rationaleStreamUrl/proofPackUrl/getBrief)
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 7
-  completed_plans: 6
+  completed_plans: 7
   percent: 0
 ---
 
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 
 ## Current Position
 
-Phase: 08 (demo-hardening) — EXECUTING
-Plan: 7 of 7
-Status: Ready to execute
-Last activity: 2026-07-09 -- Completed 08-06 (WOW-02 BreakTheAiPanel + WOW-03 NL sub-block + web solver.ts parseOrder/tamperClear)
+Phase: 08 (demo-hardening) — ALL PLANS COMPLETE (7/7)
+Plan: 7 of 7 — DONE
+Status: Phase 08 execution complete; ready for phase verification
+Last activity: 2026-07-09 -- Completed 08-07 (WOW-04 live SSE rationale + RoundBrief + WOW-05 ProofPackButton)
 
 ## Performance Metrics
 
@@ -72,6 +72,7 @@ Last activity: 2026-07-09 -- Completed 08-06 (WOW-02 BreakTheAiPanel + WOW-03 NL
 | Phase 08 P04 | 16 min | 3 tasks | 9 files |
 | Phase 08 P05 | 12 min | 3 tasks | 7 files |
 | Phase 08 P06 | 6 min | 3 tasks | 4 files |
+| Phase 08 P07 | ~8 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -117,6 +118,7 @@ Recent decisions affecting current work:
 - [Phase 08]: [08-02 / WOW-01]: PeekConsole fires a raw per-party JSON Ledger API v2 active-contracts POST as the selected desk's OWN token for a rival's Order/TradeConfirmation; empty []/403 rendered verbatim + red-square verdict. Pure lib/peek.ts (buildPeekRequest/classifyPeekResult/elideBearer) unit-tested; token never in body, node/CORS error rendered distinct from the privacy verdict (Pitfall 4). No operator token in the browser.
 - [Phase ?]: [08-03 / TRUST-02, WOW-03]: proposeClearing now imposes a Promise.race deadline (withTimeout rejects AgentTimeoutError into the existing catch -> deterministic §4 fallback); AGENT_TIMEOUT_MS env / AgentDeps.timeoutMs override, default 8000ms. Six-rung ladder (keyless/malformed/zod-invalid/disagreement/SDK-error/TIMEOUT) all clear 100.00, locked by a ladder-table test. parseOrder(text) mirrors proposeClearing (messages.parse + jsonSchemaOutputFormat + orderSchema.safeParse; NOT zodOutputFormat) -> validated {side,qty,limit}|null, key module-private, never auto-submits; POST /parse-order (zod .strict {text:min1max280}, 422 PARSE_FAILED, 400 INVALID_BODY) wired via AppDeps.parseOrder=agent.parseOrder. Secret sweep extended to /parse-order. 49 vitest green, tsc clean; /settle byte-unchanged.
 - [Phase 08]: [08-05 / TRUST-03, WOW-05]: NEW solver/src/proof.ts writeProofBundle/readProofBundle (node:crypto sha256) writes an immutable secret-free bundle to solver/proofs/<id>.json at settle — {roundId,timestamp,modelId,systemPromptHash=sha(SYSTEM_PROMPT),batchHash=sha(buildBatchMessage),rawAiProposal(numbers+rationale+source),deterministicRecompute,verified,clearingHash}; stores systemPromptHash NOT the raw prompt/key; roundId sanitized (path-traversal guard). Settle-time write is an ADDITIVE side effect in index.ts settleResult (calls agent.proposeClearing off-authority for provenance); api.ts /settle handler + ledger.ts settle() BYTE-UNCHANGED (0 deletions in api.ts). GET /round/:id/proof serves it read-only (404 absent). NEW solver/src/proofpack.ts renderProofPackHtml copies the deck :root tokens verbatim (#F4F1EA/#0A0A0A/#D6FB3C + Google-Fonts + -webkit-print-color-adjust:exact) with four bundles (clearing proof lime 100.00 hero + §4 fills A=10/B=8/C=2 / best-ex receipts / DvP finality legs A↔B 8@100·A↔C 2@100 + atomic stamp / AI decision bundle); generateProofPackPdf spawns Chrome→Edge --print-to-pdf, ENOENT→{pdf:false,html} window.print() fallback (zero new npm deps; execFile+writer injected, mocked in tests). GET /round/:id/proof-pack.pdf streams the PDF (attachment) or serves the HTML fallback; secret-free PROOFPACK_FAILED 500. 83 vitest green, tsc clean; §4 still $100.00.
+- [Phase 08]: [08-07 / WOW-04, WOW-05]: web/src/solver.ts gains rationaleStreamUrl(id)/proofPackUrl(id) (plain URLs off SOLVER_BASE_URL — no :4000, no auth header/credential; EventSource + <a download> consume them) + getBrief(id) (reuses getRound; brief? added to RoundResponse). AgentRationale gains an optional roundId: present + EventSource → opens the SSE stream, appends data deltas into the SAME ink panel (flame caret rides insertion), closes on the `done` event; error-before-any-token OR no roundId → shipped single-shot 26ms/char typewriter (identical look); onerror closes ES (no reconnect); reduced-motion honored (per-chunk append). AgentView passes roundId. NEW RoundBrief.tsx (post-settle 1px-ink block: server brief via getBrief + client fallback from settled preview mirroring composeBrief, no number drift; COPY BRIEF clipboard + DOWNLOAD BRIEF ↓ Blob .txt) + ProofPackButton.tsx (ink-ghost DOWNLOAD PROOF-PACK ↓ fetches proofPackUrl → Blob save pdf/html; ready/preparing/done/error + verbatim WOW-05 error copy). Both gated phase==='settled' below the Settlement CTA; new scoped .umbra-ink-ghost hover rule in index.css (ink-fill/paper-text, existing tokens; never red/lime, no new keyframe). New pure web/src/lib/solverUrls.test.ts (URL construction, no :4000, no credential). web build + 30 vitest green. Live stream/brief/PDF behavior deferred to end-of-phase human verification. Phase 08 COMPLETE (7/7).
 - [Phase 08]: [08-06 / WOW-02, WOW-03]: web/src/solver.ts gains parseOrder(text)→POST /parse-order and tamperClear(id,mode)→POST /round/:id/tamper-clear (both reuse SOLVER_BASE_URL/call<T>; no port literal, no operator/Anthropic credential in the bundle). NEW web/src/components/BreakTheAiPanel.tsx mounted on AgentView BELOW the shipped proposal/rationale grid — DEMO · ADVERSARIAL tag, Wrong price/Over-fill toggle, red-ghost FORCE A WRONG CLEAR → tamperClear → verbatim on-ledger reject rendered on the ink evidence surface (never summarized), then RUN CORRECT CLEAR → settle() → lime 100.00 34px umbra-slam sub-reveal + VERIFIED · SETTLED @ 100.00 red-square row; SolverError OFFLINE → graceful caption; no confirm dialog (tamper is atomic/harmless). Scoped .break-ai-force:hover CSS rule added to index.css (red fill/paper text, existing tokens only — inline styles can't do :hover). OrderTicket gains an NL sub-block ABOVE the side toggle: plain-English input (1px ink underline) + PARSE → calls parseOrder → PREFILLS side/qty/limit (Side enum, qty→String, limit→toFixed(2)) + PROPOSED BY CLAUDE — REVIEW & SEAL note; 422/SolverError → verbatim error copy; SEAL ORDER stays the SINGLE confirm (onParse NEVER calls onSeal) and ticketLocked one-per-round lock is byte-unchanged. web build + 21 vitest green; grep-clean of :4000/operator-token/Anthropic-key literals.
 - [Phase 08]: [08-04 / WOW-04, WOW-02]: agent.streamRationale(views,{onDelta,onDone,onError}) proxies client.messages.stream().on('text'); keyless/stream-less/thrown -> onError EXACTLY once, never leaking key/prompt (AgentClient.messages.stream is OPTIONAL so a parse-only fake still typechecks; call through client.messages.stream to keep the SDK `this`). GET /round/:id/rationale-stream is SSE (NOT wrap()): text/event-stream data: delta frames + `event: done` sentinel; onError writes ONE deterministic composeBrief fallback frame then ends (no sentinel). New pure brief.ts composeBrief(price,matched,allocs,rationale) -> shareable NL summary, secret-free, no number drift; surfaced additively as `brief` on the terminal-settled GET body. WOW-02: DEDICATED ledger.tamperClear(roundId,'wrong-price'|'overfill') copies settle()'s exact cid-gathering but perturbs ONLY numeric values (badPrice=p*-1 / Buy filledQty+2, Pitfall 3), attempts Round.Clear, catches the verbatim submitAndWait reject, resolves {rejected,error} — never throws, never settles; POST /round/:id/tamper-clear (zod .strict {mode}) returns the verbatim body. settle() (ledger.ts + api.ts) BYTE-UNCHANGED (git-diff verified); §4 still $100.00. Overfill's faithful first-firing assert is 'allocations do not match recomputed §8' (Daml checks alloc-match before conservation). Secret sweep extended to /rationale-stream + /tamper-clear. 62 vitest green, tsc clean.
 
@@ -144,6 +146,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-09T13:47:00.000Z
-Stopped at: Completed 08-06-PLAN.md (WOW-02 BreakTheAiPanel + WOW-03 NL sub-block + web solver.ts tamperClear/parseOrder)
+Last session: 2026-07-09T14:02:00.000Z
+Stopped at: Completed 08-07-PLAN.md (WOW-04 live SSE rationale + RoundBrief + WOW-05 ProofPackButton) — Phase 08 plans 7/7 complete
 Resume file: None

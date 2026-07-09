@@ -92,8 +92,8 @@ Scoped for milestone v2.0. Grounded in the **current** stack (Daml 3.4.11 + Cant
 - [x] **WOW-01**: A judge holding one desk's token can attempt to fetch a rival desk's `Order` via the raw JSON Ledger API v2 in the UI and see it return empty/403 live — privacy proven at the wire, not in render logic
 - [x] **WOW-02**: A demo control can force the solver to propose a wrong clearing price; on-ledger `Round.Clear` re-verification rejects the transaction on screen while the correct deterministic clear still settles
 - [x] **WOW-03**: A desk can enter a plain-English order ("buy up to 10 under 101") and Claude parses it into a validated structured sealed order for confirmation
-- [ ] **WOW-04**: The solver streams its clearing rationale as it computes and produces a shareable post-round natural-language brief
-- [ ] **WOW-05**: After settlement, one click downloads an on-brand proof-pack PDF (clearing proof + per-desk best-ex receipts + finality record + AI decision bundle)
+- [x] **WOW-04**: The solver streams its clearing rationale as it computes and produces a shareable post-round natural-language brief
+- [x] **WOW-05**: After settlement, one click downloads an on-brand proof-pack PDF (clearing proof + per-desk best-ex receipts + finality record + AI decision bundle)
 - [ ] **WOW-06**: A cost-of-leakage simulator runs the same orders through a simulated public order book (front-run/slippage → $ lost) beside Umbra's sealed clear ($0 leaked)
 - [ ] **WOW-07**: A judge/guest can become a 4th desk via a QR → mobile page, submit a sealed bid, and see only their own fill
 

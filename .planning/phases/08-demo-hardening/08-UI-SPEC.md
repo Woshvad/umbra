@@ -1,7 +1,8 @@
 ---
 phase: 8
 slug: demo-hardening
-status: draft
+status: approved
+reviewed_at: 2026-07-09
 shadcn_initialized: false
 preset: none
 design_system: "Umbra design/ comp (binding) + web/tailwind.config.ts tokens (frozen from P3/P6, UI-07 = 24/24)"

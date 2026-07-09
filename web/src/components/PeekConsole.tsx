@@ -150,7 +150,7 @@ export default function PeekConsole({ activeDesk }: Props) {
   const running = phase === 'running'
 
   return (
-    <section style={{ margin: '40px 0 0', maxWidth: '760px' }}>
+    <section style={{ margin: '42px 0 0', maxWidth: '760px' }}>
       {/* Sub-label + rule — section-marker rhythm */}
       <div
         className="font-body text-10 uppercase opacity-55"

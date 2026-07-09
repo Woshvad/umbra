@@ -132,7 +132,7 @@ export default function BreakTheAiPanel({ roundId, offline }: Props) {
   const price = (clearingPrice ?? 100).toFixed(2)
 
   return (
-    <section style={{ margin: '56px 0 0', maxWidth: '760px' }}>
+    <section style={{ margin: '48px 0 0', maxWidth: '760px' }}>
       {/* Panel header — sub-label + DEMO · ADVERSARIAL tag pushed right */}
       <div className="flex items-center" style={{ gap: '14px' }}>
         <span

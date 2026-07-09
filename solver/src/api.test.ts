@@ -15,6 +15,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { AddressInfo } from 'node:net'
 import type { Server } from 'node:http'
+import { writeFileSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import {
   computeClearing,
   matchedAt,
@@ -108,6 +111,8 @@ const makeDeps = (overrides: Partial<AppDeps>): AppDeps => ({
   composeBrief,
   // TRUST-03: proof-bundle reader — defaults to null (no bundle); /proof tests override.
   readProofBundle: vi.fn(async () => null),
+  // WOW-05: proof-pack builder — defaults to the on-brand HTML fallback; /proof-pack.pdf tests override.
+  buildProofPack: vi.fn(async () => ({ pdf: false as const, html: '<html>fallback</html>' })),
   // Real pure §8 helpers — solve-preview asserts true deterministic clearing.
   computeClearing,
   matchedAt,
@@ -802,6 +807,85 @@ describe('solver §11 HTTP API', () => {
     expect(res.status).toBe(200)
     expect(JSON.stringify(body)).not.toContain(SENTINEL_TOKEN)
     expect(JSON.stringify(body)).not.toContain(SENTINEL_API_KEY)
+  })
+
+  it('GET /round/:id/proof-pack.pdf streams a PDF with attachment disposition (WOW-05)', async () => {
+    // A real temp file the mocked builder points at — the handler streams it as application/pdf.
+    const pdfPath = join(tmpdir(), `umbra-proofpack-test-${Date.now()}.pdf`)
+    writeFileSync(pdfPath, '%PDF-1.4 fake proof pack')
+    const buildProofPack = vi.fn(async () => ({ pdf: true as const, path: pdfPath }))
+    const deps = makeDeps({ buildProofPack })
+    const started = await listen(deps)
+    server = started.server
+
+    try {
+      const res = await fetch(`${started.base}/round/R1/proof-pack.pdf`)
+      const text = await res.text()
+
+      expect(res.status).toBe(200)
+      expect(res.headers.get('content-type')).toContain('application/pdf')
+      expect(res.headers.get('content-disposition')).toContain('attachment')
+      expect(res.headers.get('content-disposition')).toContain('Umbra-Proof-Pack-R1.pdf')
+      expect(text).toContain('%PDF-1.4')
+      expect(buildProofPack).toHaveBeenCalledWith('R1')
+    } finally {
+      rmSync(pdfPath, { force: true })
+    }
+  })
+
+  it('GET /round/:id/proof-pack.pdf serves on-brand HTML when Chrome cannot spawn (fallback)', async () => {
+    const html = '<html><style>:root{--paper:#F4F1EA;--ink:#0A0A0A;--lime:#D6FB3C;}</style>proof</html>'
+    const buildProofPack = vi.fn(async () => ({ pdf: false as const, html }))
+    const deps = makeDeps({ buildProofPack })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/proof-pack.pdf`)
+    const body = await res.text()
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toContain('text/html')
+    expect(body).toBe(html)
+    // The on-brand fallback still carries the binding brand tokens.
+    expect(body).toContain('#D6FB3C')
+  })
+
+  it('GET /round/:id/proof-pack.pdf returns a secret-free PROOFPACK_FAILED 500 on builder error', async () => {
+    const buildProofPack = vi.fn(async () => {
+      void SENTINEL_API_KEY
+      void SENTINEL_TOKEN
+      throw new Error(`chrome spawn failed with token ${SENTINEL_TOKEN}`)
+    })
+    const deps = makeDeps({ buildProofPack })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/proof-pack.pdf`)
+    const body = await readJson(res)
+
+    expect(res.status).toBe(500)
+    expect(body.error).toHaveProperty('code', 'PROOFPACK_FAILED')
+    // The verbatim internal error (which held the sentinel) never reaches the client.
+    expect(JSON.stringify(body)).not.toContain(SENTINEL_TOKEN)
+    expect(JSON.stringify(body)).not.toContain(SENTINEL_API_KEY)
+  })
+
+  it('GET /round/:id/proof-pack.pdf (fallback HTML) never leaks the key or operator token', async () => {
+    const buildProofPack = vi.fn(async () => {
+      void SENTINEL_API_KEY
+      void SENTINEL_TOKEN
+      return { pdf: false as const, html: '<html>on-brand secret-free proof</html>' }
+    })
+    const deps = makeDeps({ buildProofPack })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/proof-pack.pdf`)
+    const body = await res.text()
+
+    expect(res.status).toBe(200)
+    expect(body).not.toContain(SENTINEL_API_KEY)
+    expect(body).not.toContain(SENTINEL_TOKEN)
   })
 
   it('CORS is scoped to http://localhost:5173 and never wildcard for a foreign origin', async () => {

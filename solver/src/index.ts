@@ -71,6 +71,9 @@ export interface BuildDepsArgs {
   // boot-wiring unit test (index.test.ts) need not inject it; buildDeps defaults it to a
   // null reader. main() supplies the real proof.readProofBundle.
   readProofBundle?: AppDeps['readProofBundle']
+  // WOW-05: compose + render the on-brand proof-pack PDF (proofpack.ts) for a settled round.
+  // Optional for the same reason; buildDeps defaults it to the on-brand HTML fallback.
+  buildProofPack?: AppDeps['buildProofPack']
 }
 
 // Assemble the AppDeps so the API routes are wired to the ledger + clock.
@@ -86,6 +89,8 @@ export const buildDeps = (args: BuildDepsArgs): AppDeps => {
     args
   // TRUST-03: default to a null reader when not injected (index.test.ts boot-wiring path).
   const readProofBundle: AppDeps['readProofBundle'] = args.readProofBundle ?? (() => null)
+  // WOW-05: default to the on-brand HTML fallback when not injected (index.test.ts path).
+  const buildProofPack: AppDeps['buildProofPack'] = args.buildProofPack ?? (async () => ({ pdf: false as const, html: '' }))
   return {
     // POST /round → ledger create THEN timer start (both).
     openRound: async (roundId, desks, windowSeconds): Promise<RoundView> => {
@@ -115,6 +120,8 @@ export const buildDeps = (args: BuildDepsArgs): AppDeps => {
     composeBrief,
     // TRUST-03: read-only decision proof bundle for GET /round/:id/proof.
     readProofBundle,
+    // WOW-05: on-brand proof-pack PDF for GET /round/:id/proof-pack.pdf.
+    buildProofPack,
     computeClearing: math.computeClearing,
     matchedAt: math.matchedAt,
     demandAt: math.demandAt,
@@ -140,6 +147,9 @@ const main = async (): Promise<void> => {
   // TRUST-03: the decision proof bundle writer/reader (proof.ts). The write is an ADDITIVE
   // side effect in settleResult below — the deterministic settle path stays byte-unchanged.
   const proof = await import('./proof.js')
+  // WOW-05: the on-brand proof-pack renderer + headless-Chrome PDF spawn (proofpack.ts).
+  const proofpack = await import('./proofpack.js')
+  const { fileURLToPath } = await import('node:url')
 
   // Construct the real AI Solver Agent ONCE at boot. No `client` is passed — agent.ts
   // resolves its own module-private ANTHROPIC_API_KEY (or runs keyless: the §4 fixture
@@ -226,6 +236,35 @@ const main = async (): Promise<void> => {
     }
   }
 
+  // WOW-05: compose the on-brand proof-pack for a settled round from the persisted proof bundle
+  // + the per-desk TradeConfirmations + the shareable brief, then render + spawn a PDF. Reads
+  // ledger truth (restart-proof); interpolates only numbers/hashes/brief — never a secret.
+  const buildProofPack: AppDeps['buildProofPack'] = async (roundId) => {
+    const bundle = proof.readProofBundle(roundId)
+    const confs = await ledger.readTradeConfirmations(roundId)
+    const allocations = confs.map((c) => ({ desk: c.desk, side: c.side, filledQty: c.filledQty }))
+    const clearingPrice = bundle?.deterministicRecompute.clearingPrice ?? confs[0]?.clearingPrice ?? 0
+    const matchedVolume = confs.filter((c) => c.side === 'Buy').reduce((sum, c) => sum + c.filledQty, 0)
+    const rationale = bundle?.rawAiProposal.rationale ?? ''
+    const brief = composeBrief(clearingPrice, matchedVolume, allocations, rationale)
+    const html = proofpack.renderProofPackHtml({
+      clearingPrice,
+      matchedVolume,
+      allocations,
+      brief,
+      aiBundle: {
+        modelId: bundle?.modelId ?? 'claude-haiku-4-5',
+        verified: bundle?.verified ?? false,
+        source: bundle?.rawAiProposal.source,
+        systemPromptHash: bundle?.systemPromptHash,
+        clearingHash: bundle?.clearingHash,
+      },
+    })
+    const safeId = roundId.replace(/[^A-Za-z0-9_.-]/g, '_')
+    const outPath = fileURLToPath(new URL(`../.tmp/Umbra-Proof-Pack-${safeId}.pdf`, import.meta.url))
+    return proofpack.generateProofPackPdf(html, outPath)
+  }
+
   const deps = buildDeps({
     ledger: {
       openRound: openRoundView,
@@ -253,6 +292,8 @@ const main = async (): Promise<void> => {
     composeBrief,
     // TRUST-03: serve the settle-time decision proof bundle read-only.
     readProofBundle: proof.readProofBundle,
+    // WOW-05: serve the on-brand proof-pack PDF (window.print() HTML fallback).
+    buildProofPack,
   })
 
   const app = createApp(deps)

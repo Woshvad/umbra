@@ -107,6 +107,12 @@ export interface AppDeps {
   // SECRET-FREE (systemPromptHash instead of the prompt; never the key/token) — GET /round/:id/proof
   // serves it verbatim. May be sync (proof.ts) or async (a test stub) — the handler awaits it.
   readProofBundle: (roundId: string) => ProofBundle | null | Promise<ProofBundle | null>
+  // WOW-05: compose + render the on-brand proof-pack for a settled round, then spawn headless
+  // Chrome/Edge to a PDF (proofpack.ts). Resolves { pdf:true, path } when a PDF was rendered, or
+  // { pdf:false, html } when the browser could not be spawned (the caller serves the on-brand HTML
+  // for window.print()). Composed from readProofBundle + the settled numbers + composeBrief; it
+  // interpolates only numbers/hashes/brief — NEVER the key/token/prompt (T-08-05-PACK).
+  buildProofPack: (roundId: string) => Promise<{ pdf: true; path: string } | { pdf: false; html: string }>
   // pure §8 helpers from auction.ts
   computeClearing: (orders: OrderView[]) => ClearingResult
   matchedAt: (orders: OrderView[], p: number) => number
@@ -159,6 +165,9 @@ const tamperClearBody = z
 
 // Statuses that mean the round has already been cleared/settled (double-settle guard).
 const TERMINAL_STATUSES = new Set(['Cleared', 'Settled'])
+
+// WOW-05 proof-pack failure copy (08-UI-SPEC error row) — secret-free, user-facing.
+const PROOFPACK_ERROR_COPY = "Proof-pack couldn't be generated. Check the solver on the configured port and try again."
 
 // Wrap an async handler so a rejected promise forwards to the error middleware.
 // express 4 does NOT auto-catch async rejections — this is the required bridge.
@@ -470,6 +479,32 @@ export const createApp = (deps: AppDeps): Express => {
         throw new ApiError(404, 'PROOF_NOT_FOUND', `no decision proof bundle for round ${id}`)
       }
       res.json(bundle)
+    }),
+  )
+
+  // GET /round/:id/proof-pack.pdf — WOW-05 one-click on-brand proof-pack. deps.buildProofPack
+  // renders the on-brand HTML (clearing proof + best-ex receipts + finality record + AI decision
+  // bundle) and spawns headless Chrome/Edge to a PDF. If a PDF was rendered, stream it as a
+  // download (Content-Disposition: attachment); if the browser could not be spawned, serve the
+  // on-brand HTML (200, text/html) so the browser can window.print() (RESEARCH Open Q2 fallback).
+  // Any failure → a secret-free PROOFPACK_FAILED 500 with the UI-SPEC error copy.
+  app.get(
+    '/round/:id/proof-pack.pdf',
+    wrap(async (req, res) => {
+      const { id } = req.params
+      const result = await deps.buildProofPack(id).catch(() => {
+        throw new ApiError(500, 'PROOFPACK_FAILED', PROOFPACK_ERROR_COPY)
+      })
+      if (result.pdf) {
+        res.setHeader('Content-Type', 'application/pdf')
+        res.setHeader('Content-Disposition', `attachment; filename="Umbra-Proof-Pack-${id}.pdf"`)
+        await new Promise<void>((resolve, reject) => {
+          res.sendFile(result.path, (err) => (err ? reject(err) : resolve()))
+        })
+        return
+      }
+      // Graceful fallback: the on-brand HTML for window.print().
+      res.status(200).type('html').send(result.html)
     }),
   )
 

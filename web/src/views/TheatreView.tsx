@@ -1,5 +1,5 @@
 // Auction Theatre (view 03) — UI-SPEC "03 — AUCTION THEATRE" (lines 172-192).
-// Operator plane (:4000) via web/src/solver.ts; NO operator token, NO @daml/react
+// Operator plane (:4100) via web/src/solver.ts; NO operator token, NO @daml/react
 // context (the solver service is the sole Operator-authority proxy — CONTEXT D6 /
 // threat T-06-01). Dark INVERTED surface (#0A0A0A bg / #F4F1EA text).
 //
@@ -11,11 +11,11 @@
 //
 // Close & Solve = POST /round/:id/close then GET /round/:id/solve-preview — the reveal
 // reads solve-preview (NOT GET, which only attaches result fields at a terminal status
-// — RESEARCH Pitfall 4). A :4000 reject → SolverError 'OFFLINE' → graceful caption;
+// — RESEARCH Pitfall 4). A :4100 reject → SolverError 'OFFLINE' → graceful caption;
 // Privacy still renders.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { OperatorViewState } from '../operatorState'
-import { closeRound, getRound, solvePreview, SolverError } from '../solver'
+import { closeRound, getRound, solvePreview, SolverError, OFFLINE_CAPTION } from '../solver'
 import CountdownRing from '../components/CountdownRing'
 import CrossingChart from '../components/CrossingChart'
 import PriceReveal from '../components/PriceReveal'
@@ -283,7 +283,7 @@ function OfflineCaption() {
       className="font-mono text-13 uppercase"
       style={{ letterSpacing: '.12em', opacity: 0.65, lineHeight: 1.6, maxWidth: '560px' }}
     >
-      SOLVER OFFLINE — START THE SERVICE ON :4000
+      {OFFLINE_CAPTION}
     </p>
   )
 }

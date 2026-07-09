@@ -1,5 +1,5 @@
 // Solver Agent (view 04) — UI-SPEC "04 — SOLVER AGENT" (lines 196-210). Operator
-// plane (:4000) via the lifted SolvePreviewResponse; NO operator token, NO @daml/react
+// plane (:4100) via the lifted SolvePreviewResponse; NO operator token, NO @daml/react
 // context (the solver service is the sole Operator-authority proxy — threat T-06-01).
 //
 // When a `preview` is present: the 2-col grid — left AgentProposal (the proposal list +
@@ -7,6 +7,7 @@
 // caret + the rank-1 competing-agents row). Empty state = the verbatim "No proposal yet"
 // paragraph. Offline → the graceful SOLVER OFFLINE caption (Privacy still renders).
 import type { OperatorViewState } from '../operatorState'
+import { OFFLINE_CAPTION } from '../solver'
 import AgentProposal from '../components/AgentProposal'
 import AgentRationale from '../components/AgentRationale'
 
@@ -36,7 +37,7 @@ export default function AgentView({ preview, offline }: Props) {
           className="font-mono text-13 uppercase"
           style={{ letterSpacing: '.12em', opacity: 0.65, lineHeight: 1.6, maxWidth: '560px' }}
         >
-          SOLVER OFFLINE — START THE SERVICE ON :4000
+          {OFFLINE_CAPTION}
         </p>
       ) : preview ? (
         <div

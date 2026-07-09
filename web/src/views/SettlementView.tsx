@@ -1,5 +1,5 @@
 // Settlement (view 05) — UI-SPEC "05 — SETTLEMENT" (lines 214-232). Operator plane
-// (:4000) for the AGGREGATE via web/src/solver.ts; NO operator token, NO @daml/react
+// (:4100) for the AGGREGATE via web/src/solver.ts; NO operator token, NO @daml/react
 // context (the solver service is the sole Operator-authority proxy — threat T-06-01).
 //
 // THE SECOND WOW BEAT (RESEARCH Pattern 7, non-negotiable feel): on SETTLE ATOMICALLY
@@ -11,12 +11,12 @@
 // The aggregate legs + before/after balances are derived from preview.allocations via
 // lib/balance.deskBalancesFromAllocations — reading the auction.ts-verified Allocation
 // fields {desk, side, filledQty}. At settleProgress=1 the balances are the §4 finals
-// BLUEROCK 10/4000 · MERIDIAN 12/1800 · HALWARD 13/1200. A :4000 reject → SolverError
+// BLUEROCK 10/4000 · MERIDIAN 12/1800 · HALWARD 13/1200. A :4100 reject → SolverError
 // 'OFFLINE' → graceful caption; Privacy still renders.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { OperatorViewState } from '../operatorState'
 import type { SolvePreviewResponse } from '../solver'
-import { settle, SolverError } from '../solver'
+import { settle, SolverError, OFFLINE_CAPTION } from '../solver'
 import { codeForParty } from '../desks'
 import { deskBalancesFromAllocations, type DeskBalances } from '../lib/balance'
 import DvpLegs, { type DvpLeg } from '../components/DvpLegs'
@@ -66,7 +66,7 @@ function legsFromPreview(preview: SolvePreviewResponse): DvpLeg[] {
     }))
 }
 
-// Build the before→after balance rows from the allocations (the aggregate via :4000).
+// Build the before→after balance rows from the allocations (the aggregate via :4100).
 function balanceRowsFromPreview(preview: SolvePreviewResponse): BalanceRow[] {
   const after = deskBalancesFromAllocations(codeAllocations(preview), preview.clearingPrice, BEFORE)
   return DESK_ORDER.map((code) => ({
@@ -151,7 +151,7 @@ export default function SettlementView({
           className="font-mono text-13 uppercase"
           style={{ letterSpacing: '.12em', opacity: 0.65, lineHeight: 1.6, maxWidth: '560px' }}
         >
-          SOLVER OFFLINE — START THE SERVICE ON :4000
+          {OFFLINE_CAPTION}
         </p>
       ) : preview ? (
         <div

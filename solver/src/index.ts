@@ -21,9 +21,9 @@ import { createApp, type AppDeps, type RoundView } from './api.js'
 import type { Clock } from './clock.js'
 
 // Default window / port (overridable via env). ROUND_SECONDS drives the auto-close
-// timer; SOLVER_PORT is the :4000 bind.
+// timer; SOLVER_PORT is the :4100 bind.
 export const DEFAULT_ROUND_SECONDS = 60
-export const DEFAULT_SOLVER_PORT = 4000
+export const DEFAULT_SOLVER_PORT = 4100
 
 // The ledger functions index.ts needs to wire into the API + clock. The unit test
 // injects spies for these; main() supplies the real ledger.ts implementations.

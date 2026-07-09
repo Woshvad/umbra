@@ -10,7 +10,7 @@
 // per-desk signed fill row from preview.allocations (signed by side: Buy + #2B3AF2,
 // Sell − #FF3D9A, 0 rgba(10,10,10,.4)). §4: BLUEROCK +10 · MERIDIAN −8 · HALWARD −2.
 //
-// Operator-plane DISPLAY only: it reads the lifted SolvePreviewResponse (from :4000 via
+// Operator-plane DISPLAY only: it reads the lifted SolvePreviewResponse (from :4100 via
 // web/src/solver.ts). No operator token, no @daml/react context here (threat T-06-01).
 import type { SolvePreviewResponse } from '../solver'
 import { codeForParty } from '../desks'

@@ -1,4 +1,4 @@
-// web/src/solver.ts — the OPERATOR-plane client (:4000). A thin typed `fetch`
+// web/src/solver.ts — the OPERATOR-plane client (:4100). A thin typed `fetch`
 // wrapper that type-mirrors the frozen solver/src/api.ts response shapes (Phases
 // 4/5). Theatre / Agent / Settlement drive the round through THIS module; the
 // browser NEVER holds the Operator token — the solver service is the sole
@@ -12,8 +12,25 @@
 // deterministic core, not from Daml decimals (RESEARCH Pitfall 2).
 
 // Single drift const + comment (mirrors web/src/config.ts). Override with VITE_SOLVER_URL.
+// This URL default is the SINGLE source of truth for the solver port; every on-screen
+// caption DERIVES the port from it (never a second literal — UI-SPEC Reconciliation Note 2).
 export const SOLVER_BASE_URL: string =
-  import.meta.env.VITE_SOLVER_URL ?? 'http://localhost:4000'
+  import.meta.env.VITE_SOLVER_URL ?? 'http://localhost:4100'
+
+// The solver port, parsed ONCE from SOLVER_BASE_URL (VITE_SOLVER_URL overrides). Falls
+// back to '4100' if the URL is malformed — never a hard-coded duplicate elsewhere.
+export const solverPort: string = (() => {
+  try {
+    return new URL(SOLVER_BASE_URL).port || '4100'
+  } catch {
+    return '4100'
+  }
+})()
+
+// The single offline caption shown across ALL solver-plane surfaces (Theatre / Agent /
+// Settlement). Reads the derived port so it can never drift from the real bind
+// (UI-SPEC Copywriting "Offline caption" row — {live port}).
+export const OFFLINE_CAPTION = `SOLVER OFFLINE — START THE SERVICE ON :${solverPort}`
 
 // ── Response types (mirror solver/src/api.ts + auction.ts exactly) ──────────────
 // curve point — from buildCurve (api.ts lines 115-123).
@@ -98,7 +115,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   } catch {
     // Network failure = solver offline (the CONTEXT "solver offline" state). Do NOT
     // interpolate the attempted URL/headers into the message (T-06-02 / T-06-03).
-    throw new SolverError(0, 'OFFLINE', 'SOLVER OFFLINE — START THE SERVICE ON :4000')
+    throw new SolverError(0, 'OFFLINE', OFFLINE_CAPTION)
   }
   const body: unknown = await res.json().catch(() => ({}))
   if (!res.ok) {

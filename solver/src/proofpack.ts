@@ -21,7 +21,7 @@
 
 import { execFile as nodeExecFile } from 'node:child_process'
 import { writeFileSync as nodeWriteFileSync, mkdirSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { join, dirname } from 'node:path'
 import type { Allocation } from './auction.js'
 
@@ -229,9 +229,14 @@ const runBrowser = (
   outPath: string,
 ): Promise<void> =>
   new Promise((resolve, reject) => {
+    // Build the source URL with pathToFileURL — string-concatenating `file://` + a native
+    // Windows path (C:\Users\...) yields `file://C:\...`, which Chrome parses with `C:` as
+    // the URL host and backslashes as invalid separators, so the page never loads and the
+    // PDF silently degrades to the HTML fallback (WR-01). pathToFileURL emits a correct
+    // `file:///C:/Users/...` on Windows and `file:///...` on POSIX.
     execFileFn(
       browser,
-      ['--headless=new', '--disable-gpu', '--no-pdf-header-footer', `--print-to-pdf=${outPath}`, `file://${htmlPath}`],
+      ['--headless=new', '--disable-gpu', '--no-pdf-header-footer', `--print-to-pdf=${outPath}`, pathToFileURL(htmlPath).href],
       (err) => (err ? reject(err) : resolve()),
     )
   })

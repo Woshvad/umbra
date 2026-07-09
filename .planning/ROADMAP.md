@@ -260,13 +260,12 @@ Milestone v1.0 shipped and proved the privacy money shot end-to-end. v2.0 harden
   4. The §8 fixtures run as a CI golden-eval suite (green on the $100.00 case); with the Anthropic API disabled a round still clears deterministically at $100.00; every round persists an immutable decision proof bundle (TRUST-01, TRUST-02, TRUST-03).
   5. After settlement, one click downloads a proof-pack PDF (clearing proof + per-desk receipts + AI decision bundle) (WOW-05).
 
-
 **Plans**: 7 plans (5 waves)
 Plans:
 
 **Wave 1**
 
-- [ ] 08-01-PLAN.md — Foundation: :4000→:4100 port-drift fix + TRUST-01 CI (golden vitest + daml test) + gitignore solver/proofs/ + web/.env.example [TRUST-01]
+- [x] 08-01-PLAN.md — Foundation: :4000→:4100 port-drift fix + TRUST-01 CI (golden vitest + daml test) + gitignore solver/proofs/ + web/.env.example [TRUST-01]
 - [ ] 08-02-PLAN.md — WOW-01 try-to-peek adversarial privacy console on PrivacyView (raw v2 rival query → []/403 verdict) [WOW-01]
 
 **Wave 2** *(blocked on 08-01)*
@@ -359,7 +358,7 @@ Build waves run in numeric order 8 → 9 → 10 → 11. Track A (Phase 12) runs 
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 8. Demo Hardening | 0/7 | Planned | — |
+| 8. Demo Hardening | 1/7 | In Progress|  |
 | 9. Auction Depth & Live Viz | 0/— | Not started | — |
 | 10. Cryptographic Privacy | 0/— | Not started | — |
 | 11. Settlement & Institutional Grade | 0/— | Not started | — |

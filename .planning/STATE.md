@@ -4,13 +4,13 @@ milestone: v2.0
 milestone_name: Progress
 status: executing
 stopped_at: Phase 8 UI-SPEC approved
-last_updated: "2026-07-09T11:05:57.416Z"
-last_activity: 2026-07-09 — Milestone v2.0 started
+last_updated: "2026-07-09T11:24:43.861Z"
+last_activity: 2026-07-09 -- Phase 08 execution started
 progress:
   total_phases: 6
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 7
+  completed_plans: 1
   percent: 0
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-25)
 
 **Core value:** The privacy money shot — three desks submit sealed orders blind to each other, an AI solver clears them at one uniform price ($100.00 on the §4 fixture), and the whole batch settles atomically in a single Canton transaction.
-**Current focus:** MILESTONE v2.0 — Production Hardening & Real On-Chain (defining requirements → roadmap; 6 phases, 38 requirements).
+**Current focus:** Phase 08 — demo-hardening
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
+Phase: 08 (demo-hardening) — EXECUTING
+Plan: 2 of 7
 Status: Ready to execute
-Last activity: 2026-07-09 — Milestone v2.0 started
+Last activity: 2026-07-09 -- Phase 08 execution started
 
 ## Performance Metrics
 
@@ -66,6 +66,7 @@ Last activity: 2026-07-09 — Milestone v2.0 started
 | Phase 06 P03 | 5min | 2 tasks | 4 files |
 | Phase 06 P04 | 4min | 2 tasks | 7 files |
 | Phase 07 P02 | 6 min | 2 tasks | 3 files |
+| Phase 08 P01 | 12min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -106,6 +107,8 @@ Recent decisions affecting current work:
 - [06-03 / UI-04, UI-05]: 03 Auction Theatre on the operator plane (:4000) — CountdownRing (hand-rolled 280×280 SVG, CIRC=753.98, stroke-dashoffset=753.98*(1-s/60), red≤10s, 84px mono; pure presentation of `seconds`, the clock lives in TheatreView). TheatreView: 1s setInterval 60→0 auto-fires Close&Solve at 0; Close&Solve = closeRound then solvePreview (NOT GET — Pitfall 4); SOLVER OFFLINE caption on a SolverError 'OFFLINE'; interval cleaned up on unmount. CrossingChart (UI-05, no chart lib): viewBox 0 0 480 360, step supply (animate-umbra-draw, dasharray 640) + dashed demand derived from the LIVE solve-preview curve via lib/curve sx/sy (NOT hard-coded binding polylines), p* rule/dropline/marker positioned by crossingPoint(curve,price,vol)→(296,160) for §4. PriceReveal: lime #D6FB3C 120px hero slab + animate-umbra-slam + red skewX sliver, "1 for all" sub-stats. Solved state = COMPUTING (animate-umbra-pulse) → 2-col chart+reveal grid. No operator token/no @daml/react context in TheatreView/CountdownRing/CrossingChart/PriceReveal (grep-clean, T-06-01). web build + 11 vitest green. CrossingChart reused by 06-04 (AgentView).
 - [Phase ?]: [06-01]: web/src/solver.ts is the operator-plane :4000 fetch client (VITE_SOLVER_URL) mirroring solver/src/api.ts; SolverError throws OFFLINE on network reject — no operator token/no @daml/react context in the bundle. Pure lib helpers (curve crossing→296/160, deskBalancesFromAllocations→§4 finals, badgeLabel+parseSolvePreview) vitest@2.1.9-tested. tailwind: umbraLeg + fontSize literals + umbra-draw/pulse/caret/leg aliases (existing values byte-unchanged). Nav 5-tab; App routes 5 + lifts roundId(R1)/phase/preview/offline via operatorState.ts; 4 stub views; Privacy untouched. build+11 vitest green.
 - [Phase ?]: 06-04: Settlement plays via a SINGLE rAF settleProgress driving ALL DvP legs + balance lerps simultaneously; aggregate derived from solver allocations with Allocation shape confirmed vs auction.ts; agent badge maps agent.source via badgeLabel
+- [Phase ?]: [08-01 / TRUST-01]: Reused the existing auction.test.ts §4 fixture (clears 100.00, A=10/B=8/C=2 + the 99-vs-100 tie-break trap) as the CI golden gate — no new golden file; the vitest suite IS the regression gate. .github/workflows/ci.yml runs golden vitest on every push/PR touching solver/** or daml/**; daml build+test gated to main push (SDK install is heavy).
+- [Phase ?]: [08-01]: Killed the :4000->:4100 port drift in web/src via a single derived source — web/src/solver.ts parses SOLVER_BASE_URL once into exported solverPort + OFFLINE_CAPTION; AgentView/SettlementView/TheatreView import OFFLINE_CAPTION (no caption carries a literal port digit). solver/src/index.ts DEFAULT_SOLVER_PORT=4100; solver/proofs/ gitignored; web/.env.example documents VITE_SOLVER_URL=http://localhost:4100.
 
 ### Pending Todos
 
@@ -131,6 +134,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-09T10:00:02.636Z
+Last session: 2026-07-09T11:22:54.577Z
 Stopped at: Phase 8 UI-SPEC approved
 Resume file: .planning/phases/08-demo-hardening/08-UI-SPEC.md

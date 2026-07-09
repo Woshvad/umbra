@@ -38,7 +38,7 @@ exports.SubmitOrder = {
 exports.Venue = damlTypes.assembleTemplate(
 {
   templateId: '#umbra:Umbra.Roles:Venue',
-  templateIdWithPackageId: 'cb6868841df214064827686a172576c0ecd840dc678e43a3105787d4ef909c12:Umbra.Roles:Venue',
+  templateIdWithPackageId: '12560276cdc3281f38a0b88829be259f33f5f607bfe8d903e7a2cd19af01a34a:Umbra.Roles:Venue',
   keyDecoder: damlTypes.lazyMemo(function () { return jtv.constant(undefined); }),
   keyEncode: function () { throw 'EncodeError'; },
   decoder: damlTypes.lazyMemo(function () { return jtv.object({operator: damlTypes.Party.decoder, desks: damlTypes.List(damlTypes.Party).decoder, }); }),
@@ -70,5 +70,5 @@ exports.Venue = damlTypes.assembleTemplate(
 );
 
 
-damlTypes.registerTemplate(exports.Venue, ['cb6868841df214064827686a172576c0ecd840dc678e43a3105787d4ef909c12', '#umbra']);
+damlTypes.registerTemplate(exports.Venue, ['12560276cdc3281f38a0b88829be259f33f5f607bfe8d903e7a2cd19af01a34a', '#umbra']);
 

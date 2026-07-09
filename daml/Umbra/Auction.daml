@@ -48,6 +48,33 @@ fillFor : [Allocation] -> Party -> Side -> Int
 fillFor allocs party sd =
   sum [ a.filledQty | a <- allocs, a.desk == party, a.side == sd ]
 
+-- AUCT-04 — per-desk best-execution (TCA) receipt math (pure; mirrored by the
+-- solver receipt surface). `surplusVsLimit` is the PROVEN, structurally-non-negative
+-- number (a buy is only eligible when limit ≥ p*, a sell when limit ≤ p*), asserted
+-- `>= 0` on-ledger at the per-desk create site in Round.Clear. The bp values use the
+-- RULEBOOK-pinned formula `round((|limit − p*| / p*) * 10000)`.
+tcaSurplusVsLimit : Side -> Decimal -> Decimal -> Int -> Decimal
+tcaSurplusVsLimit sd ownLimit price filled =
+  let f = intToDecimal filled
+  in case sd of
+       Buy  -> (ownLimit - price) * f   -- buyer surplus: paid p* ≤ its ceiling
+       Sell -> (price - ownLimit) * f   -- seller surplus: received p* ≥ its floor
+
+tcaImprovementVsLimitBp : Decimal -> Decimal -> Decimal
+tcaImprovementVsLimitBp ownLimit price =
+  roundBankers 0 ((abs (ownLimit - price) / price) * 10000.0)
+
+-- SIGNED benchmark vs a labeled reference stub (MAY be negative — a DIFFERENT number
+-- from the proven vs-limit surplus). A BUY improves when p* is BELOW the reference
+-- (paid less); a SELL improves when p* is ABOVE it (received more). On the §4 fixture
+-- referencePrice == p* == 100 → 0 (so the benchmark never renders red on §4).
+tcaImprovementVsReferenceBp : Side -> Decimal -> Decimal -> Decimal
+tcaImprovementVsReferenceBp sd price referencePrice =
+  let signed = case sd of
+        Buy  -> referencePrice - price
+        Sell -> price - referencePrice
+  in roundBankers 0 ((signed / price) * 10000.0)
+
 -- §7.4 — round lifecycle status (verbatim)
 data RoundStatus = Open | Closed | Cleared | Settled deriving (Eq, Show)
 
@@ -95,6 +122,12 @@ template Order
         pure ()
 
 -- §7.6 — each desk's private fill receipt; observed by the SINGULAR desk only.
+-- AUCT-04 (best-ex / TCA): the appended fields carry the per-desk receipt numbers.
+-- `surplusVsLimit` is the PROVEN best-execution number — structurally non-negative
+-- (a buy is only eligible when limit ≥ p*, a sell when limit ≤ p*), and asserted
+-- `>= 0` ON-LEDGER inside Round.Clear (the ledger-provable claim). `referencePrice`
+-- is a LABELED benchmark stub (≈ pre-auction mid); `improvementVsReferenceBp` is a
+-- DISTINCT, SIGNED number that MAY be negative — never conflated with the proven one.
 template TradeConfirmation
   with
     operator      : Party
@@ -105,6 +138,11 @@ template TradeConfirmation
     filledQty     : Int
     clearingPrice : Decimal
     cashMoved     : Decimal
+    ownLimit                 : Optional Decimal  -- AUCT-04: None for a noncompetitive order (no meaningful limit)
+    referencePrice           : Decimal           -- AUCT-04: labeled benchmark STUB (pre-auction mid ≈ 100), passed into Clear
+    surplusVsLimit           : Decimal           -- AUCT-04: PROVEN best-ex, asserted ≥ 0 on-ledger in Round.Clear
+    improvementVsLimitBp     : Decimal           -- AUCT-04: improvement vs own limit in bp (structurally ≥ 0)
+    improvementVsReferenceBp : Decimal           -- AUCT-04: SIGNED benchmark vs reference in bp (MAY be negative)
   where
     signatory operator
     -- visible only to this desk
@@ -171,6 +209,7 @@ template Round
         orderCids      : [ContractId Order]          -- the round's sealed orders
         buyerUsdcCid   : ContractId Asset            -- buyer's USDCx holding to debit
         sellerBondCids : [(Party, ContractId Asset)] -- each seller's BONDX holding
+        referencePrice : Decimal                     -- AUCT-04: labeled benchmark STUB (config, passed in — a choice body cannot read config)
       controller operator
       do
         -- 0. Lifecycle guard (RESEARCH Pitfall 7 / T-02-07, double-settle): only a
@@ -275,7 +314,27 @@ template Round
         -- 4. Per-desk TradeConfirmation (spec §10 step 4) — observer = that desk
         --    only (the privacy field is frozen in the template). One per
         --    participating desk (each allocation row maps to one desk+side).
-        confs <- forA allocations $ \a ->
+        confs <- forA allocations $ \a -> do
+          -- AUCT-04: find this desk+side's own order view for its limit / order type.
+          -- (One order per desk per round in the MVP, so the head match is exact.)
+          let mView = case [ v | v <- views, v.desk == a.desk, v.side == a.side ] of
+                (v :: _) -> Some v
+                []       -> None
+              -- A Noncompetitive order carries no meaningful limit → ownLimit None,
+              -- surplusVsLimit 0 (it took the clearing price by construction).
+              ownLimitOpt = case mView of
+                Some v -> if v.orderType == Noncompetitive then None else Some v.limit
+                None   -> None
+              surplus = case ownLimitOpt of
+                Some l -> tcaSurplusVsLimit a.side l priceDec a.filledQty
+                None   -> 0.0
+              bpLimit = case ownLimitOpt of
+                Some l -> tcaImprovementVsLimitBp l priceDec
+                None   -> 0.0
+              bpRef = tcaImprovementVsReferenceBp a.side priceDec referencePrice
+          -- THE on-ledger AUCT-04 proof (T-09-05-01): execution is at least as good
+          -- as this desk's limit. A receipt that violates it ABORTS the atomic settle.
+          assertMsg "execution at least as good as limit (surplusVsLimit >= 0)" (surplus >= 0.0)
           create TradeConfirmation with
             operator
             desk          = a.desk
@@ -285,6 +344,11 @@ template Round
             filledQty     = a.filledQty
             clearingPrice = priceDec
             cashMoved     = intToDecimal a.filledQty * priceDec
+            ownLimit                 = ownLimitOpt
+            referencePrice
+            surplusVsLimit           = surplus
+            improvementVsLimitBp     = bpLimit
+            improvementVsReferenceBp = bpRef
 
         -- 5. Settle the Round (spec §10 step 5) and return the verified result.
         _newRound <- create this with status = Settled

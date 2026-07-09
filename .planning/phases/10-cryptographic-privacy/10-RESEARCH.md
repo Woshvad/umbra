@@ -341,20 +341,20 @@ template OrderCommitment
 
 **If this table is empty:** it is not — but every item is Low-risk and explicitly anticipated by CONTEXT.md/UI-SPEC.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Which endpoint for VIZ-02 event capture — ACS-at-offset vs `/v2/updates/flats`?**
    - What we know: `/v2/state/active-contracts` with `activeAtOffset` + `filtersByParty` is already proven in this codebase (PeekConsole/v2react) and gives each party's *visible contract set* as of any offset. `/v2/updates/flats` gives the full per-party event log but is deprecated in 3.5.
    - What's unclear: whether per-stage ACS snapshots (5 offsets × 4 parties) are sufficient for the scrubber, or the full event stream is wanted.
-   - Recommendation: Use **ACS-at-offset** (stable, proven, minimal) keyed by solver-recorded stage offsets; reserve `/v2/updates/flats` only if per-event granularity is needed. Label any non-event-backed cell `RECONSTRUCTED`.
+   - **RESOLVED:** Use **ACS-at-offset** (stable, proven, minimal) keyed by solver-recorded stage offsets; reserve `/v2/updates/flats` only if per-event granularity is needed. Label any non-event-backed cell `RECONSTRUCTED`.
 
 2. **Where does per-party capture authenticate?**
    - What we know: the solver holds ONLY the operator token (module-private, by security decision). Authentic "what BankB sees" requires BankB's own token; the browser already holds all four (party switcher / `tokens.json`).
    - What's unclear: UI-SPEC says VIZ-02 runs on the "operator plane (:4100)" yet also demands authentic per-party events.
-   - Recommendation: The **solver provides the stage→offset map** (operator plane); the **browser performs the per-party ACS reads** using each party's own token (per-party plane, exactly like PeekConsole). This keeps the operator-token-only rule intact and the per-party views authentic. Operator column uses operator reads; the TIMELOCKED-stage ciphertext (off-ledger) is the one `RECONSTRUCTED`/derived cell.
+   - **RESOLVED:** The **solver provides the stage→offset map** (operator plane); the **browser performs the per-party ACS reads** using each party's own token (per-party plane, exactly like PeekConsole). This keeps the operator-token-only rule intact and the per-party views authentic. Operator column uses operator reads; the TIMELOCKED-stage ciphertext (off-ledger) is the one `RECONSTRUCTED`/derived cell.
 
 3. **Proof anchor: proof hash vs verification-key hash on-ledger?**
-   - Recommendation: anchor `sha256(proof ‖ publicSignals)` AND record the `vkey` hash once (so a verifier can bind the anchored proof to a known circuit). Both are just `Text` fields; cheap.
+   - **RESOLVED:** anchor `sha256(proof ‖ publicSignals)` AND record the `vkey` hash once (so a verifier can bind the anchored proof to a known circuit). Both are just `Text` fields; cheap.
 
 ## Environment Availability
 

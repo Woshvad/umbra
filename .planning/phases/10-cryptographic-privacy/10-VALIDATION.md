@@ -2,7 +2,7 @@
 phase: 10
 slug: cryptographic-privacy
 status: draft
-nyquist_compliant: false
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-07-09
 ---
@@ -83,11 +83,11 @@ Task IDs are assigned by the planner; `plan`/`wave` filled at plan time. Every r
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references (crypto test files + fixtures)
-- [ ] No watch-mode flags (`vitest run`, not `vitest`)
-- [ ] Feedback latency < 120s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references (crypto test files + fixtures)
+- [x] No watch-mode flags (`vitest run`, not `vitest`)
+- [x] Feedback latency < 120s
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved 2026-07-09 — plan-checker verified every implementation task carries an `<automated>` verify, no 3-consecutive-task sampling gap, no watch-mode flags, and Wave-0 scaffolds are folded into 10-01/10-02. `wave_0_complete` flips true when Wave 0 actually executes.

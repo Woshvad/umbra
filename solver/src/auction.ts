@@ -119,35 +119,95 @@ export const rationByPriority = (
   return out
 }
 
-// §8 steps 4-5 (SINGLE-PASS CORE) — clear the batch: pick p*, compute traded
-// volume, ration both sides by price priority, emit an Allocation for EVERY
-// eligible order (incl. partial fills like C, whose residual is
-// order.quantity − filledQty) (Clearing.daml coreClear). Buys DESC by limit,
-// sells ASC by limit. `coreClear` is the extracted §8 kernel (09-02) — the
-// byte-identical mirror of Clearing.daml::coreClear that the two-pass
-// `computeClearing` wrapper below calls.
-export const coreClear = (orders: OrderView[]): ClearingResult => {
-  const pStar = choosePStar(orders)
-  const traded = matchedAt(orders, pStar)
-  // Priority key mirrors Clearing.daml's (not noncomp, per-side limit) tuple with
-  // the Daml Bool mapped to 0/1 (Pitfall 6): noncomp → 0 sorts FIRST (top
-  // priority), then the EXISTING per-side limit direction breaks ties among
-  // competitive orders — buys DESC, sells ASC. Direction is per-side (sells stay
-  // ASC or §4 breaks). The §4 book (all competitive) keeps its exact prior order.
-  const buys = orders
-    .filter((o) => isBuy(o) && (isNoncomp(o) || o.limit >= pStar))
+// ALLORNONE / MAQ (AUCT-01, 09-03) — byte-mirror of Clearing.daml::isAon /
+// minQtyOf. An order with a `minQty` participates only if its integer fill is
+// ≥ minQty at the chosen (price, subset); else it is excluded. All-or-none is the
+// special case minQty === quantity (no separate path). `minQty` optional here, so
+// an omitted minQty (existing Limit literals) is never AON → the enumeration below
+// reduces to the single-subset (∅) case and the §4 book is byte-unchanged.
+const isAon = (o: OrderView): boolean => o.minQty !== undefined
+const minQtyOf = (o: OrderView): number => o.minQty ?? 0
+
+// TOP-LEVEL recursive powerset — byte-identical enumeration order to
+// Clearing.daml::powerset (FULL set first, ∅ last): powerset([a,b]) =
+// [[a,b],[a],[b],[]]. The order is load-bearing: the subset index is the
+// most-included subset tiebreak.
+const powerset = <T,>(xs: T[]): T[][] => {
+  if (xs.length === 0) return [[]]
+  const [x, ...rest] = xs
+  const sub = powerset(rest)
+  return [...sub.map((s) => [x, ...s]), ...sub]
+}
+
+// Ration a FIXED book at a FIXED price p (subset already applied) → per-order
+// fills (eligible only), buys first then sells, in noncomp-first / per-side-limit
+// priority order. Mirrors Clearing.daml::fillsAtPrice. Bool→0/1 (Pitfall 6).
+const fillsAtPrice = (book: OrderView[], p: number): [OrderView, number][] => {
+  const traded = matchedAt(book, p)
+  const buys = book
+    .filter((o) => isBuy(o) && (isNoncomp(o) || o.limit >= p))
     .sort((a, b) => (isNoncomp(a) ? 0 : 1) - (isNoncomp(b) ? 0 : 1) || b.limit - a.limit)
-  const sells = orders
-    .filter((o) => isSell(o) && (isNoncomp(o) || o.limit <= pStar))
+  const sells = book
+    .filter((o) => isSell(o) && (isNoncomp(o) || o.limit <= p))
     .sort((a, b) => (isNoncomp(a) ? 0 : 1) - (isNoncomp(b) ? 0 : 1) || a.limit - b.limit)
-  const buyFills = rationByPriority(buys, traded)
-  const sellFills = rationByPriority(sells, traded)
-  const allocations: Allocation[] = [
-    ...buyFills.map(([o, f]) => ({ desk: o.desk, side: 'Buy' as Side, filledQty: f })),
-    ...sellFills.map(([o, f]) => ({ desk: o.desk, side: 'Sell' as Side, filledQty: f })),
-  ]
+  return [...rationByPriority(buys, traded), ...rationByPriority(sells, traded)]
+}
+
+// The integer fill of one order in a fills list (0 if excluded/ineligible).
+// Reference equality mirrors Clearing.daml's structural `o' == o` (orders in the
+// demo book have distinct desks, so the two agree bit-for-bit).
+const fillOfOrder = (fills: [OrderView, number][], o: OrderView): number =>
+  fills.filter(([o2]) => o2 === o).reduce((s, [, f]) => s + f, 0)
+
+// §8 steps 4-5 (CORE) — clear the batch via BOUNDED (price × subset) enumeration,
+// emitting an Allocation for EVERY eligible order (incl. partial fills like C,
+// residual = order.quantity − filledQty). Byte-identical mirror of
+// Clearing.daml::coreClear.
+//
+// AllOrNone / MAQ: for each subset S of the AON orders and each candidate price p,
+// clear `nonAon ++ S` at p (orders not in S excluded); (p, S) is FEASIBLE only if
+// every AON order in the book fills ≥ its minQty. Among feasible (p, S) the winner
+// is max matched → min imbalance → lower price → most-included subset (lower
+// powerset idx). Matched volume is the PRIMARY key, so the §4 topPrices trap guard
+// is preserved. §4 reduction: no AON → powerset([]) === [[]] → one subset (∅) →
+// nonAon ++ [] === orders → byte-identical $100.00 / A=10 / B=8 / C=2. Empty /
+// no-cross → { 0, [] }. SCALING CAVEAT: 2^k in the AON count (RULEBOOK).
+export const coreClear = (orders: OrderView[]): ClearingResult => {
+  const aon = orders.filter(isAon)
+  const nonAon = orders.filter((o) => !isAon(o))
+  const prices = candidatePrices(orders)
+  const subsets = powerset(aon)
+  type Cand = { m: number; imb: number; p: number; idx: number; fills: [OrderView, number][] }
+  const candidates: Cand[] = []
+  subsets.forEach((s, idx) => {
+    const book = [...nonAon, ...s]
+    for (const p of prices) {
+      const fills = fillsAtPrice(book, p)
+      const feasible = book.filter(isAon).every((o) => fillOfOrder(fills, o) >= minQtyOf(o))
+      if (feasible) {
+        candidates.push({
+          m: matchedAt(book, p),
+          imb: Math.abs(demandAt(book, p) - supplyAt(book, p)),
+          p,
+          idx,
+          fills,
+        })
+      }
+    }
+  })
+  // Rank: max matched → min imbalance → lower price → most-included subset (idx).
+  const ranked = [...candidates].sort(
+    (a, b) => b.m - a.m || a.imb - b.imb || a.p - b.p || a.idx - b.idx,
+  )
+  if (ranked.length === 0) return { clearingPrice: 0, allocations: [] }
+  const best = ranked[0]
+  const allocations: Allocation[] = best.fills.map(([o, f]) => ({
+    desk: o.desk,
+    side: o.side,
+    filledQty: f,
+  }))
   // 2-dp round, mirrors Daml roundBankers 2.
-  return { clearingPrice: Math.round(pStar * 100) / 100, allocations }
+  return { clearingPrice: Math.round(best.p * 100) / 100, allocations }
 }
 
 // §8 public entry point — a deterministic TWO-PASS wrapper over `coreClear`,

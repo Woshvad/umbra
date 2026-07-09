@@ -148,41 +148,106 @@ rationByPriority (o :: rest) remaining =
   let f = min o.quantity remaining
   in (o, f) :: rationByPriority rest (remaining - f)
 
--- §8 steps 4-5 (SINGLE-PASS CORE) — clear the batch: pick p*, compute traded
--- volume, ration both sides by price priority, and emit an Allocation for EVERY
--- participating eligible order (including 0-fill / partially-filled ones like C,
--- whose residual is `order.quantity - filledQty`) so Plan 02's `Round.Clear` can
--- mark each Order's status.
+-- ALLORNONE / MAQ (AUCT-01, 09-03) — an order carrying a minimum acceptable
+-- quantity `minQty`. It participates only if its resulting integer fill is
+-- ≥ minQty at the chosen (price, subset); otherwise it is EXCLUDED from the book
+-- entirely. All-or-none is the special case `minQty == quantity` (full fill or
+-- excluded) — NO separate code path. `isAon` is the "has a minQty" predicate;
+-- `minQtyOf` reads the threshold (0 when absent, so a non-AON order trivially
+-- passes any inclusion test). Byte-mirrored by auction.ts::isAon / minQtyOf.
+isAon : OrderView -> Bool
+isAon o = case o.minQty of Some _ -> True; None -> False
+
+minQtyOf : OrderView -> Int
+minQtyOf o = case o.minQty of Some m -> m; None -> 0
+
+-- TOP-LEVEL recursive powerset (Daml-LF forbids recursive LOCAL bindings — the
+-- enumeration MUST be a top-level function, modelled on `rationByPriority`). The
+-- enumeration order is DETERMINISTIC and identical to the TS mirror: the FULL set
+-- first, then progressively-smaller subsets, ∅ last. This order is load-bearing —
+-- it is the subset tiebreak (via the subset index `idx`) that makes the
+-- most-included feasible subset win among equal (matched, imbalance, price).
+--   powerset [a,b] = [[a,b],[a],[b],[]]
+powerset : [a] -> [[a]]
+powerset [] = [[]]
+powerset (x :: xs) =
+  let rest = powerset xs
+  in map (x ::) rest ++ rest
+
+-- Ration a FIXED book at a FIXED price p (subset already applied), returning the
+-- per-order fills (eligible orders only) — buys first, then sells, each in the
+-- noncomp-first / per-side-limit priority order. This is the inner clear the
+-- (price, subset) enumeration evaluates; `coreClear` picks the best result.
+fillsAtPrice : [OrderView] -> Decimal -> [(OrderView, Int)]
+fillsAtPrice book p =
+  let traded = matchedAt book p
+      -- Priority sort key = (NOT noncomp, per-side limit). Daml `Ord Bool` has
+      -- False < True, so noncomp sorts FIRST (top priority); then buys DESCENDING
+      -- by limit / sells ASCENDING by limit. Mirrored in TS by mapping Bool→0/1
+      -- (Pitfall 6). Per-side direction (sells stay ASC or §4 breaks).
+      buys   = sortOn (\o -> (not (isNoncomp o), negate o.limit))
+                      [ o | o <- book, isBuy o,  isNoncomp o || o.limit >= p ]
+      sells  = sortOn (\o -> (not (isNoncomp o), o.limit))
+                      [ o | o <- book, isSell o, isNoncomp o || o.limit <= p ]
+  in rationByPriority buys traded ++ rationByPriority sells traded
+
+-- The integer fill of one order in a fills list (0 if it was excluded/ineligible).
+fillOfOrder : [(OrderView, Int)] -> OrderView -> Int
+fillOfOrder fills o = sum [ f | (o', f) <- fills, o' == o ]
+
+-- §8 steps 4-5 (CORE) — clear the batch via BOUNDED (price × subset) enumeration
+-- and emit an Allocation for EVERY participating eligible order (including 0-fill
+-- / partially-filled ones like C, whose residual is `order.quantity - filledQty`)
+-- so Plan 02's `Round.Clear` can mark each Order's status.
 --
--- `coreClear` is the extracted pure §8 kernel (09-02): it is the ONE function
--- that does candidate-price selection + eligibility + priority rationing. The
--- public `computeClearing` (below) is a TWO-PASS WRAPPER over it (the seam that
--- 09-03 conditional auto-firming rides on). Extracting it is behavior-preserving:
--- with no conditional orders, `computeClearing == coreClear` exactly, so the §4
--- fixture is byte-identical before and after the refactor.
+-- `coreClear` is the pure §8 kernel that does candidate-price selection +
+-- eligibility + noncomp priority + AllOrNone/MAQ inclusion + priority rationing.
+-- The public `computeClearing` (below) is a TWO-PASS WRAPPER over it (the seam
+-- 09-03 conditional auto-firming rides on).
+--
+-- AllOrNone / MAQ (AUCT-01): the inclusion constraint is circular (a MAQ order's
+-- fill depends on which other MAQ orders are included, which depends on their
+-- fills), so it is resolved by BOUNDED enumeration over the (small) AON/MAQ order
+-- set: for each subset S of the AON orders and each candidate price p, clear the
+-- book `nonAon ++ S` at p (orders NOT in S are excluded); a (p, S) is FEASIBLE
+-- only if every AON order in the book fills ≥ its minQty. Among feasible (p, S)
+-- the winner is the SAME tie-break as choosePStar — max matched → min imbalance →
+-- lower price — plus a deterministic subset tiebreak (the powerset `idx`, so the
+-- most-included feasible subset wins). Because the primary key is matched volume,
+-- the §4 `topPrices` trap guard is preserved (a non-max-matched price can never
+-- win on imbalance alone).
+--
+-- §4 REDUCTION: no AON orders → `aon == []` → `powerset [] == [[]]` → the only
+-- subset is ∅ → `nonAon ++ [] == orders` → the enumeration reduces to ranking the
+-- candidate prices exactly as choosePStar does → byte-identical $100.00 /
+-- A=10 / B=8 / C=2. Empty book / no candidate price → (0.0, []) (the no-cross seed).
+--
+-- SCALING CAVEAT: the subset powerset is 2^k in the AON-order count — exponential,
+-- bounded to the tiny demo book only (documented in RULEBOOK). Byte-mirrored by
+-- auction.ts::coreClear.
 coreClear : [OrderView] -> (Decimal, [Allocation])
 coreClear orders =
-  let pStar  = choosePStar orders
-      traded = matchedAt orders pStar
-      -- Priority sort key = (NOT noncomp, per-side limit). Daml `Ord Bool` has
-      -- False < True, so noncomp (isNoncomp==True ⇒ `not` gives False) sorts FIRST
-      -- (top priority), then the EXISTING per-side limit direction breaks ties
-      -- among competitive orders — buys DESCENDING by limit (most-aggressive buy
-      -- first), sells ASCENDING by limit (most-aggressive sell first). The §4 book
-      -- (all competitive) keeps its exact prior ordering: the Bool is True for all,
-      -- so the tuple reduces to the old single limit key. Mirrored in TS by mapping
-      -- the Bool to 0/1 (Pitfall 6). NB: the direction is per-side (NOT a blanket
-      -- `negate effLimit`), because sells must stay ASCENDING or §4 breaks.
-      buys   = sortOn (\o -> (not (isNoncomp o), negate o.limit))
-                      [ o | o <- orders, isBuy o,  isNoncomp o || o.limit >= pStar ]
-      sells  = sortOn (\o -> (not (isNoncomp o), o.limit))
-                      [ o | o <- orders, isSell o, isNoncomp o || o.limit <= pStar ]
-      buyFills  = rationByPriority buys  traded
-      sellFills = rationByPriority sells traded
-      allocs =
-        [ Allocation with desk = o.desk; side = Buy;  filledQty = f | (o, f) <- buyFills  ] ++
-        [ Allocation with desk = o.desk; side = Sell; filledQty = f | (o, f) <- sellFills ]
-  in (pStar, allocs)
+  let aon     = filter isAon orders
+      nonAon  = filter (not . isAon) orders
+      prices  = candidatePrices orders
+      subsets = powerset aon
+      -- Every feasible (subset-index, subset, price): (matched, imbalance, p, idx, fills).
+      candidates =
+        [ (matchedAt book p, abs (demandAt book p - supplyAt book p), p, idx, fills)
+        | (idx, s) <- zip [0 .. length subsets - 1] subsets
+        , let book  = nonAon ++ s
+        , p <- prices
+        , let fills = fillsAtPrice book p
+        , all (\o -> fillOfOrder fills o >= minQtyOf o) (filter isAon book)
+        ]
+      -- Rank: max matched (negate) → min imbalance → lower price → most-included
+      -- subset (lower powerset idx). Mirrors choosePStar's ordering with the added
+      -- subset tiebreak; trap-safe because `matched` is the primary key.
+      ranked = sortOn (\(m, imb, p, idx, _) -> (negate m, imb, p, idx)) candidates
+  in case ranked of
+       ((_, _, p, _, fills) :: _) ->
+         (p, [ Allocation with desk = o.desk; side = o.side; filledQty = f | (o, f) <- fills ])
+       [] -> (0.0, [])
 
 -- §8 public entry point — a deterministic TWO-PASS wrapper over `coreClear`
 -- (09-02 scaffold; `Round.Clear` re-verifies via THIS function, so on-ledger and

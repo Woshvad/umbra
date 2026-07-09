@@ -221,6 +221,77 @@ describe('computeClearing — §8 clearing port', () => {
     )
   })
 
+  // 7. ALLORNONE / MAQ (AUCT-01, 09-03) — the TS twins of the Daml
+  //    test_maq_* / test_aon_* fixtures (identical expected numbers = parity). A
+  //    MAQ order participates only if its integer fill ≥ minQty at the chosen
+  //    (price, subset); else the bounded (price × subset) enumeration excludes it.
+  it('maq excluded: a MAQ sell whose fill would fall below minQty is excluded, book re-clears without it', () => {
+    // A Buy 10 @100, B Sell 8 @100, C Sell 5 @100 (MAQ minQty=3).
+    // subset {C}: matched 10 → B=8, C=2. C 2 < 3 INFEASIBLE. subset {}: A=8, B=8.
+    const views: OrderView[] = [
+      { desk: 'BankA', side: 'Buy', quantity: 10, limit: 100.0, orderType: 'Limit' },
+      { desk: 'BankB', side: 'Sell', quantity: 8, limit: 100.0, orderType: 'Limit' },
+      { desk: 'BankC', side: 'Sell', quantity: 5, limit: 100.0, orderType: 'AllOrNone', minQty: 3 },
+    ]
+    const { clearingPrice, allocations } = computeClearing(views)
+    expect(clearingPrice).toBe(100)
+    expect(fillOf(allocations, 'BankC')).toBe(0) // excluded: 2 < minQty 3
+    expect(fillOf(allocations, 'BankA')).toBe(8)
+    expect(fillOf(allocations, 'BankB')).toBe(8)
+  })
+
+  it('maq included: a MAQ sell whose fill meets minQty is included (§4-shaped A=10/B=8/C=2)', () => {
+    // Same book, minQty=2 which C's fill (2) meets → included, higher matched wins.
+    const views: OrderView[] = [
+      { desk: 'BankA', side: 'Buy', quantity: 10, limit: 100.0, orderType: 'Limit' },
+      { desk: 'BankB', side: 'Sell', quantity: 8, limit: 100.0, orderType: 'Limit' },
+      { desk: 'BankC', side: 'Sell', quantity: 5, limit: 100.0, orderType: 'AllOrNone', minQty: 2 },
+    ]
+    const { clearingPrice, allocations } = computeClearing(views)
+    expect(clearingPrice).toBe(100)
+    expect(fillOf(allocations, 'BankC')).toBe(2) // included: 2 ≥ minQty 2
+    expect(fillOf(allocations, 'BankA')).toBe(10)
+    expect(fillOf(allocations, 'BankB')).toBe(8)
+    // Full multiset parity with the Daml test_maq_included fixture.
+    expect(sortAllocs(allocations)).toEqual(
+      sortAllocs([
+        { desk: 'BankA', side: 'Buy', filledQty: 10 },
+        { desk: 'BankB', side: 'Sell', filledQty: 8 },
+        { desk: 'BankC', side: 'Sell', filledQty: 2 },
+      ]),
+    )
+  })
+
+  it('aon fills: an all-or-none sell (minQty == qty) that CAN fully fill is included fully (A=7/B=2/C=5)', () => {
+    // A Buy 10 @100, B Sell 2 @100, C Sell 5 @100 (AON minQty=5).
+    // subset {C}: supply 7, matched 7 → B=2, C=5 (5 ≥ 5). subset {}: matched 2. {C} wins.
+    const views: OrderView[] = [
+      { desk: 'BankA', side: 'Buy', quantity: 10, limit: 100.0, orderType: 'Limit' },
+      { desk: 'BankB', side: 'Sell', quantity: 2, limit: 100.0, orderType: 'Limit' },
+      { desk: 'BankC', side: 'Sell', quantity: 5, limit: 100.0, orderType: 'AllOrNone', minQty: 5 },
+    ]
+    const { clearingPrice, allocations } = computeClearing(views)
+    expect(clearingPrice).toBe(100)
+    expect(fillOf(allocations, 'BankC')).toBe(5) // all-or-none fully filled
+    expect(fillOf(allocations, 'BankB')).toBe(2)
+    expect(fillOf(allocations, 'BankA')).toBe(7)
+  })
+
+  it('aon drops: an all-or-none sell that cannot reach its all is dropped entirely (A=3/B=3/C=0)', () => {
+    // A Buy 3 @100, B Sell 8 @100, C Sell 5 @100 (AON minQty=5).
+    // subset {C}: demand 3, matched 3 → B=3, C=0 (0 < 5) INFEASIBLE. subset {}: A=3, B=3.
+    const views: OrderView[] = [
+      { desk: 'BankA', side: 'Buy', quantity: 3, limit: 100.0, orderType: 'Limit' },
+      { desk: 'BankB', side: 'Sell', quantity: 8, limit: 100.0, orderType: 'Limit' },
+      { desk: 'BankC', side: 'Sell', quantity: 5, limit: 100.0, orderType: 'AllOrNone', minQty: 5 },
+    ]
+    const { clearingPrice, allocations } = computeClearing(views)
+    expect(clearingPrice).toBe(100)
+    expect(fillOf(allocations, 'BankC')).toBe(0) // dropped: cannot reach all-or-none 5
+    expect(fillOf(allocations, 'BankA')).toBe(3)
+    expect(fillOf(allocations, 'BankB')).toBe(3)
+  })
+
   // 4b. Genuinely empty batch → choosePStar hits the empty-`ranked` branch and
   //     returns 0.0 (the documented foldl-max-0 / no-candidate seed).
   it('no-cross: an empty order book has pStar 0.0 and no allocations', () => {

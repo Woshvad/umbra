@@ -163,6 +163,97 @@ test_noncomp_sell_top_priority = do
   fillOf bankA === (fillOf bankB + fillOf bankC)
   -- The §4 canary is UNAFFECTED by the noncomp predicate (proven in test_clears_at_100).
 
+-- AUCT-01 (09-03) — ALLORNONE / MAQ golden fixtures, the Daml twins of the
+-- `maq`/`aon` scenarios in solver/src/auction.test.ts (identical expected numbers
+-- = Daml⇄TS parity). A MAQ order participates only if its integer fill ≥ minQty at
+-- the chosen (price, subset); else the bounded (price × subset) enumeration in
+-- `coreClear` EXCLUDES it. All-or-none is the special case minQty == quantity.
+
+-- MAQ EXCLUDED — C's fill (2) would fall BELOW its minQty (3) → C excluded, and
+-- the book re-clears without it (A=8 / B=8, C=0).
+--   A Buy 10 @100, B Sell 8 @100, C Sell 5 @100 (MAQ minQty=3).
+--   subset {C}: @100 matched 10, sells B,C by priority → B=8, C=2. C 2 < 3 → INFEASIBLE.
+--   subset {}:  @100 matched 8  → A=8, B=8. FEASIBLE and wins (only feasible).
+test_maq_excluded : Script ()
+test_maq_excluded = do
+  bankA <- allocatePartyByHint (PartyIdHint "maqXA")
+  bankB <- allocatePartyByHint (PartyIdHint "maqXB")
+  bankC <- allocatePartyByHint (PartyIdHint "maqXC")
+  let views =
+        [ OrderView with desk = bankA; side = Buy;  quantity = 10; limit = 100.0; orderType = Limit;     minQty = None;   firmIf = None
+        , OrderView with desk = bankB; side = Sell; quantity = 8;  limit = 100.0; orderType = Limit;     minQty = None;   firmIf = None
+        , OrderView with desk = bankC; side = Sell; quantity = 5;  limit = 100.0; orderType = AllOrNone; minQty = Some 3; firmIf = None
+        ]
+      (pStar, allocs) = computeClearing views
+      fillOf d = sum [ a.filledQty | a <- allocs, a.desk == d ]
+  pStar === 100.0
+  fillOf bankC === 0   -- excluded: its feasible fill (2) < minQty (3)
+  fillOf bankA === 8
+  fillOf bankB === 8
+
+-- MAQ INCLUDED — same book, but minQty=2, which C's fill (2) exactly MEETS → C is
+-- included and the §4-shaped clear stands (A=10 / B=8 / C=2).
+test_maq_included : Script ()
+test_maq_included = do
+  bankA <- allocatePartyByHint (PartyIdHint "maqIA")
+  bankB <- allocatePartyByHint (PartyIdHint "maqIB")
+  bankC <- allocatePartyByHint (PartyIdHint "maqIC")
+  let views =
+        [ OrderView with desk = bankA; side = Buy;  quantity = 10; limit = 100.0; orderType = Limit;     minQty = None;   firmIf = None
+        , OrderView with desk = bankB; side = Sell; quantity = 8;  limit = 100.0; orderType = Limit;     minQty = None;   firmIf = None
+        , OrderView with desk = bankC; side = Sell; quantity = 5;  limit = 100.0; orderType = AllOrNone; minQty = Some 2; firmIf = None
+        ]
+      (pStar, allocs) = computeClearing views
+      fillOf d = sum [ a.filledQty | a <- allocs, a.desk == d ]
+  pStar === 100.0
+  fillOf bankC === 2   -- included: fill (2) ≥ minQty (2), higher matched volume wins
+  fillOf bankA === 10
+  fillOf bankB === 8
+
+-- ALL-OR-NONE FILLS — an all-or-none sell (minQty == quantity == 5) whose full 5
+-- CAN be filled is included fully; the buy is rationed around it (A=7 / B=2 / C=5).
+--   A Buy 10 @100, B Sell 2 @100, C Sell 5 @100 (AON minQty=5).
+--   subset {C}: @100 supply 2+5=7, matched 7, sells B,C → B=2, C=5. C 5 ≥ 5 → FEASIBLE, matched 7.
+--   subset {}:  @100 supply 2,     matched 2 → A=2, B=2. Lower matched → loses.
+test_aon_all_or_none_fills : Script ()
+test_aon_all_or_none_fills = do
+  bankA <- allocatePartyByHint (PartyIdHint "aonFA")
+  bankB <- allocatePartyByHint (PartyIdHint "aonFB")
+  bankC <- allocatePartyByHint (PartyIdHint "aonFC")
+  let views =
+        [ OrderView with desk = bankA; side = Buy;  quantity = 10; limit = 100.0; orderType = Limit;     minQty = None;   firmIf = None
+        , OrderView with desk = bankB; side = Sell; quantity = 2;  limit = 100.0; orderType = Limit;     minQty = None;   firmIf = None
+        , OrderView with desk = bankC; side = Sell; quantity = 5;  limit = 100.0; orderType = AllOrNone; minQty = Some 5; firmIf = None
+        ]
+      (pStar, allocs) = computeClearing views
+      fillOf d = sum [ a.filledQty | a <- allocs, a.desk == d ]
+  pStar === 100.0
+  fillOf bankC === 5   -- all-or-none: fully filled (5 ≥ minQty 5)
+  fillOf bankB === 2
+  fillOf bankA === 7
+
+-- ALL-OR-NONE DROPS — an all-or-none sell (minQty == quantity == 5) that CANNOT
+-- reach its 5 (demand only 3) is dropped entirely (A=3 / B=3 / C=0).
+--   A Buy 3 @100, B Sell 8 @100, C Sell 5 @100 (AON minQty=5).
+--   subset {C}: @100 demand 3, matched 3, sells B,C → B=3, C=0. C 0 < 5 → INFEASIBLE.
+--   subset {}:  @100 matched 3 → A=3, B=3. FEASIBLE and wins.
+test_aon_all_or_none_drops : Script ()
+test_aon_all_or_none_drops = do
+  bankA <- allocatePartyByHint (PartyIdHint "aonDA")
+  bankB <- allocatePartyByHint (PartyIdHint "aonDB")
+  bankC <- allocatePartyByHint (PartyIdHint "aonDC")
+  let views =
+        [ OrderView with desk = bankA; side = Buy;  quantity = 3; limit = 100.0; orderType = Limit;     minQty = None;   firmIf = None
+        , OrderView with desk = bankB; side = Sell; quantity = 8; limit = 100.0; orderType = Limit;     minQty = None;   firmIf = None
+        , OrderView with desk = bankC; side = Sell; quantity = 5; limit = 100.0; orderType = AllOrNone; minQty = Some 5; firmIf = None
+        ]
+      (pStar, allocs) = computeClearing views
+      fillOf d = sum [ a.filledQty | a <- allocs, a.desk == d ]
+  pStar === 100.0
+  fillOf bankC === 0   -- dropped: cannot reach its all-or-none 5 (demand only 3)
+  fillOf bankA === 3
+  fillOf bankB === 3
+
 -- ===========================================================================
 -- Phase-2 settlement seed helpers (RESEARCH A5 + Pitfall 5).
 --

@@ -226,22 +226,68 @@ fixture is unchanged — still `p* = 100.00`, A=10 / B=8 / C=2.
   A=6 / B=2 / C=4 (noncomp C fills its full 4 with top priority; competitive B
   rationed to 2).
 
-### AllOrNone / MAQ — _PLACEHOLDER (09-02)_
+### AllOrNone / MAQ (shipped — 09-03)
 
-An order with a minimum acceptable quantity `minQty` (all-or-none is the special
-case `minQty == quantity`): it participates only if its resulting integer fill is
-`≥ minQty`, otherwise it is excluded entirely. Determinism comes from a
-**bounded candidate-price × subset enumeration** over the (small) set of
-AON/MAQ orders. To be filled by **09-02**, cited here as the `coreClear` +
-top-level powerset/inclusion helper in `Clearing.daml::computeClearing` ⇄ the
-matching helper in `auction.ts::computeClearing`.
+An order carrying a **minimum acceptable quantity** `minQty` participates in the
+clear only if its resulting **integer fill is `≥ minQty`** at the chosen
+`(price, subset)`; otherwise it is **excluded entirely** (no allocation).
+All-or-none is the special case `minQty == quantity` (either a full fill or
+excluded) — there is **no separate code path**. An order is treated as AON/MAQ
+iff it carries a `minQty` (`isAon` = "`minQty` present"); a non-AON order has an
+effective threshold of `0` (`minQtyOf`), so it trivially passes any inclusion
+test. Determinism — despite the circular constraint (an order's inclusion depends
+on its fill, which depends on which other AON orders are included) — comes from a
+**bounded `(candidate-price × subset)` enumeration** over the (small) set of
+AON/MAQ orders, each rule mirrored byte-for-byte in both planes:
 
-> **Scaling caveat (deferred).** The AON/MAQ subset enumeration is a bounded
-> powerset (`2^k`) over the AON order set, which is **exponential in the number
-> of AON orders**. This is acceptable for the tiny demo book but is NOT suitable
-> for a large production book; a combinatorially-optimal large-book solver is
-> deferred (Track B). This caveat is load-bearing and must remain documented
-> when 09-02 fills the section.
+1. **Bounded subset enumeration.** Partition the book into `aon` (orders with a
+   `minQty`) and `nonAon`. Enumerate the **powerset** of the AON set with a
+   **top-level recursive** helper (Daml-LF forbids recursive *local* bindings, so
+   the powerset — like `rationByPriority` — is a top-level function). The
+   enumeration order is deterministic and identical in both planes — the **full
+   set first, `∅` last** (`powerset [a,b] = [[a,b],[a],[b],[]]`).
+2. **Per-`(p, S)` inclusion test.** For each subset `S` and each candidate price
+   `p`, clear the book `nonAon ++ S` at the **fixed** price `p` (orders **not** in
+   `S` are excluded). A `(p, S)` is **FEASIBLE** only if **every** AON order in
+   that book fills `≥ its minQty` (an ineligible/excluded AON order fills `0`, so
+   it fails any positive `minQty`). This is the `≥ minQty` inclusion test.
+3. **Ranking + subset tiebreak.** Among **feasible** `(p, S)` the winner is the
+   **same** objective as `choosePStar` — **max matched → min |demand − supply| →
+   lower price** — plus a deterministic **subset tiebreak**: the **most-included**
+   feasible subset (the lower powerset index `idx`) wins. Because **matched volume
+   is the primary key**, the [`topPrices` trap guard](#the-topprices-trap-guard-load-bearing--do-not-remove)
+   is preserved: a non-max-matched price can never win on imbalance alone.
+
+**§4 reduction.** No AON order ⇒ `aon == []` ⇒ `powerset [] == [[]]` ⇒ the only
+subset is `∅` ⇒ `nonAon ++ ∅ == the whole book` ⇒ the enumeration reduces to
+ranking the candidate prices exactly as `choosePStar` does ⇒ still
+`p* = 100.00`, A=10 / B=8 / C=2. An empty book / no candidate price yields
+`(0.0, [])` (the no-cross seed).
+
+> **Scaling caveat (deferred, load-bearing).** The subset enumeration is a bounded
+> powerset (`2^k`) over the AON order set, which is **exponential in the number of
+> AON orders**. This is acceptable for the tiny demo book but is NOT suitable for a
+> large production book; a combinatorially-optimal large-book solver is deferred
+> (Track B).
+
+- Predicate + threshold: `Clearing.daml::isAon` / `minQtyOf` ⇄
+  `auction.ts::isAon` / `minQtyOf`.
+- Top-level powerset enumeration: `Clearing.daml::powerset` ⇄
+  `auction.ts::powerset` (identical order — full set first).
+- Per-`(p, S)` clear + inclusion test: `Clearing.daml::fillsAtPrice` +
+  `fillOfOrder` + the `all (… >= minQtyOf …)` feasibility guard inside `coreClear`
+  ⇄ `auction.ts::fillsAtPrice` + `fillOfOrder` + the `.every(… >= minQtyOf …)`
+  guard inside `coreClear`.
+- Ranking + subset tiebreak: the `sortOn (\(m, imb, p, idx, _) -> (negate m, imb,
+  p, idx))` in `Clearing.daml::coreClear` ⇄ the
+  `b.m - a.m || a.imb - b.imb || a.p - b.p || a.idx - b.idx` sort in
+  `auction.ts::coreClear`.
+- Golden fixtures (identical numbers = parity):
+  `daml/Umbra/Tests.daml::test_maq_excluded` (C excluded, A=8/B=8/C=0) /
+  `test_maq_included` (C included, A=10/B=8/C=2) /
+  `test_aon_all_or_none_fills` (A=7/B=2/C=5) / `test_aon_all_or_none_drops`
+  (A=3/B=3/C=0) ⇄ the `maq excluded` / `maq included` / `aon fills` / `aon drops`
+  scenarios in `solver/src/auction.test.ts`.
 
 ### Conditional (auto-firming) — _PLACEHOLDER (09-03)_
 

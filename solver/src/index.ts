@@ -34,6 +34,8 @@ export interface LedgerPort {
   refreshStats: AppDeps['refreshStats']
   closeRound: AppDeps['closeRound']
   settle: AppDeps['settle']
+  // WOW-02: the dedicated tamper seam (ledger.tamperClear) — mirrors settle wiring.
+  tamperClear: AppDeps['tamperClear']
   readTradeConfirmations: AppDeps['readTradeConfirmations']
 }
 
@@ -96,6 +98,8 @@ export const buildDeps = (args: BuildDepsArgs): AppDeps => {
       return state?.status ?? 'Closed'
     },
     settle: ledger.settle,
+    // WOW-02: the dedicated tamper seam (never on the /settle path).
+    tamperClear: ledger.tamperClear,
     // The AI Solver Agent — proposes a clearing, the deterministic core verifies it.
     proposeClearing,
     // WOW-03: server-side NL order parsing (same boot agent, key module-private).
@@ -198,6 +202,7 @@ const main = async (): Promise<void> => {
       refreshStats: ledger.refreshStats,
       closeRound: closeRoundStr,
       settle: settleResult,
+      tamperClear: ledger.tamperClear,
       readTradeConfirmations: ledger.readTradeConfirmations,
     },
     math: {

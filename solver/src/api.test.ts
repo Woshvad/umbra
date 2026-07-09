@@ -86,6 +86,8 @@ const makeDeps = (overrides: Partial<AppDeps>): AppDeps => ({
   refreshStats: vi.fn(async (): Promise<number> => 0),
   closeRound: vi.fn(async (): Promise<string> => 'Closed'),
   settle: vi.fn(async (): Promise<SettleResult> => ({ clearingPrice: 100, allocations: [] })),
+  // WOW-02 tamper seam — default inert; the /tamper-clear tests override per mode.
+  tamperClear: vi.fn(async (): Promise<{ rejected: true; error: string }> => ({ rejected: true, error: 'rejected' })),
   // Post-settle reconstruction source — default empty; the settled-GET test overrides it.
   readTradeConfirmations: vi.fn(async () => []),
   // Agent stub — defaults to the deterministic fallback (keyless degradation); tests
@@ -643,6 +645,88 @@ describe('solver §11 HTTP API', () => {
     // recompute on the emptied book (which would read 0).
     expect(body.matchedVolume).toBe(10)
     expect(deps.readSealedOrders).not.toHaveBeenCalled()
+  })
+
+  it('POST /round/:id/tamper-clear (wrong-price) surfaces the verbatim on-ledger rejection', async () => {
+    const verbatim = 'submit HTTP 400: DAML_INTERPRETATION_ERROR: clearingPrice does not match recomputed §8 p*'
+    const tamperClear = vi.fn(async (): Promise<{ rejected: true; error: string }> => ({ rejected: true, error: verbatim }))
+    const deps = makeDeps({ tamperClear })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/tamper-clear`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'wrong-price' }),
+    })
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    expect(body.rejected).toBe(true)
+    // The verbatim ledger rejection is the payload — surfaced, not summarized.
+    expect(body.error).toBe(verbatim)
+    expect(tamperClear).toHaveBeenCalledWith('R1', 'wrong-price')
+  })
+
+  it('POST /round/:id/tamper-clear (overfill) surfaces the conservation/allocation rejection', async () => {
+    const verbatim = 'submit HTTP 400: DAML_INTERPRETATION_ERROR: fills not conserved (Σbuy /= Σsell)'
+    const tamperClear = vi.fn(async (): Promise<{ rejected: true; error: string }> => ({ rejected: true, error: verbatim }))
+    const deps = makeDeps({ tamperClear })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/tamper-clear`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'overfill' }),
+    })
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    expect(body.rejected).toBe(true)
+    expect(body.error).toMatch(/allocations do not match recomputed §8|fills not conserved/)
+    expect(tamperClear).toHaveBeenCalledWith('R1', 'overfill')
+  })
+
+  it('POST /round/:id/tamper-clear rejects a bad mode with 400 (and never calls tamperClear)', async () => {
+    const deps = makeDeps({})
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/tamper-clear`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'obliterate' }),
+    })
+    const body = await readJson(res)
+
+    expect(res.status).toBe(400)
+    expect(body.error).toHaveProperty('code', 'INVALID_BODY')
+    expect(deps.tamperClear).not.toHaveBeenCalled()
+  })
+
+  it('POST /round/:id/tamper-clear never echoes the operator token or API key (secret sweep)', async () => {
+    // The tamperClear stub closes over both sentinels exactly as the real ledger/agent do;
+    // the surfaced rejection must carry neither.
+    const tamperClear = vi.fn(async (): Promise<{ rejected: true; error: string }> => {
+      void SENTINEL_TOKEN
+      void SENTINEL_API_KEY
+      return { rejected: true, error: 'submit HTTP 400: clearingPrice does not match recomputed §8 p*' }
+    })
+    const deps = makeDeps({ tamperClear })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/tamper-clear`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'wrong-price' }),
+    })
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    expect(JSON.stringify(body)).not.toContain(SENTINEL_TOKEN)
+    expect(JSON.stringify(body)).not.toContain(SENTINEL_API_KEY)
   })
 
   it('CORS is scoped to http://localhost:5173 and never wildcard for a foreign origin', async () => {

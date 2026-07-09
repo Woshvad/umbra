@@ -70,6 +70,12 @@ export interface AppDeps {
   refreshStats: (roundId: string) => Promise<number>
   closeRound: (roundId: string) => Promise<string>
   settle: (roundId: string) => Promise<SettleResult>
+  // WOW-02: the DEDICATED tamper seam (ledger.tamperClear). Gathers the SAME cids as
+  // settle() but submits a deliberately WRONG clearingPrice / over-filled allocation to
+  // the on-ledger Round.Clear; the recompute-and-assert backstop rejects it atomically.
+  // Resolves { rejected, error } with the VERBATIM (secret-free) ledger rejection body —
+  // it NEVER throws and NEVER settles. Entirely off the byte-unchanged /settle path.
+  tamperClear: (roundId: string, mode: 'wrong-price' | 'overfill') => Promise<{ rejected: true; error: string }>
   // Read the per-desk TradeConfirmations for a round — used to reconstruct the settled
   // result at terminal status once the sealed orders have been retired by Round.Clear.
   readTradeConfirmations: (roundId: string) => Promise<SettledConfirmation[]>
@@ -134,6 +140,14 @@ const openRoundBody = z
 const parseOrderBody = z
   .object({
     text: z.string().min(1).max(280),
+  })
+  .strict()
+
+// ── zod schema for POST /round/:id/tamper-clear (WOW-02) ─────────────────────────
+// A demo-only body selecting the tamper mode; anything else → a sanitized 400.
+const tamperClearBody = z
+  .object({
+    mode: z.enum(['wrong-price', 'overfill']),
   })
   .strict()
 
@@ -414,6 +428,26 @@ export const createApp = (deps: AppDeps): Express => {
         throw new ApiError(422, 'PARSE_FAILED', "couldn't parse that order — try e.g. \"buy 10 under 101\"")
       }
       res.json(order) // { side, qty, limit } — zod-validated, for the desk to confirm.
+    }),
+  )
+
+  // POST /round/:id/tamper-clear — WOW-02 "break the AI" demo seam. Submits a
+  // deliberately WRONG clearing (wrong-price or over-fill) to the on-ledger Round.Clear;
+  // its recompute-and-assert backstop rejects the atomic transaction, changing NOTHING
+  // on-ledger. The VERBATIM ledger rejection is the payload (do NOT summarize it — it is
+  // already a secret-free ledger body slice). The real /settle path is byte-unchanged.
+  app.post(
+    '/round/:id/tamper-clear',
+    wrap(async (req, res) => {
+      const { id } = req.params
+      const parsed = tamperClearBody.safeParse(req.body ?? {})
+      if (!parsed.success) {
+        const issue = parsed.error.issues[0]
+        const path = issue?.path.join('.') || '(body)'
+        throw new ApiError(400, 'INVALID_BODY', `invalid request body: ${path} — ${issue?.message ?? 'invalid'}`)
+      }
+      const result = await deps.tamperClear(id, parsed.data.mode)
+      res.json({ rejected: result.rejected, error: result.error })
     }),
   )
 

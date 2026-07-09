@@ -71,6 +71,7 @@ const makeLedger = (overrides: Partial<LedgerPort> = {}): LedgerPort => ({
   refreshStats: vi.fn(async (): Promise<number> => 0),
   closeRound: vi.fn(async (): Promise<string> => 'Closed'),
   settle: vi.fn(async (): Promise<SettleResult> => ({ clearingPrice: 100, allocations: [] })),
+  tamperClear: vi.fn(async (): Promise<{ rejected: true; error: string }> => ({ rejected: true, error: 'rejected' })),
   readTradeConfirmations: vi.fn(async () => []),
   ...overrides,
 })

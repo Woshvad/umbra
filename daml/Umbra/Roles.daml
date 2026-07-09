@@ -58,3 +58,17 @@ template Venue
           (bond.owner == desk && bond.symbol == "USDCx")
         create OrderCommitment with
           operator; desk; roundId; commitment; bondCid
+
+    -- CRYP-03 (10-01) — anchor a ZK proof HASH on-ledger (operator plane). Records
+    -- only the proof hash + verification-key hash (NO proof bytes) — off-ledger
+    -- verify + on-ledger anchor. Nonconsuming so the Venue persists. The ProofAnchor
+    -- template lives in Umbra.Auction; this is the named operator-authority create
+    -- path (a choice needs an operator-signed template, and Round stays byte-unchanged).
+    nonconsuming choice AnchorProof : ContractId ProofAnchor
+      with
+        roundId   : Text
+        proofHash : Text
+        vkeyHash  : Text
+      controller operator
+      do
+        create ProofAnchor with operator; roundId; proofHash; vkeyHash

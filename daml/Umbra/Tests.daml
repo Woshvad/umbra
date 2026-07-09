@@ -18,10 +18,10 @@ import Umbra.Auction
   ( Side(..), Allocation(..)
   , Order, Round(..), RoundStatus(..), TradeConfirmation, RoundStats(..)
   , CloseRound(..), Clear(..)
-  , OrderCommitment(..), RevealOrder(..)
+  , OrderCommitment(..), RevealOrder(..), ForfeitBond(..), ProofAnchor(..)
   , commitOf, serializeOrder
   )
-import Umbra.Roles (Venue, SubmitOrder(..), CommitOrder(..))
+import Umbra.Roles (Venue, SubmitOrder(..), CommitOrder(..), AnchorProof(..))
 import Umbra.Clearing
 
 -- LEDG-02 — the §4 seed is the single correctness reference. Assert that after
@@ -755,3 +755,48 @@ test_bond_returned = do
   length aOrders === 1
   assertMsg "revealed order is BankA's Buy 10 @101"
     (all (\(_, o) -> o.desk == bankA && o.side == Buy && o.quantity == 10 && o.limit == 101.0) aOrders)
+
+-- T-10-02 — a commitment still live at close FORFEITS its bond to the operator
+-- pot. BankB commits but never reveals; the operator exercises ForfeitBond; the
+-- bond moves to the operator and the commitment is consumed. Contrast with
+-- test_bond_returned: there the desk keeps its bond, here it loses it.
+test_bond_forfeit : Script ()
+test_bond_forfeit = do
+  Parties{..} <- initialize
+  venueCid <- findVenueCid operator
+  assets0 <- query @Asset operator
+  let bUsdc = findUsdcCid bankB assets0
+  (bBond, _rem) <- submit operator do exerciseCmd bUsdc Split with splitQty = 10.0
+  let comm = commitOf (serializeOrder Sell 8 99.0 Limit None None) "saltB"
+  oc <- submit bankB do
+    exerciseCmd venueCid CommitOrder with
+      desk = bankB; roundId = "R1"; commitment = comm; bondCid = bBond
+  -- The desk never reveals; at close the operator seizes the bond.
+  _ <- submit operator do exerciseCmd oc ForfeitBond
+  -- The commitment is consumed (no reclaim path remains) ...
+  ocs <- query @OrderCommitment operator
+  length ocs === 0
+  -- ... the bond now belongs to the operator pot (owner == operator) ...
+  opAssets <- query @Asset operator
+  assertMsg "forfeited bond is now owned by the operator pot"
+    (any (\(_, a) -> a.owner == operator && a.symbol == "USDCx" && a.quantity == 10.0) opAssets)
+  -- ... and BankB no longer owns that 10.0 bond (the deterrent bit).
+  bAssets <- query @Asset bankB
+  assertMsg "the desk no longer owns the forfeited bond"
+    (not (any (\(_, a) -> a.owner == bankB && a.symbol == "USDCx" && a.quantity == 10.0) bAssets))
+
+-- CRYP-03 — the on-ledger ProofAnchor records ONLY hashes and is readable. The
+-- operator anchors a sample proof hash + vkey hash via Venue.AnchorProof; the
+-- contract queries back with both hashes intact (no proof bytes on-ledger).
+test_proof_anchor : Script ()
+test_proof_anchor = do
+  Parties{..} <- initialize
+  venueCid <- findVenueCid operator
+  let ph = "9f2c1a7bproofhashsample"
+      vh = "vkey00d1verificationhash"
+  _ <- submit operator do
+    exerciseCmd venueCid AnchorProof with roundId = "R1"; proofHash = ph; vkeyHash = vh
+  anchors <- query @ProofAnchor operator
+  length anchors === 1
+  assertMsg "ProofAnchor round-trips proofHash + vkeyHash + roundId"
+    (any (\(_, pa) -> pa.proofHash == ph && pa.vkeyHash == vh && pa.roundId == "R1") anchors)

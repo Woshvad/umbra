@@ -213,6 +213,32 @@ template OrderCommitment
           status = Sealed
           orderType; minQty; firmIf
 
+    -- FORFEIT (T-10-02) — the deterrent against commit-then-vanish griefing. A
+    -- commitment still live at close (never revealed) lets the operator SEIZE the
+    -- locked bond into the operator pot. Controller operator (the Asset custodian,
+    -- so it can both see and Reassign the desk's bond); CONSUMING, so the desk can
+    -- no longer RevealOrder to reclaim — the seizure is final.
+    choice ForfeitBond : ContractId Asset
+      controller operator
+      do
+        exercise bondCid Reassign with newOwner = operator
+
+-- CRYP-03 (10-01) — on-ledger PROOF-HASH ANCHOR. Records ONLY hashes: the ZK
+-- proof/publicSignals hash and the verification-key hash (RESEARCH Open Q3). NO
+-- proof bytes / witness / order data ever land on-ledger — Canton has no zk
+-- precompile, so verification is OFF-ledger (a documented gap) and this anchor
+-- merely records "a valid proof existed" and binds it to a known circuit
+-- (vkeyHash). Operator-signed (no desk authority needed); created via the
+-- operator's Venue.AnchorProof choice (or a direct operator create).
+template ProofAnchor
+  with
+    operator  : Party
+    roundId   : Text
+    proofHash : Text     -- sha256(proof ‖ publicSignals), computed OFF-ledger
+    vkeyHash  : Text     -- hash of the verification key (binds to a known circuit)
+  where
+    signatory operator
+
 -- §7.6 — each desk's private fill receipt; observed by the SINGULAR desk only.
 -- AUCT-04 (best-ex / TCA): the appended fields carry the per-desk receipt numbers.
 -- `surplusVsLimit` is the PROVEN best-execution number — structurally non-negative

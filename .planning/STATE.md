@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Progress
 status: executing
-stopped_at: Completed 09-02-PLAN.md
-last_updated: "2026-07-09T17:02:00.000Z"
-last_activity: 2026-07-09 -- Completed 09-02 (coreClear two-pass + Noncompetitive)
+stopped_at: Completed 09-04-PLAN.md
+last_updated: "2026-07-09T17:25:00.000Z"
+last_activity: 2026-07-09 -- Completed 09-04 (AUCT-03 aggregate indicative feed + VIZ-01 assembling↔locked)
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 14
-  completed_plans: 9
-  percent: 17
+  completed_plans: 10
+  percent: 18
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 ## Current Position
 
 Phase: 09 (auction-depth-live-viz) — EXECUTING
-Plan: 3 of 7
+Plan: 09-04 done (wave 2); 09-03 (wave 3) next
 Status: Ready to execute
-Last activity: 2026-07-09 -- Completed 09-02 (coreClear two-pass + Noncompetitive)
+Last activity: 2026-07-09 -- Completed 09-04 (AUCT-03 aggregate indicative feed + VIZ-01 assembling↔locked)
 
 ## Performance Metrics
 
@@ -75,6 +75,7 @@ Last activity: 2026-07-09 -- Completed 09-02 (coreClear two-pass + Noncompetitiv
 | Phase 08 P07 | ~8 min | 3 tasks | 8 files |
 | Phase 09 P01 | 22min | 3 tasks tasks | 12 files files |
 | Phase 09 P02 | ~11 min | 2 tasks | 5 files |
+| Phase 09 P04 | ~14 min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -127,6 +128,7 @@ Recent decisions affecting current work:
 - [Phase ?]: [09-01]: web/daml.js regenerated+committed (fresh-clone invariant 6e4bade); generated Order/SubmitOrder carry orderType/minQty/firmIf. DeskColumn.tsx was a 2nd SubmitOrder site the plan missed (Rule 3 fix).
 - [Phase ?]: [09-01 / AUCT-02]: RULEBOOK.md skeleton anchors max-matched->min-imbalance->lower-price + topPrices trap guard + bp formula, cites both Clearing.daml and auction.ts; 09-02/09-03 fill per-type sections. AUCT-01/02 NOT complete (multi-plan foundation).
 - [09-02 / AUCT-01,AUCT-02]: coreClear extracted (single-pass §8 kernel) + computeClearing now a two-pass wrapper (partition firm/conditional, provisional coreClear over firm, pass-through `qualifies` hook for 09-03) — behavior-preserving in both planes. Noncompetitive shipped: any-price demand/supply (isNoncomp OR limit), excluded from candidatePrices, TOP-priority ration key `(not noncomp, per-side limit)` — Daml Bool→TS 0/1 (Pitfall 6); per-side direction kept (sells ASC or §4 breaks). Golden parity fixtures test_noncomp_sell_top_priority ⇄ auction.test.ts noncomp (p*=100.00, A=6/B=2/C=4). §4 canary + 99-vs-100 trap green; solver 84/84, daml 16 ok, tsc clean. RULEBOOK Noncompetitive section filled citing both planes. Noncomp kept SELL-side (single funded buyer, Pitfall 3). AUCT-01/02 still NOT complete (AON/MAQ + Conditional + full rulebook land 09-03).
+- [09-04 / AUCT-03,VIZ-01]: OPEN-window aggregate indicative feed — api.ts GET /round/:id attaches an `indicative` block (SCALARS ONLY: `{indicativePrice|coarse+band, netImbalance, estMatched}`) only when status Open with ≥1 sealed order. Small-N guard: exact price published only with ≥2 orders on BOTH sides (else coarse band = round(p*/5)*5 + coarse:true — §4's single buyer → coarse). NO curve/candidatePrices during open (buildCurve stays terminal-only, Pitfall 1). choosePStar threaded through AppDeps/MathPort/buildDeps. api.test.ts +3 (indicative/no-leak, small-N coarse band, open-body secret sweep); solver 87/87, tsc clean. web solver.ts IndicativeMeta type. VIZ-01: CrossingChart gains `mode` prop (assembling|locked, default locked) — assembling hides red p*/marker/label + faint region + ASSEMBLING caption; locked byte-unchanged SVG (296,160/r5/15px) + red-square `p* LOCKED @ {price}` verdict. TheatreView indicative panel (INDICATIVE/NET IMBALANCE/EST. MATCHED, small-N labeled) + assembling chart during open (curve=[] — no per-order geometry crosses the wire). curve.ts UNCHANGED (curve.test.ts §4 marker green); web build + 30 vitest green. Live "updates as orders arrive" = end-of-phase human-check.
 
 ### Pending Todos
 
@@ -152,6 +154,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-09T17:02:00.000Z
-Stopped at: Completed 09-02-PLAN.md
+Last session: 2026-07-09T17:25:00.000Z
+Stopped at: Completed 09-04-PLAN.md
 Resume file: None

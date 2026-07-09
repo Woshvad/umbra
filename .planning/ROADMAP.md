@@ -308,7 +308,7 @@ Plans:
 **Wave 2** *(blocked on 09-01)*
 
 - [x] 09-02-PLAN.md — Rulebook math I: coreClear + two-pass computeClearing refactor + Noncompetitive (Daml+TS lockstep) + golden fixtures; §4 stays $100.00, noncomp golden parity green [AUCT-01, AUCT-02]
-- [ ] 09-04-PLAN.md — AUCT-03 aggregate indicative feed (scalars-only, small-N guard, no curve leak) + VIZ-01 CrossingChart assembling↔locked + Theatre panel [AUCT-03, VIZ-01]
+- [x] 09-04-PLAN.md — AUCT-03 aggregate indicative feed (scalars-only, small-N guard, no curve leak) + VIZ-01 CrossingChart assembling↔locked + Theatre panel [AUCT-03, VIZ-01]
 
 **Wave 3** *(blocked on 09-02)*
 
@@ -386,7 +386,7 @@ Build waves run in numeric order 8 → 9 → 10 → 11. Track A (Phase 12) runs 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 8. Demo Hardening | 7/7 | Built · live UAT pending | 2026-07-09 |
-| 9. Auction Depth & Live Viz | 2/7 | In Progress|  |
+| 9. Auction Depth & Live Viz | 3/7 | In Progress|  |
 | 10. Cryptographic Privacy | 0/— | Not started | — |
 | 11. Settlement & Institutional Grade | 0/— | Not started | — |
 | 12. Real On-Chain (Canton DevNet) | 0/— | Not started (external gate) | — |

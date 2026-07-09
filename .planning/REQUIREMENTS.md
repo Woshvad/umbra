@@ -107,7 +107,7 @@ Scoped for milestone v2.0. Grounded in the **current** stack (Daml 3.4.11 + Cant
 
 - [ ] **AUCT-01**: Desks can submit richer order types — noncompetitive ("fill at clear"), minimum-acceptable-quantity / all-or-none, and conditional auto-firming — in addition to plain sealed limits
 - [ ] **AUCT-02**: The deterministic clearing rulebook (maximize matched volume → minimize imbalance → pro-rata at the marginal price) is documented and enforced identically in `Clearing.daml` and the solver
-- [ ] **AUCT-03**: During the open window, desks see a privacy-safe AGGREGATE indicative clearing price + net imbalance (never an individual order), updated as sealed orders arrive
+- [x] **AUCT-03**: During the open window, desks see a privacy-safe AGGREGATE indicative clearing price + net imbalance (never an individual order), updated as sealed orders arrive *(09-04; scalars-only feed + small-N guard unit-proven — live "updates as orders arrive" = end-of-phase human-check)*
 - [ ] **AUCT-04**: After clear, each desk receives an exportable best-execution/TCA receipt (fill vs limit vs reference price, surplus in bp) with an on-ledger surplus≥0 proof
 
 ### Cryptographic Privacy (CRYP)
@@ -128,7 +128,7 @@ Scoped for milestone v2.0. Grounded in the **current** stack (Daml 3.4.11 + Cant
 
 ### Visualization (VIZ)
 
-- [ ] **VIZ-01**: A live supply/demand crossing visualization assembles the aggregate curve as orders arrive and locks the clearing price at close
+- [x] **VIZ-01**: A live supply/demand crossing visualization assembles the aggregate curve as orders arrive and locks the clearing price at close *(09-04; CrossingChart assembling↔locked, curve.ts §4 marker intact — live assemble = end-of-phase human-check)*
 - [ ] **VIZ-02**: A privacy "time-machine" replay reconstructs each party's exact view across the round timeline (open→sealed→cleared→settled) from ledger events
 - [ ] **VIZ-03**: A live three-node topology view shows each desk's order resident on its own Canton participant and the settlement transaction spanning all three atomically
 

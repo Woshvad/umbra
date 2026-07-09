@@ -72,23 +72,36 @@ isBuy o = o.side == Buy
 isSell : OrderView -> Bool
 isSell o = o.side == Sell
 
--- §8 step 2 — Σ qty of buys willing to pay >= p.
+-- NONCOMPETITIVE (AUCT-01, 09-02) — an order "willing at ANY clearing price"
+-- (US-Treasury-style noncompetitive tender). Its stored `limit` is IGNORED for
+-- willingness; the effective-limit is +∞ for a noncomp buy / 0 for a noncomp sell
+-- (RESEARCH A1 effective-limit approach — `limit` stays Decimal). It therefore
+-- contributes to demand/supply at EVERY price (OR'd into the predicate below),
+-- adds NO candidate price of its own (excluded from `candidatePrices`), and is
+-- allocated with TOP priority (the noncomp-first sort key in `coreClear`).
+isNoncomp : OrderView -> Bool
+isNoncomp o = o.orderType == Noncompetitive
+
+-- §8 step 2 — Σ qty of buys willing to pay >= p (noncomp buys are willing at any p).
 demandAt : [OrderView] -> Decimal -> Int
 demandAt orders p =
-  sum [ o.quantity | o <- orders, isBuy o, o.limit >= p ]
+  sum [ o.quantity | o <- orders, isBuy o, isNoncomp o || o.limit >= p ]
 
--- §8 step 2 — Σ qty of sells willing to receive <= p.
+-- §8 step 2 — Σ qty of sells willing to receive <= p (noncomp sells at any p).
 supplyAt : [OrderView] -> Decimal -> Int
 supplyAt orders p =
-  sum [ o.quantity | o <- orders, isSell o, o.limit <= p ]
+  sum [ o.quantity | o <- orders, isSell o, isNoncomp o || o.limit <= p ]
 
 -- §8 step 2 — matched volume at p.
 matchedAt : [OrderView] -> Decimal -> Int
 matchedAt orders p = min (demandAt orders p) (supplyAt orders p)
 
--- §8 step 1 — distinct, sorted candidate prices from all limits.
+-- §8 step 1 — distinct, sorted candidate prices from the COMPETITIVE limits.
+-- Noncompetitive orders add NO candidate price (their `limit` is not a meaningful
+-- willingness bound — they clear at any p*), so they are excluded here even though
+-- they still lift demand/supply at every price via `demandAt`/`supplyAt`.
 candidatePrices : [OrderView] -> [Decimal]
-candidatePrices orders = sort (dedup [ o.limit | o <- orders ])
+candidatePrices orders = sort (dedup [ o.limit | o <- orders, not (isNoncomp o) ])
 
 -- §8 step 3 — choose p* with the TWO-LEVEL tie-break, applied IN ORDER.
 --
@@ -151,10 +164,19 @@ coreClear : [OrderView] -> (Decimal, [Allocation])
 coreClear orders =
   let pStar  = choosePStar orders
       traded = matchedAt orders pStar
-      -- eligible buys sorted DESCENDING by limit (most-aggressive buy first);
-      -- eligible sells sorted ASCENDING by limit (most-aggressive sell first).
-      buys   = sortOn (\o -> negate o.limit) [ o | o <- orders, isBuy o,  o.limit >= pStar ]
-      sells  = sortOn (.limit)               [ o | o <- orders, isSell o, o.limit <= pStar ]
+      -- Priority sort key = (NOT noncomp, per-side limit). Daml `Ord Bool` has
+      -- False < True, so noncomp (isNoncomp==True ⇒ `not` gives False) sorts FIRST
+      -- (top priority), then the EXISTING per-side limit direction breaks ties
+      -- among competitive orders — buys DESCENDING by limit (most-aggressive buy
+      -- first), sells ASCENDING by limit (most-aggressive sell first). The §4 book
+      -- (all competitive) keeps its exact prior ordering: the Bool is True for all,
+      -- so the tuple reduces to the old single limit key. Mirrored in TS by mapping
+      -- the Bool to 0/1 (Pitfall 6). NB: the direction is per-side (NOT a blanket
+      -- `negate effLimit`), because sells must stay ASCENDING or §4 breaks.
+      buys   = sortOn (\o -> (not (isNoncomp o), negate o.limit))
+                      [ o | o <- orders, isBuy o,  isNoncomp o || o.limit >= pStar ]
+      sells  = sortOn (\o -> (not (isNoncomp o), o.limit))
+                      [ o | o <- orders, isSell o, isNoncomp o || o.limit <= pStar ]
       buyFills  = rationByPriority buys  traded
       sellFills = rationByPriority sells traded
       allocs =

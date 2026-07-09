@@ -172,16 +172,59 @@ A sealed limit order: a side, a quantity, and a price bound (buy = maximum,
 sell = minimum). Eligible when `limit ≥ p*` (buy) / `limit ≤ p*` (sell); cleared
 by the objective and rationing above. `minQty = None`, `firmIf = None`.
 
-### Noncompetitive — _PLACEHOLDER (09-02)_
+### Noncompetitive (shipped — 09-02)
 
-Willing to transact at **any** clearing price (no price bound), allocated at top
-priority before competitive orders, capped at its quantity — analogous to a US
-Treasury noncompetitive tender. Contributes to demand/supply at every price and
-adds no candidate price of its own. To be filled by **09-02**, implemented in
-lockstep and cited here as `Clearing.daml::demandAt`/`supplyAt`/`rationByPriority`
-⇄ `auction.ts::demandAt`/`supplyAt`/`rationByPriority` (the noncompetitive
-priority sort key maps Daml's `Bool` to TS `0/1`, a parity note to be pinned
-when the rule lands).
+A noncompetitive order is **willing to transact at any clearing price** — it has
+no price bound, analogous to a US-Treasury noncompetitive tender. It is defined
+by three rules, each mirrored byte-for-byte in both planes:
+
+1. **Any-price contribution.** A noncompetitive order contributes to demand
+   (buy) / supply (sell) at **every** price. The willingness predicate is OR'd
+   with the noncompetitive flag: a buy counts toward demand at `p` when
+   `orderType == Noncompetitive || limit >= p`; a sell counts toward supply when
+   `orderType == Noncompetitive || limit <= p`. The stored `limit` is IGNORED for
+   a noncompetitive order (effective-limit `+∞` for a buy, `0` for a sell — the
+   `limit` field stays `Decimal` but carries no willingness meaning).
+2. **Adds no candidate price.** A noncompetitive order's `limit` is NOT a
+   willingness bound, so it is **excluded from `candidatePrices`**. `p*` is still
+   chosen only from the distinct **competitive** limits; the noncompetitive order
+   merely lifts both curves uniformly at whatever `p*` the competitive book sets.
+3. **Top-priority allocation, capped at quantity.** In rationing, noncompetitive
+   orders fill **first** (before any competitive order on the same side), each up
+   to its own quantity. The priority sort key is the tuple `(NOT noncomp,
+   per-side limit)`: noncompetitive sorts ahead of competitive, and **within**
+   each class the existing per-side limit direction still applies — buys
+   **descending** by limit, sells **ascending** by limit.
+
+**Bool → 0/1 parity note (Pitfall 6).** In Daml the key is
+`sortOn (\o -> (not (isNoncomp o), <perSideLimit>))`, relying on `Ord Bool`
+(`False < True`) to put noncompetitive first. TypeScript booleans do not sort, so
+the mirror maps the flag to an integer — `(isNoncomp(a) ? 0 : 1) - (isNoncomp(b)
+? 0 : 1) || <perSideLimit>` — and compares lexicographically. The direction is
+**per-side** (sells stay ascending); a blanket `negate effLimit` for both sides
+would reverse the sell ordering and clear the §4 fixture wrongly, so it is NOT
+used.
+
+**Single-buyer settle caveat (Pitfall 3).** A noncompetitive **buy** alongside
+the §4 buy would create two funded buyers and `Round.Clear` aborts (single
+funded-buyer settlement MVP). Noncompetitive is therefore kept on the **sell**
+side for any settle-path demo; clearing / preview / viz may show richer books.
+
+**§4 safety.** The predicate is inert when no order is noncompetitive
+(`orderType == Noncompetitive` is false for every `Limit` order), so the §4
+fixture is unchanged — still `p* = 100.00`, A=10 / B=8 / C=2.
+
+- Any-price contribution: `Clearing.daml::isNoncomp` + `demandAt`/`supplyAt` ⇄
+  `auction.ts::isNoncomp` + `demandAt`/`supplyAt`.
+- No candidate price: `Clearing.daml::candidatePrices` ⇄
+  `auction.ts::candidatePrices` (both filter `not (isNoncomp o)`).
+- Top priority: the `(not isNoncomp, per-side limit)` sort key in
+  `Clearing.daml::coreClear` ⇄ the `0/1`-mapped key in `auction.ts::coreClear`.
+- Golden fixtures (identical numbers = parity):
+  `daml/Umbra/Tests.daml::test_noncomp_sell_top_priority` ⇄ the `noncomp`
+  scenario in `solver/src/auction.test.ts` — both assert `p* = 100.00`,
+  A=6 / B=2 / C=4 (noncomp C fills its full 4 with top priority; competitive B
+  rationed to 2).
 
 ### AllOrNone / MAQ — _PLACEHOLDER (09-02)_
 

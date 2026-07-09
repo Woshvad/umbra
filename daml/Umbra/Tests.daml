@@ -119,6 +119,50 @@ test_clears_at_100 = do
   -- C's residual: order qty (5) minus its fill (2) == 3.
   (5 - fillOf bankC) === 3
 
+-- AUCT-01 (09-02) — NONCOMPETITIVE golden fixture, the Daml twin of the
+-- `noncomp` scenario in solver/src/auction.test.ts (identical expected numbers =
+-- Daml⇄TS parity). A noncompetitive SELL (C) sits alongside a competitive limit
+-- buy (A) + competitive limit sell (B). C is willing at ANY price and rations
+-- with TOP priority, capped at its qty; B is competitive and rationed AFTER C.
+-- Noncomp is kept on the SELL side (single funded buyer — Pitfall 3).
+--
+--   A Buy 6 @100 (Limit)          demand@100 = 6
+--   B Sell 5 @100 (Limit)         competitive supply@100 = 5
+--   C Sell 4      (Noncompetitive) supply@ANY = 4   (limit field ignored; 0.0)
+--
+--   candidatePrices excludes noncomp → {100}.
+--   @100: demand 6, supply 5+4 = 9 → matched 6 = traded.
+--   Sells by priority: C (noncomp) first fills 4; B (competitive) fills the
+--   remaining 2. Buys: A fills 6.
+--   ⇒ p* = 100.00, fills A = 6 / B = 2 / C = 4 (noncomp C top-priority, full qty).
+--
+-- Discriminating: if priority were reversed, competitive B (qty 5) would fill 5
+-- and noncomp C only 1 — so this fixture proves top priority, not just any fill.
+test_noncomp_sell_top_priority : Script ()
+test_noncomp_sell_top_priority = do
+  bankA <- allocatePartyByHint (PartyIdHint "ncA")
+  bankB <- allocatePartyByHint (PartyIdHint "ncB")
+  bankC <- allocatePartyByHint (PartyIdHint "ncC")
+
+  let views =
+        [ OrderView with desk = bankA; side = Buy;  quantity = 6; limit = 100.0; orderType = Limit;          minQty = None; firmIf = None
+        , OrderView with desk = bankB; side = Sell; quantity = 5; limit = 100.0; orderType = Limit;          minQty = None; firmIf = None
+        -- Noncompetitive: `limit` is ignored (0.0 sentinel = willing at any price).
+        , OrderView with desk = bankC; side = Sell; quantity = 4; limit = 0.0;   orderType = Noncompetitive; minQty = None; firmIf = None
+        ]
+      (pStar, allocs) = computeClearing views
+      fillOf d = sum [ a.filledQty | a <- allocs, a.desk == d ]
+
+  -- Clears at the single competitive candidate price.
+  pStar === 100.0
+  -- Noncomp C fills FIRST and FULLY (capped at its qty 4); competitive B rationed to 2.
+  fillOf bankC === 4
+  fillOf bankB === 2
+  fillOf bankA === 6
+  -- Conservation: buy fills == sell fills == traded (6).
+  fillOf bankA === (fillOf bankB + fillOf bankC)
+  -- The §4 canary is UNAFFECTED by the noncomp predicate (proven in test_clears_at_100).
+
 -- ===========================================================================
 -- Phase-2 settlement seed helpers (RESEARCH A5 + Pitfall 5).
 --

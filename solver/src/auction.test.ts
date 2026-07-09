@@ -14,6 +14,7 @@ import {
   computeClearing,
   choosePStar,
   matchedAt,
+  candidatePrices,
   type Allocation,
   type OrderView,
 } from './auction'
@@ -181,6 +182,43 @@ describe('computeClearing — §8 clearing port', () => {
     const { allocations } = computeClearing(views)
     // Nothing crosses → traded is 0 → every fill is 0.
     expect(allocations.every((a) => a.filledQty === 0)).toBe(true)
+  })
+
+  // 6. NONCOMPETITIVE (AUCT-01, 09-02) — the TS twin of the Daml
+  //    `test_noncomp_sell_top_priority` fixture (identical expected numbers =
+  //    Daml⇄TS parity). A noncompetitive SELL (C) alongside a competitive limit
+  //    buy (A) + competitive limit sell (B). C is willing at ANY price and rations
+  //    with TOP priority (before competitive B), capped at its qty.
+  //      A Buy 6 @100 (Limit), B Sell 5 @100 (Limit), C Sell 4 (Noncompetitive).
+  //      candidatePrices excludes noncomp → {100}. @100: demand 6, supply 5+4=9 →
+  //      matched 6. Sells by priority: C (noncomp) fills 4, B fills the last 2.
+  //    ⇒ p* = 100.00, fills A=6 / B=2 / C=4. Discriminating: reversed priority
+  //    would give B=5 / C=1, so this proves top priority (not just any fill).
+  it('noncomp: a noncompetitive sell fills FIRST (top priority), capped at qty, at the clearing price', () => {
+    const views: OrderView[] = [
+      { desk: 'BankA', side: 'Buy', quantity: 6, limit: 100.0, orderType: 'Limit' },
+      { desk: 'BankB', side: 'Sell', quantity: 5, limit: 100.0, orderType: 'Limit' },
+      // Noncompetitive: limit ignored (0.0 sentinel = willing at any price).
+      { desk: 'BankC', side: 'Sell', quantity: 4, limit: 0.0, orderType: 'Noncompetitive' },
+    ]
+    const { clearingPrice, allocations } = computeClearing(views)
+
+    expect(clearingPrice).toBe(100)
+    // Noncomp adds NO candidate price (0.0 excluded); only the competitive 100 remains.
+    expect(candidatePrices(views)).toEqual([100])
+    // Noncomp C fills first and fully (qty 4); competitive B rationed after it to 2.
+    expect(fillOf(allocations, 'BankC')).toBe(4)
+    expect(fillOf(allocations, 'BankB')).toBe(2)
+    expect(fillOf(allocations, 'BankA')).toBe(6)
+
+    // Full multiset parity with the Daml test_noncomp fixture.
+    expect(sortAllocs(allocations)).toEqual(
+      sortAllocs([
+        { desk: 'BankA', side: 'Buy', filledQty: 6 },
+        { desk: 'BankB', side: 'Sell', filledQty: 2 },
+        { desk: 'BankC', side: 'Sell', filledQty: 4 },
+      ]),
+    )
   })
 
   // 4b. Genuinely empty batch → choosePStar hits the empty-`ranked` branch and

@@ -54,21 +54,30 @@ export interface ClearingResult {
 const isBuy = (o: OrderView): boolean => o.side === 'Buy'
 const isSell = (o: OrderView): boolean => o.side === 'Sell'
 
-// §8 step 2 — Σ qty of buys willing to pay >= p (Clearing.daml 59-61).
+// NONCOMPETITIVE (AUCT-01, 09-02) — byte-mirror of Clearing.daml::isNoncomp. A
+// noncomp order is willing at ANY clearing price (effective-limit +∞ buy / 0 sell,
+// `limit` ignored for willingness), adds NO candidate price, and rations with TOP
+// priority. `orderType` is optional here, so an omitted orderType (existing Limit
+// literals) is never Noncompetitive → the predicate is inert on the §4 book.
+const isNoncomp = (o: OrderView): boolean => o.orderType === 'Noncompetitive'
+
+// §8 step 2 — Σ qty of buys willing to pay >= p (noncomp buys willing at any p).
 export const demandAt = (orders: OrderView[], p: number): number =>
-  orders.filter((o) => isBuy(o) && o.limit >= p).reduce((s, o) => s + o.quantity, 0)
+  orders.filter((o) => isBuy(o) && (isNoncomp(o) || o.limit >= p)).reduce((s, o) => s + o.quantity, 0)
 
-// §8 step 2 — Σ qty of sells willing to receive <= p (Clearing.daml 64-66).
+// §8 step 2 — Σ qty of sells willing to receive <= p (noncomp sells at any p).
 export const supplyAt = (orders: OrderView[], p: number): number =>
-  orders.filter((o) => isSell(o) && o.limit <= p).reduce((s, o) => s + o.quantity, 0)
+  orders.filter((o) => isSell(o) && (isNoncomp(o) || o.limit <= p)).reduce((s, o) => s + o.quantity, 0)
 
-// §8 step 2 — matched volume at p (Clearing.daml 69-70).
+// §8 step 2 — matched volume at p (Clearing.daml matchedAt).
 export const matchedAt = (orders: OrderView[], p: number): number =>
   Math.min(demandAt(orders, p), supplyAt(orders, p))
 
-// §8 step 1 — distinct, sorted candidate prices from all limits (Clearing.daml 73-74).
+// §8 step 1 — distinct, sorted candidate prices from the COMPETITIVE limits.
+// Noncomp orders add NO candidate price (their limit is not a willingness bound),
+// so they are excluded here (mirrors Clearing.daml::candidatePrices).
 export const candidatePrices = (orders: OrderView[]): number[] =>
-  [...new Set(orders.map((o) => o.limit))].sort((a, b) => a - b)
+  [...new Set(orders.filter((o) => !isNoncomp(o)).map((o) => o.limit))].sort((a, b) => a - b)
 
 // §8 step 3 — choose p* with the TWO-LEVEL tie-break, applied IN ORDER over the
 // max-matched subset only (Clearing.daml 87-101). The `topPrices` filter is the
@@ -120,12 +129,17 @@ export const rationByPriority = (
 export const coreClear = (orders: OrderView[]): ClearingResult => {
   const pStar = choosePStar(orders)
   const traded = matchedAt(orders, pStar)
+  // Priority key mirrors Clearing.daml's (not noncomp, per-side limit) tuple with
+  // the Daml Bool mapped to 0/1 (Pitfall 6): noncomp → 0 sorts FIRST (top
+  // priority), then the EXISTING per-side limit direction breaks ties among
+  // competitive orders — buys DESC, sells ASC. Direction is per-side (sells stay
+  // ASC or §4 breaks). The §4 book (all competitive) keeps its exact prior order.
   const buys = orders
-    .filter((o) => isBuy(o) && o.limit >= pStar)
-    .sort((a, b) => b.limit - a.limit) // DESC by limit (most-aggressive buy first)
+    .filter((o) => isBuy(o) && (isNoncomp(o) || o.limit >= pStar))
+    .sort((a, b) => (isNoncomp(a) ? 0 : 1) - (isNoncomp(b) ? 0 : 1) || b.limit - a.limit)
   const sells = orders
-    .filter((o) => isSell(o) && o.limit <= pStar)
-    .sort((a, b) => a.limit - b.limit) // ASC by limit (most-aggressive sell first)
+    .filter((o) => isSell(o) && (isNoncomp(o) || o.limit <= pStar))
+    .sort((a, b) => (isNoncomp(a) ? 0 : 1) - (isNoncomp(b) ? 0 : 1) || a.limit - b.limit)
   const buyFills = rationByPriority(buys, traded)
   const sellFills = rationByPriority(sells, traded)
   const allocations: Allocation[] = [

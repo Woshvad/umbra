@@ -36,6 +36,18 @@ scripts/localnet/.tokens.json
 # --- Phase 8 — decision proof bundles (ephemeral per-round; NEVER commit; must not carry ANTHROPIC_API_KEY) ---
 solver/proofs/
 
+# --- Phase 10 — CRYP-03 zk BUILD artifacts (regenerable from circuit + circom.exe + snarkjs; NEVER commit) ---
+# The prebuilt circom.exe build tool AND the small committed §4 fixtures
+# (vkey.json / verification_key.json / proof.json / public.json) that the CRYP-03
+# verifier tests load are intentionally KEPT tracked (see solver/src/zk/.gitignore).
+solver/src/zk/**/*.wasm
+solver/src/zk/**/*.zkey
+solver/src/zk/**/*.ptau
+solver/src/zk/**/*.r1cs
+solver/src/zk/**/*.sym
+solver/src/zk/**/*_js/
+solver/src/zk/.tmp/
+
 # --- SDK download temp / OS noise ---
 *.tar.gz
 .DS_Store

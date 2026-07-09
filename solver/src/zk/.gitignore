@@ -1,0 +1,20 @@
+# --- Phase 10 CRYP-03 zk BUILD artifacts (regenerable; NEVER commit) ---
+# Circuit compile + Groth16 setup outputs are large and reproducible from the
+# circuit source + circom.exe + snarkjs — regenerate, never track.
+*.wasm
+*.zkey
+*.ptau
+*.r1cs
+*.sym
+*_js/
+.tmp/
+
+# --- KEEP TRACKED (do NOT ignore) ---
+# The small committed §4 fixtures the CRYP-03 verifier tests load, and the
+# pinned build tool, are the whole point of this directory — force-include them
+# so no broader rule can sweep them out.
+!vkey.json
+!verification_key.json
+!proof.json
+!public.json
+!circom.exe

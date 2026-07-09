@@ -108,7 +108,7 @@ Scoped for milestone v2.0. Grounded in the **current** stack (Daml 3.4.11 + Cant
 - [ ] **AUCT-01**: Desks can submit richer order types — noncompetitive ("fill at clear"), minimum-acceptable-quantity / all-or-none, and conditional auto-firming — in addition to plain sealed limits
 - [x] **AUCT-02**: The deterministic clearing rulebook (maximize matched volume → minimize imbalance → pro-rata at the marginal price) is documented and enforced identically in `Clearing.daml` and the solver *(09-03; RULEBOOK.md complete — all four order-type rules cite both planes, enforced by the Daml⇄TS golden-parity suite + §4 canary + 99-vs-100 trap)*
 - [x] **AUCT-03**: During the open window, desks see a privacy-safe AGGREGATE indicative clearing price + net imbalance (never an individual order), updated as sealed orders arrive *(09-04; scalars-only feed + small-N guard unit-proven — live "updates as orders arrive" = end-of-phase human-check)*
-- [ ] **AUCT-04**: After clear, each desk receives an exportable best-execution/TCA receipt (fill vs limit vs reference price, surplus in bp) with an on-ledger surplus≥0 proof
+- [x] **AUCT-04**: After clear, each desk receives an exportable best-execution/TCA receipt (fill vs limit vs reference price, surplus in bp) with an on-ledger surplus≥0 proof *(09-05; TradeConfirmation TCA fields + Round.Clear surplusVsLimit≥0 assert — daml test 23/23 green incl. test_surplus_nonneg; solver receipts[] + proof-pack embed; SettlementView two-distinct-surplus receipt + EXPORT RECEIPT; live settled-round receipt = end-of-phase human-check)*
 
 ### Cryptographic Privacy (CRYP)
 

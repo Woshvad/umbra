@@ -98,9 +98,9 @@ test_clears_at_100 = do
   -- §4 fixture: A Buy 10 @101, B Sell 8 @99, C Sell 5 @100 (Decimal limits,
   -- Int quantities — never compare an Int fill against a Decimal).
   let views =
-        [ OrderView with desk = bankA; side = Buy;  quantity = 10; limit = 101.0
-        , OrderView with desk = bankB; side = Sell; quantity = 8;  limit = 99.0
-        , OrderView with desk = bankC; side = Sell; quantity = 5;  limit = 100.0
+        [ OrderView with desk = bankA; side = Buy;  quantity = 10; limit = 101.0; orderType = Limit; minQty = None; firmIf = None
+        , OrderView with desk = bankB; side = Sell; quantity = 8;  limit = 99.0;  orderType = Limit; minQty = None; firmIf = None
+        , OrderView with desk = bankC; side = Sell; quantity = 5;  limit = 100.0; orderType = Limit; minQty = None; firmIf = None
         ]
       (pStar, allocs) = computeClearing views
       -- sum the filledQty for all allocations matching a desk.
@@ -178,12 +178,15 @@ seedAndClose bondForB = do
   oa <- submit bankA do
     exerciseCmd venueCid SubmitOrder with
       desk = bankA; roundId = "R1"; side = Buy;  quantity = 10; limit = 101.0
+      orderType = Limit; minQty = None; firmIf = None
   ob <- submit bankB do
     exerciseCmd venueCid SubmitOrder with
       desk = bankB; roundId = "R1"; side = Sell; quantity = 8;  limit = 99.0
+      orderType = Limit; minQty = None; firmIf = None
   oc <- submit bankC do
     exerciseCmd venueCid SubmitOrder with
       desk = bankC; roundId = "R1"; side = Sell; quantity = 5;  limit = 100.0
+      orderType = Limit; minQty = None; firmIf = None
 
   -- CloseRound → status flips to Closed (the new contract is what Clear settles).
   roundCid <- submit operator do
@@ -348,12 +351,15 @@ test_privacy_orders = do
   _ <- submit bankA do
     exerciseCmd venueCid SubmitOrder with
       desk = bankA; roundId = "R1"; side = Buy;  quantity = 10; limit = 101.0
+      orderType = Limit; minQty = None; firmIf = None
   _ <- submit bankB do
     exerciseCmd venueCid SubmitOrder with
       desk = bankB; roundId = "R1"; side = Sell; quantity = 8;  limit = 99.0
+      orderType = Limit; minQty = None; firmIf = None
   _ <- submit bankC do
     exerciseCmd venueCid SubmitOrder with
       desk = bankC; roundId = "R1"; side = Sell; quantity = 5;  limit = 100.0
+      orderType = Limit; minQty = None; firmIf = None
 
   -- seed RoundStats{count = 3} (operator-signed, observer = desks) for PRIV-02
   _ <- submit operator do

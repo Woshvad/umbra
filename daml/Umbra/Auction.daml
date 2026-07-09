@@ -11,13 +11,14 @@ module Umbra.Auction
   ( module Umbra.Auction
   , Side(..)
   , Allocation(..)
+  , OrderType(..)
   ) where
 
 import DA.Action (when, foldlA)
 import DA.Foldable (forA_)
 import DA.List (sortOn, dedup)
 import Umbra.Asset (Asset(..), Split(..), Reassign(..))
-import Umbra.Clearing (Side(..), Allocation(..), OrderView(..), computeClearing)
+import Umbra.Clearing (Side(..), Allocation(..), OrderType(..), OrderView(..), computeClearing)
 
 -- §7.3 — order status (verbatim). `Side` is defined in Umbra.Clearing and
 -- re-exported above (cycle-break); its Buy/Sell shape is byte-unchanged.
@@ -65,9 +66,21 @@ template Order
     quantity : Int
     limit    : Decimal
     status   : OrderStatus
+    orderType : OrderType         -- AUCT-01 discriminator (§4 orders are Limit)
+    minQty    : Optional Int      -- AllOrNone/MAQ only (inert until 09-02)
+    firmIf    : Optional Decimal  -- Conditional only (inert until 09-03)
   where
     signatory operator, desk     -- both; unforgeable, and private to these two
-    ensure quantity > 0 && limit > 0.0
+    -- ADDITIVE ensure relaxation (T-09-01-01): a plain Limit still needs limit>0;
+    -- a Noncompetitive order carries no price so limit>0 is not required. MAQ's
+    -- minQty must be in [1, quantity]; a Conditional's firmIf must be > 0. These
+    -- guards reject a malformed order on-ledger even though the new fields are
+    -- inert in the clearing math this plan. §4 orders (Limit, minQty=None,
+    -- firmIf=None) satisfy exactly the old `quantity > 0 && limit > 0.0`.
+    ensure quantity > 0
+      && (orderType == Noncompetitive || limit > 0.0)
+      && optional True (\m -> m >= 1 && m <= quantity) minQty
+      && optional True (> 0.0) firmIf
 
     -- Operator-only retirement of a settled order. `archive` (the built-in)
     -- needs the authority of ALL signatories (operator AND desk); inside
@@ -174,10 +187,13 @@ template Round
         --    (e.g. 99.0) is rejected here regardless of holdings.
         orders <- mapA fetch orderCids
         let views = [ OrderView with
-                        desk     = o.desk
-                        side     = o.side
-                        quantity = o.quantity
-                        limit    = o.limit
+                        desk      = o.desk
+                        side      = o.side
+                        quantity  = o.quantity
+                        limit     = o.limit
+                        orderType = o.orderType
+                        minQty    = o.minQty
+                        firmIf    = o.firmIf
                     | o <- orders ]
         let (pStarExpected, allocsExpected) = computeClearing views
         assertMsg "clearingPrice does not match recomputed §8 p*"

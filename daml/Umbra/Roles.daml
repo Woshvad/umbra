@@ -22,9 +22,13 @@ template Venue
         side      : Side        -- data Side = Buy | Sell
         quantity  : Int         -- > 0
         limit     : Decimal     -- > 0
+        orderType : OrderType   -- AUCT-01 discriminator (Limit for §4 orders)
+        minQty    : Optional Int      -- AllOrNone/MAQ only (inert until 09-02)
+        firmIf    : Optional Decimal  -- Conditional only (inert until 09-03)
       controller desk
       do
         assertMsg "desk not registered" (desk `elem` desks)
         create Order with
           operator; desk; roundId; side; quantity; limit
           status = Sealed
+          orderType; minQty; firmIf

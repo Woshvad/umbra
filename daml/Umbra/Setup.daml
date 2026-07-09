@@ -84,12 +84,15 @@ runCanonicalRound = do
   submit bankA do
     exerciseCmd venueCid SubmitOrder with
       desk = bankA; roundId = "R1"; side = Buy;  quantity = 10; limit = 101.0
+      orderType = Limit; minQty = None; firmIf = None
   submit bankB do
     exerciseCmd venueCid SubmitOrder with
       desk = bankB; roundId = "R1"; side = Sell; quantity = 8;  limit = 99.0
+      orderType = Limit; minQty = None; firmIf = None
   submit bankC do
     exerciseCmd venueCid SubmitOrder with
       desk = bankC; roundId = "R1"; side = Sell; quantity = 5;  limit = 100.0
+      orderType = Limit; minQty = None; firmIf = None
   pure ()
   -- DEFERRED to Phase 2: open a Round, CloseRound, then Round.Clear and assert
   -- clearingPrice == 100.0 with fills A=10 / B=8 / C=2 (C residual 3 unfilled).
@@ -128,12 +131,15 @@ seedOpenRound = do
   submit bankA do
     exerciseCmd venueCid SubmitOrder with
       desk = bankA; roundId = "R1"; side = Buy;  quantity = 10; limit = 101.0
+      orderType = Limit; minQty = None; firmIf = None
   submit bankB do
     exerciseCmd venueCid SubmitOrder with
       desk = bankB; roundId = "R1"; side = Sell; quantity = 8;  limit = 99.0
+      orderType = Limit; minQty = None; firmIf = None
   submit bankC do
     exerciseCmd venueCid SubmitOrder with
       desk = bankC; roundId = "R1"; side = Sell; quantity = 5;  limit = 100.0
+      orderType = Limit; minQty = None; firmIf = None
   -- (3) Seed RoundStats{count = 3} (operator-signed; observer = desks) — the ONLY
   --     pre-clear shared info any desk may read.
   submit operator do

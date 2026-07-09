@@ -40,13 +40,30 @@ data Allocation = Allocation with
     filledQty : Int
   deriving (Eq, Show)
 
+-- §7.3 (AUCT-01) — the order-type discriminator. ADDITIVE: the §4 canonical
+-- orders are plain `Limit`, so `orderType`/`minQty`/`firmIf` are INERT until the
+-- wave-2 clearing math (09-02/09-03) reads them. Defined here (the pure math
+-- leaf, beside OrderView) and re-exported by Umbra.Auction so a single symbol is
+-- shared by both planes. `limit : Decimal` is KEPT (effective-limit approach,
+-- RESEARCH A1) — Noncompetitive's "willing at any price" is modelled later as an
+-- effective ±∞ limit, NOT by making `limit` Optional (smaller blast radius on
+-- the frozen field). Byte-mirrored by `type OrderType` in solver/src/auction.ts.
+data OrderType = Limit | Noncompetitive | AllOrNone | Conditional
+  deriving (Eq, Show)
+
 -- A flattened view of one order, decoupled from the `Order` template so the
 -- math is a pure function of plain data — easy to test and to mirror in TS (P4).
+-- The three appended fields (orderType/minQty/firmIf) are additive and inert in
+-- this plan: demandAt/supplyAt/choosePStar/rationByPriority/computeClearing do
+-- NOT read them yet, so §4 still clears $100.00 as a pure reduction.
 data OrderView = OrderView with
-    desk     : Party
-    side     : Side
-    quantity : Int
-    limit    : Decimal
+    desk      : Party
+    side      : Side
+    quantity  : Int
+    limit     : Decimal
+    orderType : OrderType         -- AUCT-01 discriminator (defaults to Limit)
+    minQty    : Optional Int      -- AllOrNone/MAQ only (inert until 09-02)
+    firmIf    : Optional Decimal  -- Conditional only (inert until 09-03)
   deriving (Eq, Show)
 
 isBuy : OrderView -> Bool

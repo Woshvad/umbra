@@ -43,6 +43,10 @@ const proposeClearing = vi.fn(
   }),
 )
 
+// WOW-03: buildDeps also threads the agent's NL parser; the boot-wiring proofs below
+// never hit /parse-order, so a keyless-style null stub suffices.
+const parseOrder = vi.fn(async (): Promise<{ side: 'Buy' | 'Sell'; qty: number; limit: number } | null> => null)
+
 // A ledger port whose every function is a spy; defaults are inert.
 const makeLedger = (overrides: Partial<LedgerPort> = {}): LedgerPort => ({
   openRound: vi.fn(
@@ -117,7 +121,7 @@ describe('solver boot wiring (buildDeps)', () => {
     )
     const clock = makeClock(openRoundClock)
 
-    const deps = buildDeps({ ledger, math, clock, openRoundClock, roundSeconds: ROUND_SECONDS, proposeClearing })
+    const deps = buildDeps({ ledger, math, clock, openRoundClock, roundSeconds: ROUND_SECONDS, proposeClearing, parseOrder })
     const app = createApp(deps)
     const started = await listen(app)
     server = started.server
@@ -149,7 +153,7 @@ describe('solver boot wiring (buildDeps)', () => {
     )
     const clock = makeClock(openRoundClock)
 
-    const deps = buildDeps({ ledger, math, clock, openRoundClock, roundSeconds: ROUND_SECONDS, proposeClearing })
+    const deps = buildDeps({ ledger, math, clock, openRoundClock, roundSeconds: ROUND_SECONDS, proposeClearing, parseOrder })
     const started = await listen(createApp(deps))
     server = started.server
 

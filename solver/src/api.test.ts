@@ -90,6 +90,8 @@ const makeDeps = (overrides: Partial<AppDeps>): AppDeps => ({
   // Agent stub — defaults to the deterministic fallback (keyless degradation); tests
   // override per scenario to assert the verified-claude path.
   proposeClearing: vi.fn(async (): Promise<AgentResult> => FALLBACK_AGENT_RESULT()),
+  // NL parse stub — defaults to null (keyless / unparseable); /parse-order tests override.
+  parseOrder: vi.fn(async (): Promise<{ side: 'Buy' | 'Sell'; qty: number; limit: number } | null> => null),
   // Real pure §8 helpers — solve-preview asserts true deterministic clearing.
   computeClearing,
   matchedAt,
@@ -359,6 +361,109 @@ describe('solver §11 HTTP API', () => {
     // The extended ANTHROPIC_API_KEY sentinel sweep — neither response carries the key.
     expect(JSON.stringify(getJson)).not.toContain(SENTINEL_API_KEY)
     expect(JSON.stringify(previewJson)).not.toContain(SENTINEL_API_KEY)
+  })
+
+  it('POST /parse-order returns the zod-validated order (200) for well-formed English', async () => {
+    const parseOrder = vi.fn(async () => ({ side: 'Buy' as const, qty: 10, limit: 101 }))
+    const deps = makeDeps({ parseOrder })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/parse-order`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'buy up to 10 under 101' }),
+    })
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    expect(body).toEqual({ side: 'Buy', qty: 10, limit: 101 })
+    expect(parseOrder).toHaveBeenCalledWith('buy up to 10 under 101')
+  })
+
+  it('POST /parse-order returns 422 when the parser cannot produce an order (null)', async () => {
+    const parseOrder = vi.fn(async () => null) // keyless / unparseable
+    const deps = makeDeps({ parseOrder })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/parse-order`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'what is the weather today?' }),
+    })
+    const body = await readJson(res)
+
+    expect(res.status).toBe(422)
+    expect(body).toHaveProperty('error')
+    expect(body.error).toHaveProperty('code', 'PARSE_FAILED')
+    expect(body.error).toHaveProperty('message')
+  })
+
+  it('POST /parse-order rejects a malformed body (missing text) with 400', async () => {
+    const deps = makeDeps({})
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/parse-order`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+    const body = await readJson(res)
+
+    expect(res.status).toBe(400)
+    expect(body.error).toHaveProperty('code', 'INVALID_BODY')
+    // The parser must NOT be called for an invalid body.
+    expect(deps.parseOrder).not.toHaveBeenCalled()
+  })
+
+  it('POST /parse-order rejects an oversized body (text > 280 chars) with 400', async () => {
+    const deps = makeDeps({})
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/parse-order`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'x'.repeat(281) }),
+    })
+    const body = await readJson(res)
+
+    expect(res.status).toBe(400)
+    expect(body.error).toHaveProperty('code', 'INVALID_BODY')
+    expect(deps.parseOrder).not.toHaveBeenCalled()
+  })
+
+  it('POST /parse-order never echoes the ANTHROPIC_API_KEY (secret sweep on the new endpoint)', async () => {
+    // The parseOrder stub closes over the sentinel key exactly as agent.ts holds the real
+    // one; neither a 200 order nor a 422 error may serialize it.
+    const parseOrder = vi.fn(async (text: string) => {
+      void SENTINEL_API_KEY // held in the closure, must NOT reach the wire
+      return text.startsWith('buy') ? { side: 'Buy' as const, qty: 10, limit: 101 } : null
+    })
+    const deps = makeDeps({ parseOrder })
+    const started = await listen(deps)
+    server = started.server
+
+    const okRes = await fetch(`${started.base}/parse-order`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'buy up to 10 under 101' }),
+    })
+    const okJson = await readJson(okRes)
+    const failRes = await fetch(`${started.base}/parse-order`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'gibberish' }),
+    })
+    const failJson = await readJson(failRes)
+
+    expect(okRes.status).toBe(200)
+    expect(failRes.status).toBe(422)
+    // Neither the parsed order nor the failure envelope carries the key sentinel.
+    expect(JSON.stringify(okJson)).not.toContain(SENTINEL_API_KEY)
+    expect(JSON.stringify(failJson)).not.toContain(SENTINEL_API_KEY)
   })
 
   it('POST /round/:id/settle returns 409 on double-settle (round already Settled)', async () => {

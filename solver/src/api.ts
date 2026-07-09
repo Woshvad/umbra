@@ -79,6 +79,11 @@ export interface AppDeps {
   // NEVER throws (keyless / SDK-error paths degrade to the deterministic fallback) and
   // is OFF the settlement path — the AI's numbers are never settled (verify-don't-trust).
   proposeClearing: (views: OrderView[]) => Promise<AgentResult>
+  // WOW-03: server-side natural-language order parse — plain English → a validated
+  // {side, qty, limit} (or null when keyless / unparseable). The Anthropic key stays
+  // module-private in agent.ts; this ONLY returns validated fields for the desk to
+  // CONFIRM via the existing SEAL ORDER (never auto-submitted). Never throws the key.
+  parseOrder: (text: string) => Promise<{ side: 'Buy' | 'Sell'; qty: number; limit: number } | null>
   // pure §8 helpers from auction.ts
   computeClearing: (orders: OrderView[]) => ClearingResult
   matchedAt: (orders: OrderView[], p: number) => number
@@ -109,6 +114,15 @@ const openRoundBody = z
     roundId: z.string().min(1).optional(),
     desks: z.array(z.string()).optional(),
     windowSeconds: z.number().int().positive().optional(),
+  })
+  .strict()
+
+// ── zod schema for POST /parse-order ─────────────────────────────────────────────
+// Cap the NL input length (≤280) — ASVS V5 input validation + a prompt-injection
+// blast-radius limiter. A missing/oversized/empty body → a sanitized 400.
+const parseOrderBody = z
+  .object({
+    text: z.string().min(1).max(280),
   })
   .strict()
 
@@ -299,6 +313,27 @@ export const createApp = (deps: AppDeps): Express => {
         allocations: result.allocations,
         txConfirmations: result.txConfirmations ?? 1,
       })
+    }),
+  )
+
+  // POST /parse-order — WOW-03 natural-language order entry. The desk posts plain
+  // English; the solver (holding the server-only Anthropic key) returns a zod-validated
+  // {side, qty, limit} that PREFILLS the ticket. Never auto-submits; 422 when unparseable.
+  app.post(
+    '/parse-order',
+    wrap(async (req, res) => {
+      const parsed = parseOrderBody.safeParse(req.body ?? {})
+      if (!parsed.success) {
+        const issue = parsed.error.issues[0]
+        const path = issue?.path.join('.') || '(body)'
+        throw new ApiError(400, 'INVALID_BODY', `invalid request body: ${path} — ${issue?.message ?? 'invalid'}`)
+      }
+      // deps.parseOrder holds the key module-side; keyless/malformed → null → 422.
+      const order = await deps.parseOrder(parsed.data.text)
+      if (!order) {
+        throw new ApiError(422, 'PARSE_FAILED', "couldn't parse that order — try e.g. \"buy 10 under 101\"")
+      }
+      res.json(order) // { side, qty, limit } — zod-validated, for the desk to confirm.
     }),
   )
 

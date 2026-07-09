@@ -57,6 +57,9 @@ export interface BuildDepsArgs {
   // The AI Solver Agent's verify-don't-trust proposeClearing (agent.ts). main()
   // constructs the real keyless-safe agent once at boot; the unit test injects a stub.
   proposeClearing: AppDeps['proposeClearing']
+  // WOW-03: the agent's server-side NL order parser (agent.ts). Same boot agent, same
+  // module-private key; keyless-degrades to null. The unit test injects a stub.
+  parseOrder: AppDeps['parseOrder']
 }
 
 // Assemble the AppDeps so the API routes are wired to the ledger + clock.
@@ -68,7 +71,7 @@ export interface BuildDepsArgs {
 // is the single path index.ts and index.test.ts both use, so the test's spies prove
 // the live wiring.
 export const buildDeps = (args: BuildDepsArgs): AppDeps => {
-  const { ledger, math, clock, openRoundClock, roundSeconds, proposeClearing } = args
+  const { ledger, math, clock, openRoundClock, roundSeconds, proposeClearing, parseOrder } = args
   return {
     // POST /round → ledger create THEN timer start (both).
     openRound: async (roundId, desks, windowSeconds): Promise<RoundView> => {
@@ -89,6 +92,8 @@ export const buildDeps = (args: BuildDepsArgs): AppDeps => {
     settle: ledger.settle,
     // The AI Solver Agent — proposes a clearing, the deterministic core verifies it.
     proposeClearing,
+    // WOW-03: server-side NL order parsing (same boot agent, key module-private).
+    parseOrder,
     computeClearing: math.computeClearing,
     matchedAt: math.matchedAt,
     demandAt: math.demandAt,
@@ -196,6 +201,7 @@ const main = async (): Promise<void> => {
     openRoundClock: (roundId, windowSeconds) => clock.openRoundClock(roundId, windowSeconds),
     roundSeconds,
     proposeClearing: agent.proposeClearing,
+    parseOrder: agent.parseOrder,
   })
 
   const app = createApp(deps)

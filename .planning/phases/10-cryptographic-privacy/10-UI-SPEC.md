@@ -1,12 +1,13 @@
 ---
 phase: 10
 slug: cryptographic-privacy
-status: draft
+status: approved
 shadcn_initialized: false
 preset: none
 design_system: "Umbra design/ comp (binding) + web/tailwind.config.ts tokens (frozen from P3/P6, UI-07 = 24/24)"
 baseline: "06-UI-SPEC.md (approved binding contract) + 07-UI-SPEC.md (100% comp fidelity) + 08-UI-SPEC.md (ink-evidence/verbatim-wire + red-square verdict) + 09-UI-SPEC.md (dashed-vs-solid simulation-vs-ledger separation) + Umbra design/Umbra.dc.html (ground truth)"
 created: 2026-07-09
+reviewed_at: 2026-07-09
 ---
 
 # Phase 10 — UI Design Contract (Cryptographic Privacy — CRYP-01/02/03 · VIZ-02)

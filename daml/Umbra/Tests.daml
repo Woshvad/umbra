@@ -18,8 +18,10 @@ import Umbra.Auction
   ( Side(..), Allocation(..)
   , Order, Round(..), RoundStatus(..), TradeConfirmation, RoundStats(..)
   , CloseRound(..), Clear(..)
+  , OrderCommitment(..), RevealOrder(..)
+  , commitOf, serializeOrder
   )
-import Umbra.Roles (Venue, SubmitOrder(..))
+import Umbra.Roles (Venue, SubmitOrder(..), CommitOrder(..))
 import Umbra.Clearing
 
 -- LEDG-02 — the §4 seed is the single correctness reference. Assert that after
@@ -659,3 +661,97 @@ test_privacy_confirmations = do
     (notElem bankB [ t.desk | (_, t) <- aConfs ])
   allConfs <- query @TradeConfirmation operator
   length allConfs === 3
+
+-- ===========================================================================
+-- CRYP-01 (10-01) — on-ledger COMMIT–REVEAL proofs. These prove the ledger
+-- itself (not the operator) is the accept/reject authority for a reveal, that a
+-- valid reveal returns the escrowed bond, and that a non-revealing desk forfeits
+-- it. Round.Clear and the §8 math are UNTOUCHED — the binding lives entirely in
+-- OrderCommitment.RevealOrder / .ForfeitBond and the Venue.CommitOrder escrow.
+-- ===========================================================================
+
+-- Locate the (single) USDCx holding an owner has after `initialize`, from the
+-- operator's view of the ACS (Script-tier query — same idiom as findAssetCid).
+findUsdcCid : Party -> [(ContractId Asset, Asset)] -> ContractId Asset
+findUsdcCid owner assets =
+  case [ cid | (cid, a) <- assets, a.owner == owner, a.symbol == "USDCx" ] of
+    (cid :: _) -> cid
+    []         -> error ("findUsdcCid: no USDCx for " <> show owner)
+
+-- Find the single Venue seeded by `initialize`.
+findVenueCid : Party -> Script (ContractId Venue)
+findVenueCid operator = do
+  venues <- query @Venue operator
+  case venues of
+    ((v, _) :: _) -> pure v
+    []            -> abort "findVenueCid: no Venue found after initialize"
+
+-- T-10-01 — a reveal whose sha256(order‖salt) does NOT equal the stored
+-- commitment is rejected ON-LEDGER. BankA commits its §4 order (Buy 10 @101);
+-- revealing with a WRONG salt, and revealing a DIFFERENT order (qty 12) with the
+-- RIGHT salt, both `submitMustFail` — the ledger recomputes the digest and aborts.
+test_reveal_mismatch_rejected : Script ()
+test_reveal_mismatch_rejected = do
+  Parties{..} <- initialize
+  venueCid <- findVenueCid operator
+  -- Carve a small USDCx bond slice from BankA's own holding (value-conserving).
+  assets0 <- query @Asset operator
+  let aUsdc = findUsdcCid bankA assets0
+  (aBond, _rem) <- submit operator do exerciseCmd aUsdc Split with splitQty = 10.0
+  -- Commit the §4 Buy order under the correct salt.
+  let comm = commitOf (serializeOrder Buy 10 101.0 Limit None None) "saltA"
+  oc <- submit bankA do
+    exerciseCmd venueCid CommitOrder with
+      desk = bankA; roundId = "R1"; commitment = comm; bondCid = aBond
+  -- Wrong salt → the recomputed digest differs → REJECTED on-ledger.
+  submitMustFail bankA do
+    exerciseCmd oc RevealOrder with
+      side = Buy; quantity = 10; limit = 101.0; orderType = Limit; minQty = None; firmIf = None
+      salt = "WRONG-salt"
+  -- Right salt but a DIFFERENT order (qty 12 not 10) → also REJECTED on-ledger.
+  submitMustFail bankA do
+    exerciseCmd oc RevealOrder with
+      side = Buy; quantity = 12; limit = 101.0; orderType = Limit; minQty = None; firmIf = None
+      salt = "saltA"
+  -- The commitment is still live (neither failed reveal consumed it); no Order exists.
+  ocs <- query @OrderCommitment operator
+  length ocs === 1
+  orders <- query @Order operator
+  length orders === 0
+
+-- T-10-01 (return leg) — a VALID, timely reveal releases the bond lock and
+-- creates the sealed Order. The bond (the desk's own USDCx, locked in operator
+-- custody during the window) is freely the desk's after a valid reveal, and the
+-- OrderCommitment is consumed (no further ForfeitBond possible).
+test_bond_returned : Script ()
+test_bond_returned = do
+  Parties{..} <- initialize
+  venueCid <- findVenueCid operator
+  assets0 <- query @Asset operator
+  let aUsdc = findUsdcCid bankA assets0
+  (aBond, _rem) <- submit operator do exerciseCmd aUsdc Split with splitQty = 10.0
+  let comm = commitOf (serializeOrder Buy 10 101.0 Limit None None) "saltA"
+  oc <- submit bankA do
+    exerciseCmd venueCid CommitOrder with
+      desk = bankA; roundId = "R1"; commitment = comm; bondCid = aBond
+  -- While the commitment is live the desk cannot move its own bond (every Asset
+  -- choice is controller operator) — locked in operator custody.
+  submitMustFail bankA do
+    exerciseCmd aBond (Reassign with newOwner = bankB)
+  -- A valid reveal: the ledger recompute matches → bond lock released + Order created.
+  _ <- submit bankA do
+    exerciseCmd oc RevealOrder with
+      side = Buy; quantity = 10; limit = 101.0; orderType = Limit; minQty = None; firmIf = None
+      salt = "saltA"
+  -- The commitment is consumed (lock released) ...
+  ocs <- query @OrderCommitment operator
+  length ocs === 0
+  -- ... the desk still owns its 10.0 USDCx bond (returned/released) ...
+  afterA <- query @Asset bankA
+  assertMsg "bond is the desk's after a valid reveal"
+    (any (\(_, a) -> a.owner == bankA && a.symbol == "USDCx" && a.quantity == 10.0) afterA)
+  -- ... and its sealed §4 Order now exists (visible to the desk, one order).
+  aOrders <- query @Order bankA
+  length aOrders === 1
+  assertMsg "revealed order is BankA's Buy 10 @101"
+    (all (\(_, o) -> o.desk == bankA && o.side == Buy && o.quantity == 10 && o.limit == 101.0) aOrders)

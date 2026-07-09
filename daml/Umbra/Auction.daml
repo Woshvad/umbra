@@ -17,6 +17,11 @@ module Umbra.Auction
 import DA.Action (when, foldlA)
 import DA.Foldable (forA_)
 import DA.List (sortOn, dedup)
+-- CRYP-01 (10-01): on-ledger commitment hashing. `sha256 : BytesHex -> BytesHex`
+-- takes HEX input, so the payload is `toHex`-encoded FIRST (RESEARCH Pitfall 1).
+-- Alpha-flagged stdlib module — the warning is suppressed via daml.yaml
+-- build-options (`-Wno-crypto-text-is-alpha`), honestly labeled alpha.
+import DA.Crypto.Text (sha256, toHex)
 import Umbra.Asset (Asset(..), Split(..), Reassign(..))
 import Umbra.Clearing (Side(..), Allocation(..), OrderType(..), OrderView(..), computeClearing)
 
@@ -120,6 +125,93 @@ template Order
       controller operator
       do
         pure ()
+
+-- ===========================================================================
+-- CRYP-01 (10-01) — on-ledger commit–reveal. A desk posts sha256(order‖salt)
+-- during the window; at close it reveals the full order + salt and the LEDGER
+-- itself recomputes the digest and rejects any reveal that does not match. This
+-- is verify-don't-trust upgraded from "rivals can't see you" to "the venue
+-- cannot accept a reveal that differs from your commitment." ADDITIVE: it wraps
+-- the §4 order flow (commit → reveal → clear) and does NOT touch Round.Clear or
+-- the §8 clearing math (Umbra.Clearing).
+-- ===========================================================================
+
+-- Canonical, injective serializer of the FULL Phase-9 order (RESEARCH Pitfall 2).
+-- The SAME function is used by commit and reveal, so a legitimate reveal always
+-- reproduces the committed bytes. Guarantees:
+--   * fixed field order (side, quantity, limit, orderType, minQty, firmIf);
+--   * an injective "|<tag>=" delimiter that cannot appear in any field value
+--     (Int/Decimal/Side/OrderType `show` never emit '|');
+--   * a PINNED 2-dp Decimal scale via `roundBankers 2` so 100.0 and 100.00 (the
+--     same value) serialize identically (and match the solver mirror in 10-05);
+--   * EXPLICIT `Some`/`None` tokens for the two Optional params (never "" vs omitted).
+serializeOrder : Side -> Int -> Decimal -> OrderType -> Optional Int -> Optional Decimal -> Text
+serializeOrder side quantity limit orderType minQty firmIf =
+  "s=" <> show side
+    <> "|q=" <> show quantity
+    <> "|l=" <> show (roundBankers 2 limit)
+    <> "|t=" <> show orderType
+    <> "|m=" <> optional "None" (\x -> "Some" <> show x) minQty
+    <> "|f=" <> optional "None" (\x -> "Some" <> show (roundBankers 2 x)) firmIf
+
+-- The commitment binding: hex sha256 of (canonicalPayload ‖ salt). `sha256`
+-- requires a HEX argument, so the concatenated UTF-8 text is `toHex`-encoded
+-- FIRST (RESEARCH Pitfall 1). Output is lowercase hex. Deterministic and
+-- salt-binding: a different salt (or a different order) yields a different digest.
+commitOf : Text -> Text -> Text   -- payload, salt -> hex sha256
+commitOf payload salt = sha256 (toHex (payload <> "|" <> salt))
+
+-- A desk's sealed commitment during the open window. Stakeholders are exactly
+-- operator + desk (identical privacy set to `Order`): unforgeable, and NO
+-- observer keeps the commitment (and its bond) private to those two. During the
+-- window ONLY the `commitment : Text` hash and the bond reference are on-ledger —
+-- the order contents do not exist on the ledger until a verified reveal.
+--
+-- BOND CUSTODY (operator-custody LOCK model): the bond is the desk's OWN USDCx
+-- Asset. The operator is already that Asset's sole signatory/custodian and every
+-- Asset choice (Split/Merge/Reassign) is `controller operator`, so while the
+-- commitment is live the desk CANNOT move or archive its bond — it is locked in
+-- operator custody. A valid reveal RELEASES the lock (the commitment is consumed,
+-- the bond stays freely the desk's); a non-reveal lets the operator SEIZE it via
+-- ForfeitBond. (An earlier "reassign the bond to the operator at commit" escrow
+-- is not viable: an operator-OWNED Asset is invisible to the desk — Asset's
+-- observer is `owner` only — so the desk's controller-desk RevealOrder could not
+-- fetch it. The lock model gives the identical economic guarantee within Daml's
+-- disclosure rules, and keeps the Asset settlement primitive byte-unchanged.)
+template OrderCommitment
+  with
+    operator   : Party
+    desk       : Party
+    roundId    : Text
+    commitment : Text                -- hex sha256(toHex(canonicalOrder ‖ salt))
+    bondCid    : ContractId Asset    -- the desk's USDCx bond, locked in operator custody
+  where
+    signatory operator, desk         -- both; unforgeable, and private to these two
+
+    -- REVEAL: the desk submits the full order + salt. The ledger recomputes the
+    -- digest over the SAME canonical serializer and `assertMsg`s equality — a
+    -- reveal of a DIFFERENT order (or a wrong salt) is rejected ON-LEDGER (T-10-01).
+    -- On success the commitment is consumed (the bond lock is released, the bond
+    -- stays the desk's) and the sealed Phase-9 Order is created.
+    choice RevealOrder : ContractId Order
+      with
+        side      : Side
+        quantity  : Int
+        limit     : Decimal
+        orderType : OrderType
+        minQty    : Optional Int
+        firmIf    : Optional Decimal
+        salt      : Text
+      controller desk
+      do
+        assertMsg "commitment mismatch"
+          (commitment == commitOf (serializeOrder side quantity limit orderType minQty firmIf) salt)
+        -- Create the sealed Phase-9 Order (identical shape to Venue.SubmitOrder).
+        -- The bond lock is released simply by consuming this OrderCommitment.
+        create Order with
+          operator; desk; roundId; side; quantity; limit
+          status = Sealed
+          orderType; minQty; firmIf
 
 -- §7.6 — each desk's private fill receipt; observed by the SINGULAR desk only.
 -- AUCT-04 (best-ex / TCA): the appended fields carry the per-desk receipt numbers.

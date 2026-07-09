@@ -25,3 +25,9 @@ dependencies:
   - daml-prim
   - daml-stdlib
   - daml-script
+# DA.Crypto.Text (sha256/toHex) is an ALPHA-flagged daml-stdlib module used by
+# CRYP-01's on-ledger commit–reveal binding (OrderCommitment.RevealOrder). It
+# works on the pinned SDK 3.4.11 but the stdlib module carries an alpha WARNING;
+# suppress ONLY that warning here (honestly labeled alpha — NOT -Werror'd away).
+build-options:
+  - -Wno-crypto-text-is-alpha

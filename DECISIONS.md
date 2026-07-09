@@ -219,3 +219,46 @@ hosting a stakeholder**, or Canton refuses to route the transaction
 (`PACKAGE_SELECTION_FAILED`). `deploy.mjs` uploads to all three. Driven by
 `scripts/localnet/xnode-up.mjs` (browser) and `xnode-moneyshot.mjs` (headless full
 flow); both verified settling to the exact §4 balances across nodes.
+
+---
+
+## D12 — CRYP-01 commit–reveal binding is enforced ON-LEDGER via `DA.Crypto.Text.sha256` (alpha)
+
+**Decision (Phase 10, plan 10-01):** The commitment↔reveal binding is enforced
+**on-ledger** — the strongest of the CONTEXT.md options. `OrderCommitment.RevealOrder`
+recomputes `sha256(toHex(canonicalOrder ‖ salt))` inside the choice body and
+`assertMsg`s equality against the stored `commitment : Text`, so **the ledger
+itself** (not the operator, not the solver) rejects any reveal that does not match
+the commitment. The hashing primitive is Daml 3.4.11's bundled
+`DA.Crypto.Text.sha256` / `toHex`.
+
+**Alpha label (honest):** `DA.Crypto.Text` carries a `{-# WARNING … alpha … can
+change without notice #-}`. It is **not** `-Werror`'d away — the single alpha
+warning is suppressed via `daml/daml.yaml` `build-options: [-Wno-crypto-text-is-alpha]`
+(the bare damlc flag; the `--ghc-option=` form is rejected as "unrecognised warning
+flag"). The SDK is pinned at `3.4.11`, so a future SDK bump that changes the alpha
+API is a documented watch item (threat T-10-05, disposition *accept*).
+
+**Canonical serialization (Pitfall 1 + 2):** a SINGLE `serializeOrder` renders the
+full Phase-9 order (`side`, `quantity`, `limit` at a pinned 2-dp scale, `orderType`,
+explicit `Some`/`None` tokens for `minQty`/`firmIf`) with an injective `|<tag>=`
+delimiter, and is shared by commit and reveal. `sha256` requires HEX input, so the
+UTF-8 payload is `toHex`-encoded FIRST.
+
+**Bond custody = operator-custody LOCK (deviation from the plan's escrow-by-reassign):**
+the bond is the desk's OWN USDCx `Asset`. The operator is already that Asset's sole
+signatory/custodian and every Asset choice is `controller operator`, so while the
+commitment is live the desk cannot move or archive its bond — it is locked in
+operator custody. A valid reveal releases the lock (consumes the `OrderCommitment`);
+`ForfeitBond` (controller operator) seizes the bond on non-reveal. The plan's
+"reassign the bond to the operator at commit" is **not viable**: an operator-OWNED
+Asset is invisible to the desk (Asset's observer is `owner` only), so the desk's
+`controller desk` `RevealOrder` could not `fetch` it ("contract not visible to the
+reading parties"). The lock model gives the identical economic guarantee within
+Daml's disclosure rules and keeps the `Asset` settlement primitive byte-unchanged.
+
+**§4 invariant preserved:** `Round.Clear` and the §8 clearing math
+(`Umbra.Clearing`) are byte-unchanged — the binding lives entirely in
+`RevealOrder`/`ForfeitBond` and the `Venue.CommitOrder` lock. The canonical fixture
+still clears **$100.00 / A=10 / B=8 / C=2** through commit → reveal → clear
+(`test_commit_reveal_clears_at_100`).

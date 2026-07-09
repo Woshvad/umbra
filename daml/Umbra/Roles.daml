@@ -5,6 +5,7 @@
 module Umbra.Roles where
 
 import Umbra.Auction
+import Umbra.Asset (Asset(..))
 
 template Venue
   with
@@ -32,3 +33,28 @@ template Venue
           operator; desk; roundId; side; quantity; limit
           status = Sealed
           orderType; minQty; firmIf
+
+    -- CRYP-01 (10-01) — COMMIT phase of on-ledger commit–reveal. Mirrors
+    -- SubmitOrder's "operator co-signs via the Venue signatory, controller desk"
+    -- pattern: the choice body carries {operator (Venue signatory), desk
+    -- (controller)} authority. The desk supplies a hash of its order and points at
+    -- its OWN USDCx bond Asset; an OrderCommitment records the hash + the bond cid.
+    -- The bond stays the desk's beneficial holding but is locked in operator
+    -- custody for the window (every Asset choice is controller operator, so the
+    -- desk cannot move it) — released on a valid reveal, seized by ForfeitBond on
+    -- non-reveal. The order contents never appear on-ledger here — only the hash.
+    nonconsuming choice CommitOrder : ContractId OrderCommitment
+      with
+        desk       : Party
+        roundId    : Text
+        commitment : Text             -- hex sha256(toHex(canonicalOrder ‖ salt))
+        bondCid    : ContractId Asset  -- the desk's own USDCx bond to lock
+      controller desk
+      do
+        assertMsg "desk not registered" (desk `elem` desks)
+        -- Integrity: the bond must be the desk's OWN USDCx cash holding.
+        bond <- fetch bondCid
+        assertMsg "bond must be the desk's own USDCx holding"
+          (bond.owner == desk && bond.symbol == "USDCx")
+        create OrderCommitment with
+          operator; desk; roundId; commitment; bondCid

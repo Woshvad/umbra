@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Progress
-status: executing
+status: verifying
 stopped_at: Completed 10-09-PLAN.md
-last_updated: "2026-07-09T22:56:44.322Z"
+last_updated: "2026-07-09T23:15:31.960Z"
 last_activity: 2026-07-09 -- Completed 10-04 (CRYP-03 ZK proof-of-correct-clearing PoC)
 progress:
   total_phases: 6
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 24
-  completed_plans: 23
-  percent: 33
+  completed_plans: 24
+  percent: 50
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 
 Phase: 10 (cryptographic-privacy) — EXECUTING
 Plan: 10 of 10
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-07-09 -- Completed 10-04 (CRYP-03 ZK proof-of-correct-clearing PoC)
 
 ## Performance Metrics
@@ -89,6 +89,7 @@ Last activity: 2026-07-09 -- Completed 10-04 (CRYP-03 ZK proof-of-correct-cleari
 | Phase 10 P07 | 7min | 2 tasks | 2 files |
 | Phase 10 P08 | 35min | 2 tasks | 1 files |
 | Phase 10 P09 | 20 | 2 tasks | 5 files |
+| Phase 10 P10 | 18 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -153,6 +154,7 @@ Recent decisions affecting current work:
 - [Phase ?]: [10-06]: solver :4100 exposes CRYP-02/03/VIZ-02 as 7 zod-validated DI endpoints; verify-proof (off-ledger boolean) and anchor-proof (on-ledger hash) are DISTINCT endpoints (T-10-19); five §11 handlers + /settle byte-unchanged; timelock-decrypt maps not-yet-due beacon to 425 TOO_EARLY.
 - [Phase 10]: [10-07 / CRYP-01,CRYP-02,CRYP-03,VIZ-02]: web/src/solver.ts gains 7 typed Phase-10 crypto client fns (timelockEncrypt/Decrypt, generateProof/verifyProof/anchorProof/tamperProof, getStageOffsets) + envelope-safe types mirroring solver/src/api.ts EXACTLY (verify→{verified}, verify/anchor POST the {vkey,publicSignals,proof} envelope, tamper carries verified:false); all off the single SOLVER_BASE_URL via the shipped call<T>() — no :4000, no auth header, no operator token/ANTHROPIC_API_KEY in the bundle. verify(off-ledger,T3) vs anchor(on-ledger hash,T1) kept DISTINCT for honest-labeling. New cryptoUrls.test.ts (11) uses stubbed-fetch route asserts + a vite ?raw comment-stripped source scan (NOT node:fs — app tsc has no @types/node). web build + 48 vitest green; tsc clean. Shared-seam plan: view components untouched so 10-08/09/10 stay conflict-free. — Mirror the authoritative api.ts wire shapes over the plan's approximate type sketch so the client actually decodes solver responses.
 - [Phase ?]: 10-08: client-side commitment mirrors on-ledger commitOf(serializeOrder ‖ salt) (SubtleCrypto SHA-256, roundBankers-2 half-even) so a live reveal re-check matches; commit/reveal on desk ctx, timelock on credential-free solver — no operator token in the browser
+- [Phase 10]: [10-10 / VIZ-02]: Time Machine view 06 replays each party's exact per-stage view from AUTHENTIC per-party ACS-at-offset reads (each desk's OWN token; offset from getStageOffsets) — reuses PrivacyView's redaction motif. Honest grammar: T1 `LEDGER EVENT @ {offset}` / `bg-redact` NOT VISIBLE / dashed-red RECONSTRUCTED. OPERATOR column is RECONSTRUCTED-by-construction (no operator token in the browser) + redacted at COMMITTED/TIMELOCKED (venue-blind, CRYP-02); each bank column shows a 3-subject matrix so BankB visibly renders BankA/BankC as NOT VISIBLE. Pure DOM-free core (bankCell/operatorCell/ordersFromAcs) unit-tested; vitest include broadened to .tsx (node-env, no jsdom). web build + 63 vitest green; §4 untouched. Live scrub across a real run deferred to end-of-phase human-verify. Phase 10 COMPLETE (10/10).
 
 ### Pending Todos
 
@@ -178,6 +180,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-09T22:56:44.307Z
+Last session: 2026-07-09T23:13:33.173Z
 Stopped at: Completed 10-09-PLAN.md
 Resume file: None

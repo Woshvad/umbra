@@ -312,7 +312,7 @@ Plans:
 
 **Wave 3** *(blocked on 09-02)*
 
-- [ ] 09-03-PLAN.md — Rulebook math II: AON/MAQ bounded enumeration + Conditional two-pass (Daml+TS lockstep) + full golden parity gate; RULEBOOK complete [AUCT-01, AUCT-02]
+- [x] 09-03-PLAN.md — Rulebook math II: AON/MAQ bounded enumeration + Conditional two-pass (Daml+TS lockstep) + full golden parity gate; RULEBOOK complete [AUCT-01, AUCT-02]
 
 **Wave 4** *(blocked on 09-03, 09-04)*
 
@@ -386,7 +386,7 @@ Build waves run in numeric order 8 → 9 → 10 → 11. Track A (Phase 12) runs 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 8. Demo Hardening | 7/7 | Built · live UAT pending | 2026-07-09 |
-| 9. Auction Depth & Live Viz | 3/7 | In Progress|  |
+| 9. Auction Depth & Live Viz | 4/7 | In Progress|  |
 | 10. Cryptographic Privacy | 0/— | Not started | — |
 | 11. Settlement & Institutional Grade | 0/— | Not started | — |
 | 12. Real On-Chain (Canton DevNet) | 0/— | Not started (external gate) | — |

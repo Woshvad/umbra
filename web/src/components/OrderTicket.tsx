@@ -12,6 +12,7 @@
 import { useState } from 'react'
 import type { Ctx, DeskKey } from '../ledgerContexts'
 import { tokens } from '../desks'
+import { parseOrder, SolverError } from '../solver'
 import { Order } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
 import { Venue } from '@daml.js/umbra-0.1.0/lib/Umbra/Roles/module'
 import { Side } from '@daml.js/umbra-0.1.0/lib/Umbra/Clearing/module'
@@ -52,6 +53,11 @@ export default function OrderTicket({ ctx, deskKey, order }: Props) {
   const [reopened, setReopened] = useState(false)
   const [wiping, setWiping] = useState(false)
 
+  // WOW-03 — natural-language assist. Plain English + PARSE → prefills the structured
+  // fields via the solver (:4100); SEAL ORDER stays the single confirm (never auto-submit).
+  const [nlText, setNlText] = useState<string>('')
+  const [nlPhase, setNlPhase] = useState<'idle' | 'parsing' | 'parsed' | 'error'>('idle')
+
   // One order per round: locked when an Order already exists in the desk's own stream
   // OR after a successful in-session submit. RE-OPEN clears the in-session locks (demo
   // affordance) but cannot un-seal an order already on the ledger.
@@ -65,6 +71,30 @@ export default function OrderTicket({ ctx, deskKey, order }: Props) {
     setSide(d.side)
     setQty(String(d.qty))
     setLimit(d.limit.toFixed(2))
+  }
+
+  // WOW-03 — PARSE →: send plain English to the solver, PREFILL the structured fields.
+  // NEVER calls onSeal — the desk reviews the prefilled ticket and confirms via SEAL ORDER
+  // (preserves desk authority + the one-order-per-round lock). A 422/SolverError → error state.
+  async function onParse() {
+    if (ticketLocked || nlPhase === 'parsing') return
+    const text = nlText.trim()
+    if (!text) return
+    setNlPhase('parsing')
+    try {
+      const parsed = await parseOrder(text)
+      // Map the solver's {side,qty,limit} onto the existing ticket state (Side enum,
+      // qty→String, limit→toFixed(2) — same shape loadDemo prefills).
+      setSide(parsed.side === 'Buy' ? Side.Buy : Side.Sell)
+      setQty(String(parsed.qty))
+      setLimit(parsed.limit.toFixed(2))
+      setNlPhase('parsed')
+    } catch (e) {
+      // 422 PARSE_FAILED or any SolverError (incl. OFFLINE) → the parse-error state; the
+      // desk can still enter the fields directly. The Anthropic key never reaches here.
+      void (e instanceof SolverError)
+      setNlPhase('error')
+    }
   }
 
   async function onSeal() {
@@ -136,6 +166,70 @@ export default function OrderTicket({ ctx, deskKey, order }: Props) {
         style={{ letterSpacing: '.16em' }}
       >
         Order Ticket
+      </div>
+
+      {/* WOW-03 — Natural-language assist (prefills the structured fields; SEAL ORDER
+          stays the single confirm — never auto-submit). Sits ABOVE the side toggle. */}
+      <div style={{ margin: '18px 0 26px' }}>
+        <div
+          className="font-body text-10 uppercase opacity-50"
+          style={{ letterSpacing: '.14em' }}
+        >
+          Natural Language · Describe your order
+        </div>
+        <div className="flex items-center" style={{ gap: '14px', marginTop: '10px' }}>
+          <input
+            type="text"
+            disabled={ticketLocked || nlPhase === 'parsing'}
+            value={nlText}
+            onChange={(e) => {
+              setNlText(e.target.value)
+              if (nlPhase !== 'idle') setNlPhase('idle')
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void onParse()
+            }}
+            placeholder="e.g. buy up to 10 under 101"
+            className="font-body text-14 flex-1 bg-transparent outline-none disabled:opacity-50"
+            style={{ lineHeight: 1.6, borderBottom: '1px solid #0A0A0A', padding: '4px 0' }}
+          />
+          <button
+            type="button"
+            onClick={() => void onParse()}
+            disabled={ticketLocked || nlPhase === 'parsing'}
+            className="font-mono text-13 uppercase opacity-70 hover:opacity-100 disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ letterSpacing: '.16em', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+          >
+            {nlPhase === 'parsing' && (
+              <span
+                className={prefersReducedMotion() ? '' : 'animate-umbra-pulse'}
+                style={{ display: 'inline-block', width: '7px', height: '7px', background: '#0A0A0A' }}
+              />
+            )}
+            {nlPhase === 'parsing' ? 'PARSING…' : 'PARSE →'}
+          </button>
+        </div>
+
+        {/* Parsed note — PROPOSED BY CLAUDE — REVIEW & SEAL */}
+        {nlPhase === 'parsed' && (
+          <div
+            className="font-mono text-9 uppercase opacity-60"
+            style={{ letterSpacing: '.16em', marginTop: '10px' }}
+          >
+            PROPOSED BY CLAUDE — REVIEW &amp; SEAL
+          </div>
+        )}
+
+        {/* Error state — verbatim WOW-03 copy */}
+        {nlPhase === 'error' && (
+          <div
+            className="font-body text-13 opacity-70"
+            style={{ lineHeight: 1.6, marginTop: '10px', maxWidth: '420px' }}
+          >
+            Couldn&apos;t read that order. Try a plain instruction like &quot;sell 8 at 99&quot;, or
+            enter the fields directly.
+          </div>
+        )}
       </div>
 
       {/* Side toggle */}

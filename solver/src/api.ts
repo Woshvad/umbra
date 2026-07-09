@@ -25,6 +25,7 @@ import cors from 'cors'
 import { z } from 'zod'
 import type { OrderView, Allocation, ClearingResult } from './auction.js'
 import type { AgentResult } from './agent.js'
+import type { ProofBundle } from './proof.js'
 
 // The Vite dev origin — the ONLY allowed CORS origin (never '*').
 export const ALLOWED_ORIGIN = 'http://localhost:5173'
@@ -101,6 +102,11 @@ export interface AppDeps {
   // WOW-04: compose the shareable post-round NL brief. PURE over numbers + the verified
   // rationale — secret-free and cannot drift the clearing (the §4 fixture stays $100.00).
   composeBrief: (clearingPrice: number, matchedVolume: number, allocations: Allocation[], rationale: string) => string
+  // TRUST-03: read the immutable decision proof bundle written at settle (proof.ts). Read-only;
+  // returns the parsed bundle or null when no bundle exists for the round. The bundle is
+  // SECRET-FREE (systemPromptHash instead of the prompt; never the key/token) — GET /round/:id/proof
+  // serves it verbatim. May be sync (proof.ts) or async (a test stub) — the handler awaits it.
+  readProofBundle: (roundId: string) => ProofBundle | null | Promise<ProofBundle | null>
   // pure §8 helpers from auction.ts
   computeClearing: (orders: OrderView[]) => ClearingResult
   matchedAt: (orders: OrderView[], p: number) => number
@@ -448,6 +454,22 @@ export const createApp = (deps: AppDeps): Express => {
       }
       const result = await deps.tamperClear(id, parsed.data.mode)
       res.json({ rejected: result.rejected, error: result.error })
+    }),
+  )
+
+  // GET /round/:id/proof — TRUST-03 read-only decision proof bundle. Serves the immutable
+  // JSON written at settle (systemPromptHash + batchHash + rawAiProposal + deterministicRecompute
+  // + clearingHash). 404 when no bundle exists yet. The bundle is secret-free by construction
+  // (proof.ts stores hashes, never the key/prompt) — this is a pure read + passthrough.
+  app.get(
+    '/round/:id/proof',
+    wrap(async (req, res) => {
+      const { id } = req.params
+      const bundle = await deps.readProofBundle(id)
+      if (!bundle) {
+        throw new ApiError(404, 'PROOF_NOT_FOUND', `no decision proof bundle for round ${id}`)
+      }
+      res.json(bundle)
     }),
   )
 

@@ -67,6 +67,10 @@ export interface BuildDepsArgs {
   // a pure import. The unit test injects stubs.
   streamRationale: AppDeps['streamRationale']
   composeBrief: AppDeps['composeBrief']
+  // TRUST-03: read the settle-time decision proof bundle (proof.ts). Optional here so the
+  // boot-wiring unit test (index.test.ts) need not inject it; buildDeps defaults it to a
+  // null reader. main() supplies the real proof.readProofBundle.
+  readProofBundle?: AppDeps['readProofBundle']
 }
 
 // Assemble the AppDeps so the API routes are wired to the ledger + clock.
@@ -80,6 +84,8 @@ export interface BuildDepsArgs {
 export const buildDeps = (args: BuildDepsArgs): AppDeps => {
   const { ledger, math, clock, openRoundClock, roundSeconds, proposeClearing, parseOrder, streamRationale, composeBrief } =
     args
+  // TRUST-03: default to a null reader when not injected (index.test.ts boot-wiring path).
+  const readProofBundle: AppDeps['readProofBundle'] = args.readProofBundle ?? (() => null)
   return {
     // POST /round → ledger create THEN timer start (both).
     openRound: async (roundId, desks, windowSeconds): Promise<RoundView> => {
@@ -107,6 +113,8 @@ export const buildDeps = (args: BuildDepsArgs): AppDeps => {
     // WOW-04: live rationale streaming (same boot agent) + the pure brief composer.
     streamRationale,
     composeBrief,
+    // TRUST-03: read-only decision proof bundle for GET /round/:id/proof.
+    readProofBundle,
     computeClearing: math.computeClearing,
     matchedAt: math.matchedAt,
     demandAt: math.demandAt,
@@ -129,6 +137,9 @@ const main = async (): Promise<void> => {
   const { createClock } = await import('./clock.js')
   const { createAgent } = await import('./agent.js')
   const { composeBrief } = await import('./brief.js')
+  // TRUST-03: the decision proof bundle writer/reader (proof.ts). The write is an ADDITIVE
+  // side effect in settleResult below — the deterministic settle path stays byte-unchanged.
+  const proof = await import('./proof.js')
 
   // Construct the real AI Solver Agent ONCE at boot. No `client` is passed — agent.ts
   // resolves its own module-private ANTHROPIC_API_KEY (or runs keyless: the §4 fixture
@@ -185,8 +196,29 @@ const main = async (): Promise<void> => {
     // carries only the aggregate totalMatched, not per-desk fills). The deterministic
     // computeClearing is the SAME allocation the on-ledger Clear re-verifies.
     const views = (await ledger.readSealedOrders(roundId)).map((s) => s.view)
-    const { allocations } = auction.computeClearing(views)
+    const clearing = auction.computeClearing(views)
+    const { allocations } = clearing
     const { result } = await ledger.settle(roundId)
+
+    // TRUST-03: ADDITIVELY persist the immutable decision proof bundle from the LIVE views +
+    // the deterministic §8 recompute + an off-authority agent proposal (purely for provenance:
+    // verified/source/rawAiProposal). This runs AFTER ledger.settle and NEVER affects the
+    // settlement — a write failure is logged secret-free and swallowed so /settle is unchanged.
+    try {
+      const agentResult = await agent.proposeClearing(views)
+      proof.writeProofBundle({
+        roundId,
+        views,
+        agentResult,
+        clearingPrice: clearing.clearingPrice,
+        allocations: clearing.allocations,
+        verified: agentResult.verified,
+      })
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('Proof bundle write skipped (non-fatal)', err instanceof Error ? err.name : 'unknown')
+    }
+
     return {
       clearingPrice: Number(result.clearingPrice),
       allocations,
@@ -219,6 +251,8 @@ const main = async (): Promise<void> => {
     parseOrder: agent.parseOrder,
     streamRationale: agent.streamRationale,
     composeBrief,
+    // TRUST-03: serve the settle-time decision proof bundle read-only.
+    readProofBundle: proof.readProofBundle,
   })
 
   const app = createApp(deps)

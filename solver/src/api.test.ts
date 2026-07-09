@@ -106,6 +106,8 @@ const makeDeps = (overrides: Partial<AppDeps>): AppDeps => ({
   ),
   // WOW-04: the REAL brief composer (pure) so the settled-body brief is genuine.
   composeBrief,
+  // TRUST-03: proof-bundle reader — defaults to null (no bundle); /proof tests override.
+  readProofBundle: vi.fn(async () => null),
   // Real pure §8 helpers — solve-preview asserts true deterministic clearing.
   computeClearing,
   matchedAt,
@@ -722,6 +724,79 @@ describe('solver §11 HTTP API', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ mode: 'wrong-price' }),
     })
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    expect(JSON.stringify(body)).not.toContain(SENTINEL_TOKEN)
+    expect(JSON.stringify(body)).not.toContain(SENTINEL_API_KEY)
+  })
+
+  it('GET /round/:id/proof returns the decision proof bundle (TRUST-03)', async () => {
+    const { clearingPrice, allocations } = computeClearing(SECTION4_VIEWS)
+    const bundle = {
+      roundId: 'R1',
+      timestamp: '2026-07-09T12:00:00.000Z',
+      modelId: 'claude-haiku-4-5',
+      systemPromptHash: 'a'.repeat(64),
+      batchHash: 'b'.repeat(64),
+      rawAiProposal: { clearingPrice, allocations, rationale: 'Cleared at 100.00.', source: 'claude' as const },
+      deterministicRecompute: { clearingPrice, allocations },
+      verified: true,
+      clearingHash: 'c'.repeat(64),
+    }
+    const readProofBundle = vi.fn(async () => bundle)
+    const deps = makeDeps({ readProofBundle })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/proof`)
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    expect(body.roundId).toBe('R1')
+    expect(body.modelId).toBe('claude-haiku-4-5')
+    expect(body.systemPromptHash).toBe('a'.repeat(64))
+    expect(body.deterministicRecompute.clearingPrice).toBe(100)
+    expect(body.verified).toBe(true)
+    expect(readProofBundle).toHaveBeenCalledWith('R1')
+  })
+
+  it('GET /round/:id/proof returns 404 when no bundle exists', async () => {
+    const deps = makeDeps({ readProofBundle: vi.fn(async () => null) })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/NOPE/proof`)
+    const body = await readJson(res)
+
+    expect(res.status).toBe(404)
+    expect(body.error).toHaveProperty('code', 'PROOF_NOT_FOUND')
+  })
+
+  it('GET /round/:id/proof never echoes the operator token or API key (secret sweep)', async () => {
+    const { clearingPrice, allocations } = computeClearing(SECTION4_VIEWS)
+    const readProofBundle = vi.fn(async () => {
+      // The reader closes over the sentinels as proof.ts/agent.ts hold the real ones; the
+      // bundle stores only hashes + numbers, so neither may reach the wire.
+      void SENTINEL_TOKEN
+      void SENTINEL_API_KEY
+      return {
+        roundId: 'R1',
+        timestamp: '2026-07-09T12:00:00.000Z',
+        modelId: 'claude-haiku-4-5',
+        systemPromptHash: 'a'.repeat(64),
+        batchHash: 'b'.repeat(64),
+        rawAiProposal: { clearingPrice, allocations, rationale: 'Cleared at 100.00.', source: 'claude' as const },
+        deterministicRecompute: { clearingPrice, allocations },
+        verified: true,
+        clearingHash: 'c'.repeat(64),
+      }
+    })
+    const deps = makeDeps({ readProofBundle })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/proof`)
     const body = await readJson(res)
 
     expect(res.status).toBe(200)

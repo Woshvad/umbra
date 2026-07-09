@@ -503,16 +503,20 @@ security_enforcement enabled, ASVS L1, block_on high. [VERIFIED: config.json]
 
 **Note:** A1–A6 are areas CONTEXT explicitly delegates to planner discretion ("exact Daml encoding … at the planner's discretion, provided success criteria + §4 invariant + Daml⇄TS parity hold"). None threaten the §4 canary.
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+Both are delegated-discretion items with clear recommendations; neither gates the §4 canary, Daml⇄TS parity, or any success criterion.
 
 1. **Does an equal-limit long-side tie appear in any required new-type fixture (needing strict pro-rata leftover-to-largest)?**
    - Known: §4 has no equal-limit tie; the greedy `rationByPriority` is exact today.
    - Unclear: whether a mandated MAQ/conditional demo introduces one.
    - Recommendation: if a fixture needs it, implement leftover-to-largest in BOTH planes together with a golden test; otherwise keep the documented greedy rule and note the deferral in RULEBOOK.
+   - **RESOLVED:** Keep the documented greedy `rationByPriority` rule and note the deferral in RULEBOOK.md; only add leftover-to-largest (in BOTH planes + a golden test) if a specific fixture forces an equal-limit long-side tie. Non-blocking for the §4 canary.
 
 2. **Should the AI `SYSTEM_PROMPT` learn the new rules?**
    - Known: the AI is additive/off the settlement path; a new-type round where the model disagrees just falls back to the deterministic clear (still correct, loses the `verified:claude` badge).
    - Recommendation: extend `SYSTEM_PROMPT` + `PROMPT.md` in verbatim sync ONLY if the demo wants the "verified" badge on new-type rounds; not required for correctness. Keep them synced if touched (existing Pitfall).
+   - **RESOLVED:** Optional polish, not required for correctness (the deterministic clear is the source of truth). Sync `SYSTEM_PROMPT` + `PROMPT.md` verbatim only if the demo wants the `verified:claude` badge on new-type rounds.
 
 ## Sources
 

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Progress
 status: executing
-stopped_at: Completed 09-06-PLAN.md
-last_updated: "2026-07-09T17:20:00.000Z"
-last_activity: 2026-07-09 -- Completed 09-06 (AUCT-01 order-type entry UI: LIMIT·NONCOMP·MAQ·COND selector + per-type params + type-aware SubmitOrder on the desk plane; AUCT-01 closed)
+stopped_at: Completed 09-07-PLAN.md
+last_updated: "2026-07-09T17:42:00.000Z"
+last_activity: 2026-07-09 -- Completed 09-07 (WOW-06 cost-of-leakage simulator: pure client-side leakage.ts + SettlementView dashed-border SIMULATION panel — $X lost vs $0 leaked → $X saved; WOW-06 closed, Phase 9 plans 7/7)
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 14
-  completed_plans: 13
-  percent: 22
+  completed_plans: 14
+  percent: 24
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 
 ## Current Position
 
-Phase: 09 (auction-depth-live-viz) — EXECUTING
-Plan: 09-06 done (wave 4); 09-07 (wave 5) next
-Status: Ready to execute
-Last activity: 2026-07-09 -- Completed 09-06 (AUCT-01 order-type entry UI: LIMIT·NONCOMP·MAQ·COND selector + per-type params + type-aware SubmitOrder on the desk plane; AUCT-01 closed)
+Phase: 09 (auction-depth-live-viz) — EXECUTING (all 7 plans built; end-of-phase live UAT pending)
+Plan: 09-07 done (wave 5, final) — Phase 9 plans 7/7 built
+Status: Phase 9 build complete; end-of-phase human verification pending
+Last activity: 2026-07-09 -- Completed 09-07 (WOW-06 cost-of-leakage simulator: pure client-side leakage.ts + SettlementView dashed-border SIMULATION panel — $X lost vs $0 leaked → $X saved; WOW-06 closed)
 
 ## Performance Metrics
 
@@ -79,6 +79,7 @@ Last activity: 2026-07-09 -- Completed 09-06 (AUCT-01 order-type entry UI: LIMIT
 | Phase 09 P03 | ~12 min | 2 tasks | 5 files |
 | Phase 09 P05 | ~18 min | 2 tasks | 10 files |
 | Phase 09 P06 | ~7 min | 1 task | 1 file |
+| Phase 09 P07 | ~7 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -134,6 +135,7 @@ Recent decisions affecting current work:
 - [09-03 / AUCT-01,AUCT-02]: AON/MAQ + Conditional shipped in lockstep — coreClear rewritten as a bounded (candidate-price × subset) powerset enumeration with a ≥minQty inclusion test (top-level recursive `powerset` + `fillsAtPrice`/`fillOfOrder`/`isAon`/`minQtyOf`; ranking key (negate matched, imbalance, price, subsetIdx) keeps matched PRIMARY so the 99-vs-100 trap survives; §4 reduces via powerset[]==[[]] → single ∅ subset). Conditional = top-level `qualifies` (buy provP≤firmIf / sell provP≥firmIf) wired into the two-pass computeClearing (PASS1 provP over firm; PASS2 firm qualifiers vs provP; NOT a fixpoint). Six golden fixtures (test_maq_excluded/included, test_aon_fills/drops, test_conditional_firms/drops) mirrored Daml⇄TS with identical numbers. No Auction.daml/Roles/web-bindings change (only pure fns changed; OrderView/OrderType data shape unchanged) — Round.Clear auto-covers via computeClearing. daml test all green, solver 93/93, tsc clean; §4 100.00/A=10/B=8/C=2 + trap intact. RULEBOOK.md COMPLETE (all four order-type sections cite both planes). AUCT-02 CLOSED; AUCT-01 stays open pending order-type entry UI (09-06).
 - [09-06 / AUCT-01]: Order-type entry UI shipped in OrderTicket (desk plane, submits on the desk's OWN token — grep-clean of operator/@daml/react). Segmented `LIMIT·NONCOMP·MAQ·COND` selector (ink-underline, mono-9 toggle grammar) sits below the WOW-03 NL assist, above the side toggle + an active-type descriptor (umbra-rise). Per-type show/hide: Noncompetitive replaces the limit input with a `FILL AT CLEAR — NO LIMIT PRICE` caption; MAQ(AllOrNone) adds a 1px-assist-tier Min Acceptable Qty (+ `= FULL FILL ONLY` when min==qty); Conditional adds a side-directional Firm-If band (`≤` buy / `≥` sell). Non-blocking validation copy verbatim per UI-SPEC. Type-aware `Venue.SubmitOrder` carries orderType/minQty(String|null)/firmIf(toFixed(1)|null); Noncompetitive sends a `0.0` limit placeholder (the ensure skips limit>0 for it — 09-01 effective-limit). `load demo` resets to plain Limit; NL PARSE never switches the type; single SEAL ORDER confirm + one-per-round lock + seal-wipe byte-unchanged. No new tailwind token/fontSize/keyframe. web build + 30 vitest green. Live per-type submit against a running open round = end-of-phase human-check. AUCT-01 CLOSED.
 - [09-05 / AUCT-04]: On-ledger best-ex/TCA. TradeConfirmation gains ownLimit(Optional)/referencePrice/surplusVsLimit/improvementVsLimitBp/improvementVsReferenceBp(signed); Round.Clear computes per-desk surplus at the create site and asserts `surplusVsLimit >= 0` on-ledger (T-09-05-01 — the PROVEN best-ex number). referencePrice is a LABELED stub choice arg (REFERENCE_PRICE_STUB=100 in ledger.ts; a choice body can't read config so it's passed in), driving ONLY the SIGNED improvementVsReferenceBp benchmark — never conflated with the proven ≥0 number. bp = roundBankers 0 ((|limit−p*|/p*)*10000) ⇄ pinned RULEBOOK formula. §4 surpluses A=10/B=8/C=0, all bp-vs-ref=0 (ref==p*). daml test 23/23 green (test_surplus_nonneg + extended test_settled_balances; all 5 Clear call sites pass referencePrice); web/daml.js regenerated+committed. Solver: readTradeConfirmations maps TCA fields, settle/tamperClear pass referencePrice (settle otherwise byte-unchanged), api.ts settled body gains receipts[], proofpack bundle 02 renders two-distinct-surplus (secret sweep green); 94/94 vitest, tsc clean. Web: Receipt type + receipts on RoundResponse; new TcaReceipts.tsx (proven ink vs-LIMIT row + benchmark vs-REFERENCE red-only-when-negative + REFERENCE stub tag + EXPORT RECEIPT ink-ghost). web build + 30 vitest green. Per-desk privacy unchanged (TradeConfirmation observer=desk). Live settled-round receipt = end-of-phase human-check. AUCT-04 CLOSED.
+- [09-07 / WOW-06]: Cost-of-leakage simulator shipped as a PURE web leaf lib — web/src/lib/leakage.ts `estimateLeakage(legs)` walks the buy-side matched volume sequentially through a naive public book (unit i premium over the clear = clearingPrice·(SLIPPAGE_BP_PER_UNIT·i + FRONT_RUN_BP)/1e4 — book-depth slippage + flat front-run markup, illustrative bp constants) → `publicBookLost`; sealed clear `umbraLeaked:0`; `saved===publicBookLost`. §4 → $5.10. Pure/DOM-free (no fetch/@daml/document/Date/random), deterministic, empty-safe; `ownLimit` in the LeakageLeg shape but NOT load-bearing (capping at the buyer's limit would zero §4). 7 vitest cases. SettlementView `LeakageSimPanel` (post-settle, BELOW the AUCT-04 receipts): 1px DASHED ink border + `SIMULATION · ILLUSTRATIVE — NOT LEDGER DATA` tag + disclaimer (unmistakably NOT ledger data — real receipts use SOLID ink); `$X LOST` red / `$0 LEAKED` ink / `$X SAVED` ink punchline (never lime), umbra-rise + reduced-motion. Reads only preview.allocations — no solver/ledger call in the sim path. No clearing/template/solver change (§4 canary untouched). web build + 37 vitest green. WOW-06 CLOSED; Phase 9 plans 7/7 built (live UAT end-of-phase).
 - [09-04 / AUCT-03,VIZ-01]: OPEN-window aggregate indicative feed — api.ts GET /round/:id attaches an `indicative` block (SCALARS ONLY: `{indicativePrice|coarse+band, netImbalance, estMatched}`) only when status Open with ≥1 sealed order. Small-N guard: exact price published only with ≥2 orders on BOTH sides (else coarse band = round(p*/5)*5 + coarse:true — §4's single buyer → coarse). NO curve/candidatePrices during open (buildCurve stays terminal-only, Pitfall 1). choosePStar threaded through AppDeps/MathPort/buildDeps. api.test.ts +3 (indicative/no-leak, small-N coarse band, open-body secret sweep); solver 87/87, tsc clean. web solver.ts IndicativeMeta type. VIZ-01: CrossingChart gains `mode` prop (assembling|locked, default locked) — assembling hides red p*/marker/label + faint region + ASSEMBLING caption; locked byte-unchanged SVG (296,160/r5/15px) + red-square `p* LOCKED @ {price}` verdict. TheatreView indicative panel (INDICATIVE/NET IMBALANCE/EST. MATCHED, small-N labeled) + assembling chart during open (curve=[] — no per-order geometry crosses the wire). curve.ts UNCHANGED (curve.test.ts §4 marker green); web build + 30 vitest green. Live "updates as orders arrive" = end-of-phase human-check.
 
 ### Pending Todos
@@ -160,6 +162,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-09T17:20:00.000Z
-Stopped at: Completed 09-06-PLAN.md
+Last session: 2026-07-09T17:42:00.000Z
+Stopped at: Completed 09-07-PLAN.md
 Resume file: None

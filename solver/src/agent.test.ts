@@ -57,6 +57,20 @@ const fakeClientThrowing = () => ({
   },
 })
 
+// A fake client whose parse NEVER settles — the slow/hanging-key path (TRUST-02 timeout).
+// proposeClearing must still resolve (to the deterministic fallback) via its deadline.
+const fakeClientNeverResolving = () => ({
+  messages: {
+    parse: vi.fn(
+      () =>
+        new Promise<{ parsed_output: unknown }>(() => {
+          void SENTINEL_KEY // held in the closure exactly as the real key is; never leaks
+          /* intentionally never resolves */
+        }),
+    ),
+  },
+})
+
 describe('AI Solver Agent — verify-don\'t-trust gate', () => {
   afterEach(() => {
     vi.restoreAllMocks()
@@ -206,5 +220,103 @@ describe('AI Solver Agent — verify-don\'t-trust gate', () => {
     expect(r.matchedVolume).toBe(10)
     expect(r.verified).toBe(false)
     expect(r.rationale.length).toBeGreaterThan(0)
+  })
+
+  it('timeout: a never-resolving parse → deterministic §4 fallback (100.00), never hangs, no leak', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const client = fakeClientNeverResolving()
+    // A tiny deadline so the test resolves fast — the parse below never settles.
+    const agent = createAgent({ client, computeClearing, matchedAt, timeoutMs: 20 })
+
+    const r = await agent.proposeClearing(SECTION4_VIEWS)
+
+    // Resolved to the deterministic fallback — NOT hung, NOT thrown.
+    expect(r.source).toBe('deterministic-fallback')
+    expect(r.verified).toBe(false)
+    expect(r.clearingPrice).toBe(100) // §4 canary HOLDS on the timeout path
+    expect(r.matchedVolume).toBe(10)
+
+    // The API-key sentinel never appears in the result nor any captured log line.
+    expect(JSON.stringify(r)).not.toContain(SENTINEL_KEY)
+    for (const call of [...logSpy.mock.calls, ...errSpy.mock.calls]) {
+      expect(JSON.stringify(call)).not.toContain(SENTINEL_KEY)
+    }
+  })
+
+  // ── The formalized TRUST-02 degradation ladder, locked as a table ────────────────
+  // EVERY failure mode maps to the IDENTICAL deterministic §4 result ($100.00, A=10/
+  // B=8/C=2), verified:false, source:'deterministic-fallback'. keyless / malformed /
+  // zod-invalid / disagreement / SDK-error / timeout — all the same.
+  it('degradation ladder: all six failure modes clear the deterministic §4 result ($100.00)', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const det = computeClearing(SECTION4_VIEWS)
+
+    // Each entry builds a fresh agent for one rung of the ladder.
+    const rungs: { mode: string; make: () => { proposeClearing: (v: OrderView[]) => Promise<AgentResult> } }[] = [
+      {
+        mode: 'keyless',
+        make: () => createAgent({ computeClearing, matchedAt }),
+      },
+      {
+        mode: 'malformed',
+        make: () =>
+          createAgent({
+            client: fakeClientReturning({
+              allocations: [{ desk: 'BankA', side: 'Buy', filledQty: 10 }],
+              rationale: 'no price field',
+            }),
+            computeClearing,
+            matchedAt,
+          }),
+      },
+      {
+        mode: 'zod-invalid',
+        make: () =>
+          createAgent({
+            client: fakeClientReturning({
+              clearingPrice: 100,
+              allocations: [{ desk: 'BankA', side: 'Hold', filledQty: 10 }], // not Buy|Sell
+              rationale: 'bad side',
+            }),
+            computeClearing,
+            matchedAt,
+          }),
+      },
+      {
+        mode: 'disagreement',
+        make: () =>
+          createAgent({
+            client: fakeClientReturning({
+              clearingPrice: 99, // WRONG — §4 clears at 100.00
+              allocations: [{ desk: 'BankA', side: 'Buy', filledQty: 10 }],
+              rationale: 'bogus',
+            }),
+            computeClearing,
+            matchedAt,
+          }),
+      },
+      {
+        mode: 'sdk-error',
+        make: () => createAgent({ client: fakeClientThrowing(), computeClearing, matchedAt }),
+      },
+      {
+        mode: 'timeout',
+        make: () => createAgent({ client: fakeClientNeverResolving(), computeClearing, matchedAt, timeoutMs: 20 }),
+      },
+    ]
+
+    for (const rung of rungs) {
+      const r = await rung.make().proposeClearing(SECTION4_VIEWS)
+      expect(r.source, rung.mode).toBe('deterministic-fallback')
+      expect(r.verified, rung.mode).toBe(false)
+      expect(r.clearingPrice, rung.mode).toBe(100) // the §4 canary — identical on every rung
+      expect(r.matchedVolume, rung.mode).toBe(10)
+      expect(r.allocations, rung.mode).toEqual(det.allocations)
+      expect(JSON.stringify(r), rung.mode).not.toContain(SENTINEL_KEY)
+    }
   })
 })

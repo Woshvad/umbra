@@ -136,6 +136,40 @@ export interface AgentResult {
 const _apiKey = process.env.ANTHROPIC_API_KEY?.trim()
 const _client: Anthropic | null = _apiKey ? new Anthropic({ apiKey: _apiKey }) : null
 
+// ── TRUST-02 deadline (Pitfall 2) ────────────────────────────────────────────────
+// `messages.parse` has no built-in deadline, so a slow/hanging key could stall a round
+// forever. We race the call against a timer; a timeout is treated EXACTLY like every
+// other failure mode — it rejects into the SAME catch → deterministic §4 fallback. The
+// deadline is configurable (AgentDeps.timeoutMs override → AGENT_TIMEOUT_MS env → default)
+// so a fast successful call is never affected but a demo can never spin forever.
+export const DEFAULT_AGENT_TIMEOUT_MS = 8000
+
+// A distinct error so the (secret-free) catch log names 'AgentTimeout', not a network name.
+export class AgentTimeoutError extends Error {
+  constructor() {
+    super('agent request exceeded the deadline')
+    this.name = 'AgentTimeout'
+  }
+}
+
+// Resolve the deadline: an explicit DI override wins, then AGENT_TIMEOUT_MS, else default.
+const resolveTimeoutMs = (override?: number): number => {
+  if (typeof override === 'number' && override > 0) return override
+  const env = Number(process.env.AGENT_TIMEOUT_MS)
+  return Number.isFinite(env) && env > 0 ? env : DEFAULT_AGENT_TIMEOUT_MS
+}
+
+// Race a promise against a deadline. On timeout the returned promise REJECTS with an
+// AgentTimeoutError (so proposeClearing's existing catch handles it → fallback); the
+// timer is always cleared so it never keeps the event loop alive.
+const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout>
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new AgentTimeoutError()), ms)
+  })
+  return Promise.race([p, deadline]).finally(() => clearTimeout(timer))
+}
+
 // The minimal client surface the agent uses — lets the test inject a fake without
 // constructing a full Anthropic instance. `messages.parse` → `{ parsed_output }`.
 export interface AgentClient {
@@ -148,14 +182,32 @@ export interface AgentDeps {
   client?: AgentClient | null
   computeClearing: (orders: OrderView[]) => ClearingResult
   matchedAt: (orders: OrderView[], p: number) => number
+  // Optional deadline override (ms) for the model call — falls back to AGENT_TIMEOUT_MS
+  // env then DEFAULT_AGENT_TIMEOUT_MS. Injected by tests to force the timeout branch.
+  timeoutMs?: number
 }
 
 // ── createAgent — the DI factory (mirrors api.ts createApp(deps)) ─────────────────
-export const createAgent = (deps: AgentDeps): { proposeClearing: (views: OrderView[]) => Promise<AgentResult> } => {
+export const createAgent = (
+  deps: AgentDeps,
+): { proposeClearing: (views: OrderView[]) => Promise<AgentResult> } => {
   const { computeClearing, matchedAt } = deps
   // Injected client overrides the module-private one (test fake / boot client).
   const client: AgentClient | null = deps.client ?? (_client as AgentClient | null)
+  const timeoutMs = resolveTimeoutMs(deps.timeoutMs)
 
+  // ── TRUST-02 degradation ladder (formalized + locked by agent.test.ts) ──────────
+  // proposeClearing NEVER throws. EVERY failure mode maps to the SAME deterministic §4
+  // fallback ($100.00, A=10/B=8/C=2 on the canonical fixture, verified:false,
+  // source:'deterministic-fallback'). The full ladder, in order:
+  //   1. keyless          — no resolved client (short-circuit below)
+  //   2. malformed        — parsed_output not the proposal shape (safeParse fails)
+  //   3. zod-invalid      — e.g. an out-of-enum side / negative fill (safeParse fails)
+  //   4. disagreement     — price OR allocation ≠ the deterministic §8 result (gate rejects)
+  //   5. SDK-error        — client.messages.parse throws (network / API error) → catch
+  //   6. TIMEOUT          — the call exceeds the deadline → withTimeout rejects → catch
+  // The deterministic computeClearing numbers are ALWAYS authoritative; the model only
+  // ever colors `rationale` on the exact-match agreement path.
   const proposeClearing = async (views: OrderView[]): Promise<AgentResult> => {
     // The deterministic result is ALWAYS authoritative — recompute it first.
     const det = computeClearing(views)
@@ -178,14 +230,19 @@ export const createAgent = (deps: AgentDeps): { proposeClearing: (views: OrderVi
       // single `strict:true` `propose_clearing` tool via client.messages.create +
       // tool_choice, reading JSON from the tool_use block — same proposalSchema.safeParse,
       // identical equality gate. Documented here as the locked alternative.
-      const message = await client.messages.parse({
-        model: 'claude-haiku-4-5', // alias; pinned snapshot claude-haiku-4-5-20251001
-        max_tokens: 1024, // ample for ≤3 orders + a short rationale (RESEARCH Pitfall 3)
-        temperature: 0, // canonical agent (§9) — deterministic
-        system: SYSTEM_PROMPT, // §8 rules verbatim
-        messages: [{ role: 'user', content: buildBatchMessage(views) }],
-        output_config: { format: jsonSchemaOutputFormat(proposalJsonSchema) },
-      })
+      // Race the model call against the deadline (Pitfall 2 / TRUST-02). A timeout
+      // rejects with AgentTimeoutError → the catch below → the SAME deterministic fallback.
+      const message = await withTimeout(
+        client.messages.parse({
+          model: 'claude-haiku-4-5', // alias; pinned snapshot claude-haiku-4-5-20251001
+          max_tokens: 1024, // ample for ≤3 orders + a short rationale (RESEARCH Pitfall 3)
+          temperature: 0, // canonical agent (§9) — deterministic
+          system: SYSTEM_PROMPT, // §8 rules verbatim
+          messages: [{ role: 'user', content: buildBatchMessage(views) }],
+          output_config: { format: jsonSchemaOutputFormat(proposalJsonSchema) },
+        }),
+        timeoutMs,
+      )
 
       // Belt-and-suspenders: re-validate the (untrusted) model output with zod.
       const parsed = proposalSchema.safeParse(message.parsed_output)

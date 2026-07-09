@@ -494,3 +494,71 @@ export const tamperClear = async (
   // lie — the caller surfaces a real error instead of a fake "REJECTED" (WR-05).
   throw new Error('SAFETY REGRESSION: on-ledger Round.Clear ACCEPTED a tampered proposal')
 }
+
+// ── CRYP-01: commit-reveal operator-plane primitives (ADDITIVE) ───────────────────
+// The browser drives commit/reveal on each desk's OWN plane; these are the OPERATOR-
+// authority operations plus a public offset read. settle()/tamperClear() above are
+// byte-UNCHANGED — the §4 clearing path is untouched. SECRETS: like every export in
+// this module, none of these returns or logs the operator token (SOLV-04 discipline);
+// only party-/contract-level ids and counts cross out.
+
+// A privacy-safe projection of a still-live OrderCommitment (operator is a signatory
+// of every one it needs). `commitment` is only the sha256 hash; the order contents do
+// NOT exist on-ledger until a verified reveal, so nothing sensitive leaks here.
+export interface OrderCommitmentView {
+  contractId: string
+  desk: string
+  commitment: string
+  bondCid: string
+}
+
+// ── Read the still-live OrderCommitments for a round ─────────────────────────────
+// A commitment is "still live" simply by being an active OrderCommitment contract:
+// a valid RevealOrder CONSUMES it (Auction.daml 196) and ForfeitBond CONSUMES it
+// (Auction.daml 221), so anything the ACS still returns is un-revealed / un-forfeited.
+export const readOrderCommitments = async (roundId: string): Promise<OrderCommitmentView[]> =>
+  (await queryByEntity('OrderCommitment'))
+    .filter((c) => c.createArgument.roundId === roundId)
+    .map((c) => ({
+      contractId: c.contractId,
+      desk: c.createArgument.desk,
+      commitment: c.createArgument.commitment,
+      bondCid: c.createArgument.bondCid,
+    }))
+
+// ── Forfeit every non-revealer's bond for a round (operator authority) ───────────
+// The deterrent against commit-then-vanish griefing (T-10-02): for each OrderCommitment
+// still live for the round, exercise ForfeitBond (controller operator) to seize the
+// locked bond into the operator pot. CONSUMING, so the desk can no longer reclaim.
+// Resolves the COUNT forfeited (an id-free scalar). Snapshots the live set first so a
+// consumed cid is never re-exercised.
+export const forfeitNonRevealed = async (roundId: string): Promise<number> => {
+  const live = await readOrderCommitments(roundId)
+  for (const c of live) {
+    await exerciseChoice('Umbra.Auction:OrderCommitment', c.contractId, 'ForfeitBond', {})
+  }
+  return live.length
+}
+
+// ── Anchor a proof/vkey hash on-ledger (operator-signed) ─────────────────────────
+// CRYP-03: create a ProofAnchor recording ONLY the sha256(proof ‖ publicSignals) hash
+// and the verification-key hash — no proof bytes / witness / order data ever land
+// on-ledger (Auction.daml 226-240). Operator is the sole signatory, so no desk
+// authority is needed. Returns nothing sensitive (void — success is the on-ledger create).
+export const anchorProof = async (
+  roundId: string,
+  proofHash: string,
+  vkeyHash: string,
+): Promise<void> =>
+  createContract('Umbra.Auction:ProofAnchor', {
+    operator: operatorParty,
+    roundId,
+    proofHash,
+    vkeyHash,
+  })
+
+// ── Public wrapper over the module-private ledgerEnd() ────────────────────────────
+// VIZ-02 needs the current ledger offset to build its stage→offset map. `ledgerEnd`
+// stays private (it uses the private auth header); this thin export returns only the
+// numeric offset — no token, no headers.
+export const currentOffset = (): Promise<number> => ledgerEnd()

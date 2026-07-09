@@ -10,11 +10,14 @@
 .tmp/
 
 # --- KEEP TRACKED (do NOT ignore) ---
-# The small committed §4 fixtures the CRYP-03 verifier tests load, and the
-# pinned build tool, are the whole point of this directory — force-include them
-# so no broader rule can sweep them out.
+# The committed §4 PoC fixtures the CRYP-03 verifier tests load, and the pinned
+# build tool, are the whole point of this directory — force-include them so no
+# broader rule can sweep them out. clearing.wasm + clearing_final.zkey let CI
+# verify the §4 proof WITHOUT re-running the trusted setup (build.mjs).
 !vkey.json
 !verification_key.json
 !proof.json
 !public.json
+!clearing.wasm
+!clearing_final.zkey
 !circom.exe

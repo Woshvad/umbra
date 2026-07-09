@@ -303,7 +303,7 @@ Plans:
 
 **Wave 1**
 
-- [ ] 09-01-PLAN.md — Additive Daml+TS order model (orderType/minQty/firmIf, effective-limit) + regenerate web/daml.js + RULEBOOK.md skeleton; §4 stays green as a pure reduction [AUCT-01, AUCT-02]
+- [x] 09-01-PLAN.md — Additive Daml+TS order model (orderType/minQty/firmIf, effective-limit) + regenerate web/daml.js + RULEBOOK.md skeleton; §4 stays green as a pure reduction [AUCT-01, AUCT-02]
 
 **Wave 2** *(blocked on 09-01)*
 
@@ -386,7 +386,7 @@ Build waves run in numeric order 8 → 9 → 10 → 11. Track A (Phase 12) runs 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 8. Demo Hardening | 7/7 | Built · live UAT pending | 2026-07-09 |
-| 9. Auction Depth & Live Viz | 0/— | Not started | — |
+| 9. Auction Depth & Live Viz | 1/7 | In Progress|  |
 | 10. Cryptographic Privacy | 0/— | Not started | — |
 | 11. Settlement & Institutional Grade | 0/— | Not started | — |
 | 12. Real On-Chain (Canton DevNet) | 0/— | Not started (external gate) | — |

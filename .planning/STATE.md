@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Progress
 status: executing
-stopped_at: Phase 9 UI-SPEC approved
-last_updated: "2026-07-09T15:15:09.219Z"
+stopped_at: Completed 09-01-PLAN.md
+last_updated: "2026-07-09T15:41:58.097Z"
 last_activity: 2026-07-09 -- Phase 09 execution started
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 14
-  completed_plans: 7
+  completed_plans: 8
   percent: 17
 ---
 
@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 ## Current Position
 
 Phase: 09 (auction-depth-live-viz) — EXECUTING
-Plan: 1 of 7
-Status: Executing Phase 09
+Plan: 2 of 7
+Status: Ready to execute
 Last activity: 2026-07-09 -- Phase 09 execution started
 
 ## Performance Metrics
@@ -73,6 +73,7 @@ Last activity: 2026-07-09 -- Phase 09 execution started
 | Phase 08 P05 | 12 min | 3 tasks | 7 files |
 | Phase 08 P06 | 6 min | 3 tasks | 4 files |
 | Phase 08 P07 | ~8 min | 3 tasks | 8 files |
+| Phase 09 P01 | 22min | 3 tasks tasks | 12 files files |
 
 ## Accumulated Context
 
@@ -121,6 +122,9 @@ Recent decisions affecting current work:
 - [Phase 08]: [08-07 / WOW-04, WOW-05]: web/src/solver.ts gains rationaleStreamUrl(id)/proofPackUrl(id) (plain URLs off SOLVER_BASE_URL — no :4000, no auth header/credential; EventSource + <a download> consume them) + getBrief(id) (reuses getRound; brief? added to RoundResponse). AgentRationale gains an optional roundId: present + EventSource → opens the SSE stream, appends data deltas into the SAME ink panel (flame caret rides insertion), closes on the `done` event; error-before-any-token OR no roundId → shipped single-shot 26ms/char typewriter (identical look); onerror closes ES (no reconnect); reduced-motion honored (per-chunk append). AgentView passes roundId. NEW RoundBrief.tsx (post-settle 1px-ink block: server brief via getBrief + client fallback from settled preview mirroring composeBrief, no number drift; COPY BRIEF clipboard + DOWNLOAD BRIEF ↓ Blob .txt) + ProofPackButton.tsx (ink-ghost DOWNLOAD PROOF-PACK ↓ fetches proofPackUrl → Blob save pdf/html; ready/preparing/done/error + verbatim WOW-05 error copy). Both gated phase==='settled' below the Settlement CTA; new scoped .umbra-ink-ghost hover rule in index.css (ink-fill/paper-text, existing tokens; never red/lime, no new keyframe). New pure web/src/lib/solverUrls.test.ts (URL construction, no :4000, no credential). web build + 30 vitest green. Live stream/brief/PDF behavior deferred to end-of-phase human verification. Phase 08 COMPLETE (7/7).
 - [Phase 08]: [08-06 / WOW-02, WOW-03]: web/src/solver.ts gains parseOrder(text)→POST /parse-order and tamperClear(id,mode)→POST /round/:id/tamper-clear (both reuse SOLVER_BASE_URL/call<T>; no port literal, no operator/Anthropic credential in the bundle). NEW web/src/components/BreakTheAiPanel.tsx mounted on AgentView BELOW the shipped proposal/rationale grid — DEMO · ADVERSARIAL tag, Wrong price/Over-fill toggle, red-ghost FORCE A WRONG CLEAR → tamperClear → verbatim on-ledger reject rendered on the ink evidence surface (never summarized), then RUN CORRECT CLEAR → settle() → lime 100.00 34px umbra-slam sub-reveal + VERIFIED · SETTLED @ 100.00 red-square row; SolverError OFFLINE → graceful caption; no confirm dialog (tamper is atomic/harmless). Scoped .break-ai-force:hover CSS rule added to index.css (red fill/paper text, existing tokens only — inline styles can't do :hover). OrderTicket gains an NL sub-block ABOVE the side toggle: plain-English input (1px ink underline) + PARSE → calls parseOrder → PREFILLS side/qty/limit (Side enum, qty→String, limit→toFixed(2)) + PROPOSED BY CLAUDE — REVIEW & SEAL note; 422/SolverError → verbatim error copy; SEAL ORDER stays the SINGLE confirm (onParse NEVER calls onSeal) and ticketLocked one-per-round lock is byte-unchanged. web build + 21 vitest green; grep-clean of :4000/operator-token/Anthropic-key literals.
 - [Phase 08]: [08-04 / WOW-04, WOW-02]: agent.streamRationale(views,{onDelta,onDone,onError}) proxies client.messages.stream().on('text'); keyless/stream-less/thrown -> onError EXACTLY once, never leaking key/prompt (AgentClient.messages.stream is OPTIONAL so a parse-only fake still typechecks; call through client.messages.stream to keep the SDK `this`). GET /round/:id/rationale-stream is SSE (NOT wrap()): text/event-stream data: delta frames + `event: done` sentinel; onError writes ONE deterministic composeBrief fallback frame then ends (no sentinel). New pure brief.ts composeBrief(price,matched,allocs,rationale) -> shareable NL summary, secret-free, no number drift; surfaced additively as `brief` on the terminal-settled GET body. WOW-02: DEDICATED ledger.tamperClear(roundId,'wrong-price'|'overfill') copies settle()'s exact cid-gathering but perturbs ONLY numeric values (badPrice=p*-1 / Buy filledQty+2, Pitfall 3), attempts Round.Clear, catches the verbatim submitAndWait reject, resolves {rejected,error} — never throws, never settles; POST /round/:id/tamper-clear (zod .strict {mode}) returns the verbatim body. settle() (ledger.ts + api.ts) BYTE-UNCHANGED (git-diff verified); §4 still $100.00. Overfill's faithful first-firing assert is 'allocations do not match recomputed §8' (Daml checks alloc-match before conservation). Secret sweep extended to /rationale-stream + /tamper-clear. 62 vitest green, tsc clean.
+- [Phase ?]: [09-01 / AUCT-01]: Additive order model as a PURE REDUCTION — OrderType(Limit|Noncompetitive|AllOrNone|Conditional)+minQty/firmIf on OrderView/Order/Venue.SubmitOrder+TS mirror; effective-limit (limit stays Decimal). New fields INERT until wave 2; §4 stays 100.00/A=10/B=8/C=2, Daml-TS parity intact.
+- [Phase ?]: [09-01]: web/daml.js regenerated+committed (fresh-clone invariant 6e4bade); generated Order/SubmitOrder carry orderType/minQty/firmIf. DeskColumn.tsx was a 2nd SubmitOrder site the plan missed (Rule 3 fix).
+- [Phase ?]: [09-01 / AUCT-02]: RULEBOOK.md skeleton anchors max-matched->min-imbalance->lower-price + topPrices trap guard + bp formula, cites both Clearing.daml and auction.ts; 09-02/09-03 fill per-type sections. AUCT-01/02 NOT complete (multi-plan foundation).
 
 ### Pending Todos
 
@@ -146,6 +150,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-09T14:15:59.393Z
-Stopped at: Phase 9 UI-SPEC approved
-Resume file: .planning/phases/09-auction-depth-live-viz/09-UI-SPEC.md
+Last session: 2026-07-09T15:41:58.072Z
+Stopped at: Completed 09-01-PLAN.md
+Resume file: None

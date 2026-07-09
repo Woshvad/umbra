@@ -298,6 +298,33 @@ Plans:
   4. After clear, each desk gets an exportable best-ex/TCA receipt (fill vs limit vs reference, surplus in bp) with an on-ledger surplus≥0 proof (AUCT-04).
   5. The cost-of-leakage simulator shows the same orders losing $X on a simulated public book vs $0 leaked on Umbra (WOW-06).
 
+**Plans**: 7 plans (5 waves)
+Plans:
+
+**Wave 1**
+
+- [ ] 09-01-PLAN.md — Additive Daml+TS order model (orderType/minQty/firmIf, effective-limit) + regenerate web/daml.js + RULEBOOK.md skeleton; §4 stays green as a pure reduction [AUCT-01, AUCT-02]
+
+**Wave 2** *(blocked on 09-01)*
+
+- [ ] 09-02-PLAN.md — Rulebook math I: coreClear + two-pass computeClearing refactor + Noncompetitive (Daml+TS lockstep) + golden fixtures [AUCT-01, AUCT-02]
+- [ ] 09-04-PLAN.md — AUCT-03 aggregate indicative feed (scalars-only, small-N guard, no curve leak) + VIZ-01 CrossingChart assembling↔locked + Theatre panel [AUCT-03, VIZ-01]
+
+**Wave 3** *(blocked on 09-02)*
+
+- [ ] 09-03-PLAN.md — Rulebook math II: AON/MAQ bounded enumeration + Conditional two-pass (Daml+TS lockstep) + full golden parity gate; RULEBOOK complete [AUCT-01, AUCT-02]
+
+**Wave 4** *(blocked on 09-03, 09-04)*
+
+- [ ] 09-05-PLAN.md — AUCT-04 TCA receipt + on-ledger surplusVsLimit≥0 proof (TradeConfirmation fields + Round.Clear) + solver/proof-pack surface + SettlementView two-distinct-surplus receipt [AUCT-04]
+- [ ] 09-06-PLAN.md — AUCT-01 order-type entry UI: OrderTicket LIMIT·NONCOMP·MAQ·COND selector + per-type params + type-aware SubmitOrder (desk plane) [AUCT-01]
+
+**Wave 5** *(blocked on 09-05)*
+
+- [ ] 09-07-PLAN.md — WOW-06 cost-of-leakage simulator: pure client-side leakage.ts + SettlementView sim panel (dashed / SIMULATION / $X saved) [WOW-06]
+
+**UI hint**: yes
+
 ### Phase 10: Cryptographic Privacy
 
 **Goal**: Upgrade privacy from "rivals can't see you" to "the venue itself can't see you," and demote the AI from trusted to *verifiable* — via library-backed cryptography, sequenced ahead of a required expert review.

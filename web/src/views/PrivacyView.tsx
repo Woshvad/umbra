@@ -7,6 +7,7 @@ import { ctxA, ctxB, ctxC, type DeskKey } from '../ledgerContexts'
 import SealedRail from '../components/SealedRail'
 import VenueSpine from '../components/VenueSpine'
 import DeskColumn from '../components/DeskColumn'
+import PeekConsole from '../components/PeekConsole'
 
 type Props = {
   activeDesk: DeskKey
@@ -79,6 +80,9 @@ export default function PrivacyView({ activeDesk, sealedCount }: Props) {
           Three desks submit into one batch. Each sees its own ticket in full and nothing of its
           rivals — only that an order <em>exists</em>. The venue itself sees a count, never contents.
         </p>
+
+        {/* WOW-01 — adversarial Try-to-Peek console: the blindness proof + the peek attempt sit together. */}
+        <PeekConsole activeDesk={activeDesk} />
       </div>
     </main>
   )

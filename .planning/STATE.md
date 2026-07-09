@@ -1,17 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
-status: complete
-stopped_at: "MILESTONE v1.0 COMPLETE — all 7 phases done, all 38 v1 requirements Complete. Phase 7 (Polish/Demo/Acceptance) closed 2026-06-27: UI-07 fidelity 24/24 (06-UI-REVIEW findings closed), Makefile + README + npm mirror (DEMO-01), daml test 6/6 (DEMO-02), live E2E money shot proven (DEMO-03 — privacy at the wire, clear 100.00, atomic settle, §4 finals, 409), pitch frames + 3-min docs/DEMO.md (DEMO-04). The live E2E surfaced & fixed 2 genuine wiring bugs (solver @daml/ledger named-import boot fix; settlement party-id→code mapping). Gates: code-review ship-ready (0 critical), verify 4/4 MET, ui-review 24/24."
-last_updated: "2026-06-27T23:30:00.000Z"
-last_activity: 2026-06-27 -- Phase 7 complete & verified; milestone v1.0 done (all 7 phases / 38 requirements)
+milestone: v2.0
+milestone_name: Production Hardening & Real On-Chain
+status: planning
+last_updated: "2026-07-09T09:02:00.327Z"
+last_activity: 2026-07-09
 progress:
-  total_phases: 7
-  completed_phases: 7
-  total_plans: 22
-  completed_plans: 22
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -21,16 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-25)
 
 **Core value:** The privacy money shot — three desks submit sealed orders blind to each other, an AI solver clears them at one uniform price ($100.00 on the §4 fixture), and the whole batch settles atomically in a single Canton transaction.
-**Current focus:** MILESTONE v1.0 COMPLETE — all 7 phases done.
+**Current focus:** MILESTONE v2.0 — Production Hardening & Real On-Chain (defining requirements → roadmap; 6 phases, 38 requirements).
 
 ## Current Position
 
-Phase: 07 (Polish, Demo & Acceptance) — COMPLETE & VERIFIED (3/3 plans; gates: code-review ship-ready, verify 4/4, ui-review 24/24)
-Plans: 3 of 3 done (07-01 UI-07, 07-02 Makefile/README, 07-03 live-E2E acceptance)
-Status: **Milestone v1.0 COMPLETE.** Privacy money shot proven LIVE end-to-end (3 desks blind → clear $100.00 → atomic DvP settle → per-desk fills) + UI 100% comp fidelity + stranger-runnable (make demo / README) + pitch frames + 3-min script. 2 live-E2E wiring bugs surfaced & fixed.
-Last activity: 2026-06-27 -- Phase 7 complete & verified; milestone v1.0 done
-
-Milestone progress: 7/7 phases [███████] 100%
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-07-09 — Milestone v2.0 started
 
 ## Performance Metrics
 

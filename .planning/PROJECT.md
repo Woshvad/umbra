@@ -8,6 +8,20 @@ Umbra is a private, **sealed-bid uniform-price batch-auction venue** for tokeniz
 
 **The privacy money shot must work and be screenshot-ready:** three desks submit orders blind to each other → an AI solver clears them at one uniform price ($100.00 on the canonical fixture) → the entire batch settles atomically in a single Canton transaction, with each desk seeing only its own fill. If everything else is rough, this end-to-end vertical slice (privacy → clearing → atomic settlement) is what wins, so it is the top build priority.
 
+## Current Milestone: v2.0 — Production Hardening & Real On-Chain
+
+**Goal:** Harden the shipped v1.0 money shot into a production-grade, **real-on-chain** private batch-auction venue — turning each production capability into a judge-facing "wow" moment (most wow features are the demo surface of a production capability).
+
+**Target features (6 phases — see ROADMAP.md):**
+- **Demo hardening** (P8): try-to-peek privacy console, break-the-AI, NL order entry, live analyst, AI trust-harness + decision proof bundle, proof-pack
+- **Auction depth & live viz** (P9): richer order types + explicit rulebook, aggregate indicative-price/imbalance preview, live crossing spectacle, best-ex/TCA + surplus proof, leakage simulator
+- **Cryptographic privacy** (P10): on-ledger commit–reveal, tlock sealed-until-close, ZK proof-of-correct-clearing, privacy time-machine
+- **Settlement & institutional grade** (P11): Daml Finance Batch + multi-buyer netting + cash-agnostic leg, on-ledger KYC/eligibility gating, judge-as-4th-desk, three-node topology
+- **Real on-chain — Canton DevNet** (P12, parallel): SV-sponsored node, OIDC/TLS/Postgres/KMS (= enterprise identity + four-eyes), DAR port + §4 on real Canton, ops hardening
+- **Platform baseline & adjacent** (P13, ongoing): observability/Vault/idempotency/webhooks/status/FIX/sandbox; competing solvers, RFQ, primary issuance, coupon lifecycle
+
+**Key context:** built on the CURRENT stack — Daml 3.4.11 + Canton 3.4 LocalNet (cn-quickstart) + JSON Ledger API v2 (:3975), solver :4100 — not the v1 Daml-2.x plan. Several v1 "Out of Scope" items are now promoted into scope (Daml Finance, cross-node/real Canton, competing solvers, cancel/replace, KYC gating). The §4 fixture ($100.00) stays the correctness reference, including on real Canton. Frontier/heavy items (Daml Finance, threshold-crypto/ZK, SV-sponsored node) are sequenced last within their wave; SV sponsorship is an external business gate started on day 1. Known limitation: true 3-desk privacy needs 3 real institutions running their own validators.
+
 ## Requirements
 
 ### Validated
@@ -97,4 +111,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-25 after initialization*
+*Last updated: 2026-07-09 — milestone v2.0 (Production Hardening & Real On-Chain) opened*

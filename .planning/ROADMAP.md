@@ -225,3 +225,117 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 5. AI Solver Agent | 2/2 | Complete   | 2026-06-26 |
 | 6. Auction Theatre & Settlement Animation | 4/4 | Complete   | 2026-06-26 |
 | 7. Polish, Demo & Acceptance | 3/3 | Complete   | 2026-06-27 |
+
+---
+
+# Milestone v2.0 — Production Hardening & Real On-Chain
+
+## Overview
+
+Milestone v1.0 shipped and proved the privacy money shot end-to-end. v2.0 hardens that vertical slice into a **production-grade, real-on-chain** private batch-auction venue — and turns each production capability into a judge-facing "wow" moment, because most wow features are the demo surface of a production capability (built in the same phase). Grounded in the **CURRENT** stack (Daml 3.4.11 + Canton 3.4 LocalNet / cn-quickstart + JSON Ledger API v2 on :3975, solver :4100), **not** the v1 Daml-2.x plan above. Structure = 4 sequential build waves (Phases 8–11) + 2 parallel tracks (Phase 12 on-chain, Phase 13 baseline/adjacent). The canonical §4 fixture ($100.00, A=10/B=8/C=2) remains the continuous correctness reference through every phase, including once on real Canton.
+
+**Known frontier/heavy items** (weeks–quarter + external review, sequenced last within their wave): Daml Finance settlement (Phase 11), threshold-crypto + ZK (Phase 10), and the SV-sponsored DevNet node (Phase 12 — an external business gate, not code). **Known limitation:** true 3-desk privacy ultimately needs 3 real institutions each running their own validator; a single-operator DevNet node is "demo-real" (a weaker privacy claim), recorded honestly.
+
+## Phases
+
+- [ ] **Phase 8: Demo Hardening** — Expose what already exists as interactive wow: try-to-peek privacy console, break-the-AI, NL order entry, live analyst, AI trust-harness core + decision proof bundle, proof-pack v1 *(~zero new infra)*
+- [ ] **Phase 9: Auction Depth & Live Viz** — Richer order types + explicit rulebook, aggregate indicative-price/imbalance preview, live crossing spectacle, per-desk best-ex/TCA + surplus proof, cost-of-leakage simulator
+- [ ] **Phase 10: Cryptographic Privacy** — On-ledger commit–reveal, tlock/drand sealed-until-close, privacy time-machine replay, ZK proof-of-correct-clearing PoC *(cryptographer review gates production use)*
+- [ ] **Phase 11: Settlement & Institutional Grade** — Daml Finance settlement Batch + multi-buyer netting + cash-agnostic leg, on-ledger KYC/eligibility gating, judge-as-4th-desk, three-node topology viz
+- [ ] **Phase 12: Real On-Chain (Canton DevNet)** *(parallel Track A — start the SV-sponsor gate immediately)* — Sponsored DevNet node, OIDC/TLS/Postgres/KMS (= enterprise identity + four-eyes), DAR port + §4 on real Canton, ops hardening
+- [ ] **Phase 13: Platform Baseline & Adjacent** *(Track B — ongoing)* — Observability/Vault/idempotency/webhooks/status/FIX/sandbox; competing solvers, RFQ mode, primary issuance, coupon lifecycle
+
+## Phase Details
+
+### Phase 8: Demo Hardening
+
+**Goal**: Turn Umbra's three superpowers (ledger-enforced privacy, the AI solver, atomic DvP) into interactive, visceral moments a judge *feels* — with near-zero new infrastructure, by exposing capabilities that already exist and hardening the AI-trust story.
+**Depends on**: Milestone v1.0 (Phases 1–7 complete)
+**Requirements**: WOW-01, WOW-02, WOW-03, WOW-04, WOW-05, TRUST-01, TRUST-02, TRUST-03
+**Success Criteria** (what must be TRUE):
+
+  1. A judge holding one desk's token attempts to fetch a rival desk's `Order` via the raw JSON Ledger API v2, in the UI, and gets an empty/403 result live — privacy proven at the wire, not in render logic (WOW-01).
+  2. Forcing the solver to propose a wrong clearing price makes on-ledger `Round.Clear` reject the transaction on screen, while the correct deterministic clear still settles (WOW-02).
+  3. A desk enters a plain-English order and Claude returns a correctly-structured sealed order; the solver streams its rationale live and emits a shareable post-round brief (WOW-03, WOW-04).
+  4. The §8 fixtures run as a CI golden-eval suite (green on the $100.00 case); with the Anthropic API disabled a round still clears deterministically at $100.00; every round persists an immutable decision proof bundle (TRUST-01, TRUST-02, TRUST-03).
+  5. After settlement, one click downloads a proof-pack PDF (clearing proof + per-desk receipts + AI decision bundle) (WOW-05).
+
+### Phase 9: Auction Depth & Live Viz
+
+**Goal**: Make the auction *real and legible* — richer institutional order types under an explicit, sovereign-grade rulebook, a privacy-safe live price-discovery view, and provable per-desk value.
+**Depends on**: Phase 8 (trust harness), Phase 4/6 (solver + chart to extend)
+**Requirements**: AUCT-01, AUCT-02, AUCT-03, AUCT-04, VIZ-01, WOW-06
+**Success Criteria** (what must be TRUE):
+
+  1. A desk can submit noncompetitive ("fill at clear"), MAQ/all-or-none, and conditional auto-firming orders in addition to sealed limits (AUCT-01).
+  2. The clearing rulebook — maximize matched volume → minimize imbalance → pro-rata at the marginal price — is documented and enforced identically in `Clearing.daml` and the solver (AUCT-02).
+  3. During the open window desks see an AGGREGATE indicative clearing price + net imbalance that never leaks an individual order, and the live crossing visualization assembles and locks p\* at close (AUCT-03, VIZ-01).
+  4. After clear, each desk gets an exportable best-ex/TCA receipt (fill vs limit vs reference, surplus in bp) with an on-ledger surplus≥0 proof (AUCT-04).
+  5. The cost-of-leakage simulator shows the same orders losing $X on a simulated public book vs $0 leaked on Umbra (WOW-06).
+
+### Phase 10: Cryptographic Privacy
+
+**Goal**: Upgrade privacy from "rivals can't see you" to "the venue itself can't see you," and demote the AI from trusted to *verifiable* — via library-backed cryptography, sequenced ahead of a required expert review.
+**Depends on**: Phase 8 (order/round flow), Phase 9 (order model)
+**Requirements**: CRYP-01, CRYP-02, CRYP-03, VIZ-02
+**Success Criteria** (what must be TRUE):
+
+  1. Sealed orders are committed on-ledger as `hash(order‖salt)` during the window and revealed at close; `Round.Clear` rejects any revealed order that doesn't match its commitment; a non-revealing desk forfeits a bond (CRYP-01).
+  2. Orders are timelock-encrypted (drand/tlock) and provably undecryptable — even by the operator/solver — until the window closes; composes with Canton per-party visibility (CRYP-02).
+  3. A ZK proof-of-correct-clearing PoC runs §8 in a zkVM over the committed orders and produces a proof any party verifies off-ledger, anchored on-ledger, revealing no losing order (CRYP-03).
+  4. A privacy time-machine reconstructs each party's exact view at each round stage (open→sealed→cleared→settled) from ledger events (VIZ-02).
+
+  *Gate: a cryptographer's review is required before any of this crypto guards real value (tracked in Phase 13 / Track B).*
+
+### Phase 11: Settlement & Institutional Grade
+
+**Goal**: Replace the MVP settlement primitives with a production-grade, multi-party, compliance-gated settlement stack, and prove it across nodes.
+**Depends on**: Phase 2 (Clear), Phase 9 (order/rulebook); relaxes the single-buyer + operator-custody MVP invariants
+**Requirements**: DFIN-01, DFIN-02, DFIN-03, COMP-01, WOW-07, VIZ-03
+**Success Criteria** (what must be TRUE):
+
+  1. Settlement runs through Daml Finance Holding/Instrument/Account + a Batch/Instruction (allocate/approve) flow with explicit finality semantics; operator-custody `Asset` is retired; the §4 fixture still clears $100.00 and settles atomically (DFIN-01).
+  2. `Round.Clear` clears a multi-buyer/multi-seller batch (single-funded-buyer invariant removed), optionally multilaterally netted, conserving cash and assets; the cash leg is token-agnostic (DFIN-02, DFIN-03).
+  3. Only whitelisted, eligibility-checked (accreditation/jurisdiction/sanctions) desk parties can create an `Order` or hold the bond/cash asset; an ineligible party is rejected on-ledger (COMP-01).
+  4. A guest joins as a 4th desk via QR/mobile and sees only their own fill; the three-node topology view shows orders resident on separate participants and the atomic cross-node settle (WOW-07, VIZ-03).
+
+### Phase 12: Real On-Chain (Canton DevNet) — *parallel Track A*
+
+**Goal**: Take Umbra off LocalNet onto the real Canton Network (DevNet), on real auth/ops — the frozen DAR ports unchanged; the work is the connection/auth/ops layer plus the external sponsor gate.
+**Depends on**: Milestone v1.0 (portable DAR). Runs in PARALLEL with Phases 8–11. **Start the SV-sponsor / hosted-node outreach immediately — it is an external, days–weeks lead time, not code.**
+**Requirements**: CHAIN-01, CHAIN-02, CHAIN-03, IDEN-01, IDEN-02, IDEN-03
+**Success Criteria** (what must be TRUE):
+
+  1. A Canton participant/validator node connects to the real Global Synchronizer on DevNet — self-hosted (Splice Docker Compose) or via a NaaS provider — sponsored by a Super Validator (CHAIN-01).
+  2. The frozen Umbra DAR is uploaded + vetted on the DevNet participant, desk parties are allocated, and the §4 fixture runs end-to-end on real Canton, still clearing $100.00 (CHAIN-02).
+  3. The unsafe HMAC JWT is replaced by real OIDC (Keycloak) over TLS — solver uses client-credentials, desks use auth-code; per-desk RBAC + MFA + scoped, revocable API keys are enforced (IDEN-01, IDEN-02).
+  4. A Compliance role must approve the solver's clearing price before `Round.Clear` commits (four-eyes) (IDEN-03).
+  5. The node runs unattended on isolated per-network Postgres with monitoring, backups, and Canton Coin auto-top-up (CHAIN-03).
+
+### Phase 13: Platform Baseline & Adjacent — *Track B (ongoing)*
+
+**Goal**: The operational baseline any serious venue is assumed to have, plus the adjacent capabilities that widen Umbra's story — built opportunistically alongside the waves, with external dependencies scheduled.
+**Depends on**: Cross-cutting; incremental across the milestone
+**Requirements**: OPS-01, OPS-02, OPS-03, OPS-04, OPS-05, ADJ-01, ADJ-02, ADJ-03
+**Success Criteria** (what must be TRUE):
+
+  1. OpenTelemetry tracing spans solver → JSON Ledger API v2 → Canton; structured logs, metrics, and alerting are in place; a public status page reports venue/round health (OPS-01).
+  2. Secrets (ANTHROPIC_API_KEY, party tokens) live in a vault with rotation (not `.env`); order submission is idempotent (a retry never double-submits) under a round-lifecycle state machine (OPS-02, OPS-03).
+  3. Signed, retried webhooks fire for round-lifecycle events; a sandbox round fixed at the $100.00 fixture exists; a FIX order-entry gateway accepts sealed bids (OPS-04, OPS-05).
+  4. Competing AI solvers race, refereed by the deterministic recompute; an RFQ side-mode and a primary-issuance / coupon-lifecycle capability are available (ADJ-01, ADJ-02, ADJ-03).
+
+  *External dependencies scheduled here: a cryptographer's review (gates Phase 10 for real value), a KYC/AML vendor (backs COMP-01), and a SOC 2 engagement.*
+
+## v2.0 Progress
+
+**Execution Order:**
+Build waves run in numeric order 8 → 9 → 10 → 11. Track A (Phase 12) runs **in parallel** and its external SV-sponsor gate starts on day 1. Track B (Phase 13) is ongoing/incremental across the milestone.
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 8. Demo Hardening | 0/— | Not started | — |
+| 9. Auction Depth & Live Viz | 0/— | Not started | — |
+| 10. Cryptographic Privacy | 0/— | Not started | — |
+| 11. Settlement & Institutional Grade | 0/— | Not started | — |
+| 12. Real On-Chain (Canton DevNet) | 0/— | Not started (external gate) | — |
+| 13. Platform Baseline & Adjacent | 0/— | Not started (ongoing) | — |

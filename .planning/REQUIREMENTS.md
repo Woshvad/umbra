@@ -83,6 +83,83 @@ Deferred to post-hackathon. Spec §19 stretch — do **not** start before the po
 - **STR-04**: Residual routing — route unfilled residual (e.g., C's 3 units) to a mock on-network liquidity venue ("→ Cantex")
 - **STR-05**: Multiple rounds and order cancel/replace
 
+## Milestone v2.0 Requirements — Production Hardening & Real On-Chain
+
+Scoped for milestone v2.0. Grounded in the **current** stack (Daml 3.4.11 + Canton 3.4 LocalNet + JSON Ledger API v2), not the v1 2.x plan. The v1 "Stretch (STR)" items above are **absorbed** here: STR-01 → DFIN-01/02; STR-02 (cross-node LocalNet) → already shipped in the v1→3.4 migration, extended by CHAIN-*; STR-03 → ADJ-01; STR-04 → ADJ-02; STR-05 → AUCT-01 + OPS-03.
+
+### Judge-Facing "Wow" (WOW)
+
+- [ ] **WOW-01**: A judge holding one desk's token can attempt to fetch a rival desk's `Order` via the raw JSON Ledger API v2 in the UI and see it return empty/403 live — privacy proven at the wire, not in render logic
+- [ ] **WOW-02**: A demo control can force the solver to propose a wrong clearing price; on-ledger `Round.Clear` re-verification rejects the transaction on screen while the correct deterministic clear still settles
+- [ ] **WOW-03**: A desk can enter a plain-English order ("buy up to 10 under 101") and Claude parses it into a validated structured sealed order for confirmation
+- [ ] **WOW-04**: The solver streams its clearing rationale as it computes and produces a shareable post-round natural-language brief
+- [ ] **WOW-05**: After settlement, one click downloads an on-brand proof-pack PDF (clearing proof + per-desk best-ex receipts + finality record + AI decision bundle)
+- [ ] **WOW-06**: A cost-of-leakage simulator runs the same orders through a simulated public order book (front-run/slippage → $ lost) beside Umbra's sealed clear ($0 leaked)
+- [ ] **WOW-07**: A judge/guest can become a 4th desk via a QR → mobile page, submit a sealed bid, and see only their own fill
+
+### AI Solver Trust Hardening (TRUST)
+
+- [ ] **TRUST-01**: The §8 clearing fixtures run as a CI golden-eval suite that must pass on every solver change (regression gate for the clearing math + the AI verify gate)
+- [ ] **TRUST-02**: The Claude call uses strict structured outputs and gracefully degrades to the pure deterministic §8 solver on API unavailability/timeout/over-budget, so a round never stalls (canonical case still clears $100.00)
+- [ ] **TRUST-03**: Every round records an immutable "decision proof bundle" (prompt, model ID, raw AI proposal, deterministic recompute, on-ledger clearing hash) as a first-class auditable artifact
+
+### Auction Depth (AUCT)
+
+- [ ] **AUCT-01**: Desks can submit richer order types — noncompetitive ("fill at clear"), minimum-acceptable-quantity / all-or-none, and conditional auto-firming — in addition to plain sealed limits
+- [ ] **AUCT-02**: The deterministic clearing rulebook (maximize matched volume → minimize imbalance → pro-rata at the marginal price) is documented and enforced identically in `Clearing.daml` and the solver
+- [ ] **AUCT-03**: During the open window, desks see a privacy-safe AGGREGATE indicative clearing price + net imbalance (never an individual order), updated as sealed orders arrive
+- [ ] **AUCT-04**: After clear, each desk receives an exportable best-execution/TCA receipt (fill vs limit vs reference price, surplus in bp) with an on-ledger surplus≥0 proof
+
+### Cryptographic Privacy (CRYP)
+
+- [ ] **CRYP-01**: Sealed orders use on-ledger commit–reveal — a desk posts `hash(order‖salt)` during the window and reveals at close; `Round.Clear` re-checks each revealed order against its commitment; non-reveal forfeits a bond
+- [ ] **CRYP-02**: Orders are timelock-encrypted (drand/tlock) so they are undecryptable — even by the operator/solver — until the window closes; composes with Canton per-party visibility
+- [ ] **CRYP-03**: A ZK proof-of-correct-clearing PoC runs §8 in a zkVM over the committed orders and produces a proof any party verifies off-ledger (anchored on-ledger), revealing no losing order
+
+### Settlement — Daml Finance (DFIN)
+
+- [ ] **DFIN-01**: Settlement uses Daml Finance Holding/Instrument/Account and a Batch/Instruction (allocate/approve) flow with explicit settlement-finality semantics, replacing operator-custody `Asset`
+- [ ] **DFIN-02**: `Round.Clear` generalizes beyond the single-funded-buyer invariant to multi-buyer/multi-seller crossing, with optional multilateral netting of the batch
+- [ ] **DFIN-03**: The cash leg is token-agnostic (tokenized deposit / stablecoin / wholesale CBDC) via a pluggable settlement asset
+
+### Compliance (COMP)
+
+- [ ] **COMP-01**: Participation is gated on-ledger — only whitelisted, eligibility-checked (accreditation/jurisdiction/sanctions) desk parties may create an `Order` or hold the bond/cash asset (ERC-3643 analog; real KYC vendor integration deferred to Track B)
+
+### Visualization (VIZ)
+
+- [ ] **VIZ-01**: A live supply/demand crossing visualization assembles the aggregate curve as orders arrive and locks the clearing price at close
+- [ ] **VIZ-02**: A privacy "time-machine" replay reconstructs each party's exact view across the round timeline (open→sealed→cleared→settled) from ledger events
+- [ ] **VIZ-03**: A live three-node topology view shows each desk's order resident on its own Canton participant and the settlement transaction spanning all three atomically
+
+### On-Chain / Canton DevNet (CHAIN)
+
+- [ ] **CHAIN-01**: A Canton participant/validator node connects to the real Global Synchronizer on DevNet (self-hosted Splice Docker Compose or a hosted NaaS provider), sponsored by a Super Validator *(external gate)*
+- [ ] **CHAIN-02**: The frozen Umbra DAR is uploaded + vetted on the DevNet participant, desk parties are allocated, and the canonical §4 fixture runs end-to-end on real Canton (still clears $100.00)
+- [ ] **CHAIN-03**: Ops hardening — isolated per-network PostgreSQL, backups, monitoring, Canton Coin traffic auto-top-up — so the node runs unattended
+
+### Identity & Access (IDEN)
+
+- [ ] **IDEN-01**: The dev-grade unsafe HMAC JWT is replaced by a real OIDC issuer (Keycloak) over TLS; the solver uses client-credentials tokens and desks use auth-code tokens
+- [ ] **IDEN-02**: Per-desk RBAC roles (Trader / Compliance / Admin), MFA on settlement-affecting actions, and scoped, revocable API keys
+- [ ] **IDEN-03**: A four-eyes gate where a Compliance role approves the solver's clearing price before `Round.Clear` commits
+
+### Platform Baseline (OPS)
+
+- [ ] **OPS-01**: Observability — OpenTelemetry tracing across solver → JSON Ledger API v2 → Canton, structured logs, metrics, and alerting
+- [ ] **OPS-02**: Secrets (ANTHROPIC_API_KEY, party tokens) move from `.env` into a vault with rotation; a public status page reports venue/round health
+- [ ] **OPS-03**: Idempotency keys on order submission (a retry never double-submits) under a round-lifecycle state machine enforcing legal transitions
+- [ ] **OPS-04**: Signed, retried webhooks for round-lifecycle events (round.opened/sealed/cleared/settled, fill.posted) and a sandbox round fixed at the $100.00 fixture
+- [ ] **OPS-05**: A FIX order-entry gateway so institutional desks submit sealed bids from their existing OMS
+
+### Adjacent (ADJ)
+
+- [ ] **ADJ-01**: Competing AI solvers — N solver instances/configs ranked by matched volume / surplus, refereed by the deterministic recompute (spec §19 STR-03)
+- [ ] **ADJ-02**: An RFQ side-mode for illiquid single bonds — request a signed firm quote, settled via the same atomic Canton DvP path
+- [ ] **ADJ-03**: On-chain primary bond issuance (uniform-price EasyAuction model) and a post-settlement coupon/redemption lifecycle module
+
+> **External dependencies** (scheduled in Track B, not code deliverables): a cryptographer's review (gates CRYP-* for real value), a KYC/AML vendor (backs COMP-01), and a SOC 2 engagement. **Known limitation:** true 3-desk privacy needs 3 real institutions each running their own validator; a single-operator DevNet node is "demo-real."
+
 ## Out of Scope
 
 Explicitly excluded (spec §1 non-goals). Documented to prevent scope creep.

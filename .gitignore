@@ -33,6 +33,9 @@ scripts/.operator-token
 scripts/localnet/.deploy.json
 scripts/localnet/.tokens.json
 
+# --- Phase 8 — decision proof bundles (ephemeral per-round; NEVER commit; must not carry ANTHROPIC_API_KEY) ---
+solver/proofs/
+
 # --- SDK download temp / OS noise ---
 *.tar.gz
 .DS_Store

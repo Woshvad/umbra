@@ -1,0 +1,113 @@
+-- Umbra — ADJ-02 RFQ side-mode: a keyless request-for-quote where a requester
+-- posts an `RfqRequest`, one or more dealers respond with a FIRM signed `Quote`,
+-- and the requester accepts the best quote — settling a 1×1 batch through the
+-- SAME atomic `Umbra.Settlement.settleBatch` DvP path as `Round.Clear`.
+--
+-- Two load-bearing design facts:
+--
+--   * FIRM QUOTE = DEALER SIGNATURE. `Quote` is `signatory operator, dealer`, so a
+--     quote cannot exist on the ledger without the dealer's authority — its price
+--     is a binding commitment, not an indication. A rival cannot forge a dealer's
+--     quote (threat T-13-16). The requester is the ONLY observer, so quotes are
+--     structurally private per-requester (threat T-13-17).
+--
+--   * REUSE THE DvP ENGINE, DON'T REINVENT IT. `AcceptQuote` builds a 1×1
+--     `[Instruction]` (one bond leg + one cash leg) and calls the proven
+--     `settleBatch operator …` — the identical all-or-nothing Daml-transactional
+--     settlement `Round.Clear` uses. Atomicity IS Daml transactionality; any
+--     failing leg rolls the whole accept back (threat T-13-18).
+--
+-- KEYLESS (D7 / Canton LF 2.1): NO contract key / maintainer anywhere. Every
+-- cross-contract read is `fetch cid` + `assertMsg`, exactly like `Holding.daml`.
+--
+-- Additive: this module imports only the leaf types (`InstrumentId`, `Side`) and
+-- the standalone `Settlement` layer — never `Auction` — so nothing on the §4
+-- secondary-market clearing path changes. `Clearing.daml` / `Round.Clear` stay
+-- byte-unchanged and the §4 golden still clears $100.00.
+module Umbra.Rfq where
+
+import Umbra.Instrument (InstrumentId)
+import Umbra.Clearing (Side(..))
+import Umbra.Holding (Holding)
+import Umbra.Settlement (Instruction(..), settleBatch)
+
+-- A requester's public ask for a firm price on `quantity` units of `instrument`.
+-- `side` is the REQUESTER's side: `Buy` = the requester wants to buy the bond
+-- (pays cash, receives bond); `Sell` = the requester wants to sell it (delivers
+-- bond, receives cash). `dealers` is the EXPLICIT observer set that may quote —
+-- this list IS the privacy control: only these dealers ever see the request, and
+-- no stray observer is added. KEYLESS.
+template RfqRequest
+  with
+    operator   : Party            -- settlement custodian / co-signer
+    requester  : Party            -- the desk asking for a quote
+    dealers    : [Party]          -- the dealers invited to quote (observer set = privacy control)
+    instrument : InstrumentId     -- the bond being requested (token-agnostic)
+    side       : Side             -- the REQUESTER's side (Buy = wants bond; Sell = wants cash)
+    quantity   : Int              -- units requested
+  where
+    signatory operator, requester
+    observer dealers
+    ensure quantity > 0
+
+    -- The requester accepts a dealer's FIRM quote. The choice body runs with the
+    -- RfqRequest signatories' authority (operator ∈ signatories → operator-custody
+    -- Holding choices inside `settleBatch` are authorized, exactly as `Round.Clear`
+    -- runs settleBatch under operator authority). Keyless: the quote is read by
+    -- `fetch quoteCid` + `assertMsg`, never a contract-key lookup.
+    --
+    -- The 1×1 batch is settled via the SAME `settleBatch` DvP path — one bond leg +
+    -- one cash leg — so cash and bond conserve and the accept is all-or-nothing.
+    choice AcceptQuote : ()
+      with
+        quoteCid       : ContractId Quote          -- the (best) quote the requester picks
+        bondSourceCid  : ContractId Holding        -- the bond-deliverer's source Holding
+        cashSourceCid  : ContractId Holding        -- the cash-payer's source Holding
+        cashInstrument : InstrumentId              -- the cash leg's instrument (token-agnostic)
+      controller requester
+      do
+        q <- fetch quoteCid
+        -- The quote must match THIS request's terms (keyless fetch + assert).
+        assertMsg "AcceptQuote: quote operator mismatch"   (q.operator   == operator)
+        assertMsg "AcceptQuote: quote requester mismatch"  (q.requester  == requester)
+        assertMsg "AcceptQuote: quote instrument mismatch" (q.instrument == instrument)
+        assertMsg "AcceptQuote: quote quantity mismatch"   (q.quantity   == quantity)
+
+        let qtyD     = intToDecimal quantity
+            cashAmt  = qtyD * q.price
+            -- Direction by the REQUESTER's side. Buy: dealer delivers bond, requester
+            -- pays cash. Sell: requester delivers bond, dealer pays cash.
+            (bondSender, bondReceiver, cashSender, cashReceiver) = case side of
+              Buy  -> (q.dealer,  requester, requester, q.dealer)
+              Sell -> (requester, q.dealer,  q.dealer,  requester)
+            -- The 1×1 DvP batch: one bond leg + one cash leg at the firm price.
+            instructions =
+              [ Instruction with sender = bondSender; receiver = bondReceiver; instrument = instrument;     amount = qtyD
+              , Instruction with sender = cashSender; receiver = cashReceiver; instrument = cashInstrument; amount = cashAmt
+              ]
+            -- Source Holdings marshaled the way `settleBatch` expects them
+            -- ((owner, instrument, cid)) — the bond-deliverer's bond + the payer's cash.
+            sources =
+              [ (bondSender, instrument,     bondSourceCid)
+              , (cashSender, cashInstrument, cashSourceCid)
+              ]
+        -- The SAME atomic all-or-nothing DvP path as Round.Clear (custodian = operator).
+        settleBatch operator instructions sources
+
+-- A dealer's FIRM price for a specific requester's request. `signatory operator,
+-- dealer` — the dealer's signature is what makes the quote BINDING (a quote cannot
+-- exist without dealer authority; no forgery). `observer requester` is the ONLY
+-- disclosure: the quote is structurally private to its requester, invisible to
+-- rival dealers. KEYLESS.
+template Quote
+  with
+    operator   : Party            -- settlement custodian / co-signer
+    dealer     : Party            -- the quoting desk (signature makes the quote FIRM)
+    requester  : Party            -- the request this quote answers (sole observer)
+    instrument : InstrumentId     -- the bond quoted
+    price      : Decimal          -- the firm price per unit
+    quantity   : Int              -- units quoted (must match the request)
+  where
+    signatory operator, dealer
+    observer requester
+    ensure quantity > 0 && price > 0.0

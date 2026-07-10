@@ -111,7 +111,16 @@ export const idempotencyMiddleware = (
     const originalJson = res.json.bind(res)
     res.json = (body: unknown): Response => {
       // res.statusCode is already set by the handler's res.status(...) call.
-      store.set(key, { bodyHash, status: res.statusCode, body, at: now() })
+      // HI-01: only memoize a FINAL/SUCCESS response (status < 400). A transient 5xx
+      // (e.g. a settle blip forwarded to the secret-safe error middleware as 500) must
+      // NOT be cached — caching it would replay the stale error for the whole TTL and
+      // NEVER re-attempt, converting a recoverable blip into a stuck round. Skipping the
+      // store.set on an error status means a 5xx does NOT consume the idempotency key
+      // (Stripe-style semantics), so a retry under the same key re-executes the handler.
+      // (A deterministic 4xx recomputes to the same result, so it need not be cached.)
+      if (res.statusCode < 400) {
+        store.set(key, { bodyHash, status: res.statusCode, body, at: now() })
+      }
       return originalJson(body)
     }
     next()

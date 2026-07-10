@@ -162,6 +162,33 @@ describe('idempotency middleware', () => {
     expect(calls).toBe(2)
   })
 
+  it('HI-01: does NOT cache a 5xx — a retry under the same key re-executes the handler', async () => {
+    let calls = 0
+    const { middleware, store } = createIdempotency()
+    const base = await start((app) => {
+      app.use(middleware)
+      app.post('/settle', (_req, res) => {
+        calls += 1
+        // First attempt fails transiently (500); the retry succeeds (200).
+        if (calls === 1) return res.status(500).json({ error: { code: 'INTERNAL' } })
+        res.status(200).json({ settled: true, calls })
+      })
+    })
+    const headers = { 'Content-Type': 'application/json', 'Idempotency-Key': 'k-5xx' }
+    const body = JSON.stringify({})
+
+    const r1 = await fetch(`${base}/settle`, { method: 'POST', headers, body })
+    expect(r1.status).toBe(500)
+    expect(store.size).toBe(0) // the transient 5xx did NOT consume the key
+
+    const r2 = await fetch(`${base}/settle`, { method: 'POST', headers, body })
+    const j2 = await r2.json()
+    expect(r2.status).toBe(200) // retry re-executed rather than replaying the cached 500
+    expect(j2).toEqual({ settled: true, calls: 2 })
+    expect(calls).toBe(2)
+    expect(store.size).toBe(1) // only the SUCCESS response is now memoized
+  })
+
   it('secret-sweep: an Authorization sentinel never lands in the store', async () => {
     const SENTINEL = 'SENTINEL-BEARER-do-not-store-9f3c2a'
     const { middleware, store } = createIdempotency()

@@ -5,10 +5,17 @@
 # without collision (mirrors the repo's per-network Postgres isolation precedent,
 # scripts/localnet/up.mjs).
 #
-# This standalone compose is for running the store independently (e.g. to attach a
-# backup sidecar or run maintenance); the validator compose also carries an inline
-# devnet-postgres service for the self-contained ./start.sh path. Point both at the
-# SAME volume name (umbra-devnet-participant-data) if you consolidate.
+# This standalone compose is for running an ISOLATED maintenance store independently
+# (e.g. to attach a backup sidecar or run maintenance); the validator compose carries
+# its OWN inline devnet-postgres on volume `umbra-devnet-participant-data`.
+#
+# ⚠ MUTUALLY EXCLUSIVE — DO NOT run both composes against the same volume at once. Two
+# Postgres 15 containers mounting one data directory concurrently CORRUPTS the store. To
+# keep concurrent bring-up safe, this standalone instance uses its OWN distinct volume
+# (`umbra-devnet-participant-data-standalone`), so it can never multi-attach the
+# validator's live volume. For maintenance ON the validator's actual store, STOP the
+# validator first and point this service's volume at `umbra-devnet-participant-data`
+# explicitly (only one Postgres may mount that volume at a time).
 #
 # Validated OFFLINE (docker compose config). A live store on a real node = UAT.
 # ============================================================================
@@ -27,7 +34,7 @@ services:
       # Host :55434 — off LocalNet :55432 and the Keycloak stack :55433.
       - "${POSTGRES_HOST_PORT:-55434}:5432"
     volumes:
-      - devnet-participant-data:/var/lib/postgresql/data
+      - devnet-participant-data-standalone:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-umbra_devnet} -d ${POSTGRES_DB:-umbra_devnet_participant}"]
       interval: 10s
@@ -36,5 +43,7 @@ services:
       start_period: 30s
 
 volumes:
-  devnet-participant-data:
-    name: umbra-devnet-participant-data
+  # Distinct from the validator compose's `umbra-devnet-participant-data` so the two
+  # can never multi-attach the same data directory (MED-02 corruption footgun).
+  devnet-participant-data-standalone:
+    name: umbra-devnet-participant-data-standalone

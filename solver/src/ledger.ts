@@ -823,3 +823,203 @@ export const anchorProof = async (
 // stays private (it uses the private auth header); this thin export returns only the
 // numeric offset — no token, no headers.
 export const currentOffset = (): Promise<number> => ledgerEnd()
+
+// ════ ADJ-02: RFQ orchestration (post request → firm quote → list → accept→settle) ════
+// Keyless exercise wrappers over the JSON Ledger API v2 for the ADJ-02 request-for-quote
+// side-mode (Umbra.Rfq). They MIRROR the settle() discipline: address templates by
+// package-NAME (`#umbra:Umbra.Rfq:…`), marshal Int/Decimal choice args as STRINGS, gather
+// the source Holding ContractIds from a FRESH ACS query before the exercise, and pass cids
+// explicitly (D7 Option-B). `acceptQuote` builds the 1×1 batch inputs the way settle()
+// gathers its Holding cids, then exercises `AcceptQuote` which reuses the SAME on-ledger
+// `settleBatch` DvP path. SECURITY: like every export here, none of these returns or logs
+// the operator token — only party/contract ids + settlement scalars cross out (SOLV-04).
+//
+// AUTHORITY NOTE (dev orchestration): the solver submits with the required signatory/
+// controller parties in `actAs` (e.g. [operator, requester]). Live, each desk would submit
+// its own leg with its own scoped token; the solver-orchestrated multi-party actAs is the
+// dev/LocalNet fast-loop path (the same "live per-party token is a UAT concern" posture as
+// the four-eyes human gate). The token still lives only in the Authorization header.
+
+// A privacy-safe projection of a firm Quote (the requester is the sole observer, so the
+// operator sees only the quotes it co-signs — nothing sensitive to a rival dealer leaks).
+export interface QuoteView {
+  contractId: string
+  dealer: string
+  price: number
+  quantity: number
+}
+
+// The secret-free settle summary AcceptQuote returns — scalars + party/contract ids only.
+export interface RfqSettleSummary {
+  rfqId: string
+  quoteCid: string
+  requester: string
+  dealer: string
+  side: Side
+  quantity: number
+  price: number
+  cashAmount: number
+  settled: true
+}
+
+const bondInstrumentRef = (id: string = BOND_SYMBOL) => ({ issuer: operatorParty, id })
+const cashInstrumentRef = (id: string = CASH_SYMBOL) => ({ issuer: operatorParty, id })
+
+// ── postRfq: create an RfqRequest (the requester's public ask to an invited dealer set) ──
+export const postRfq = async (
+  requester: string,
+  side: Side,
+  quantity: number,
+  dealers?: string[],
+): Promise<{ rfqId: string; requester: string; side: Side; quantity: number }> => {
+  const dealerList = (dealers && dealers.length ? dealers : DEFAULT_DESKS).filter((d) => d !== requester)
+  const instrument = bondInstrumentRef()
+  await submitAndWait(
+    [
+      {
+        CreateCommand: {
+          templateId: `${PKG}:Umbra.Rfq:RfqRequest`,
+          createArguments: {
+            operator: operatorParty,
+            requester,
+            dealers: dealerList,
+            instrument,
+            side,
+            quantity: String(quantity), // Int marshaled as a string (Option-B)
+          },
+        },
+      },
+    ],
+    [operatorParty, requester],
+  )
+  const rfq = (await queryByEntity('RfqRequest'))
+    .filter(
+      (c) =>
+        c.createArgument.requester === requester &&
+        c.createArgument.side === side &&
+        Number(c.createArgument.quantity) === quantity,
+    )
+    .pop()
+  if (!rfq) throw new Error(`RfqRequest not found after create for ${requester}`)
+  return { rfqId: rfq.contractId, requester, side, quantity }
+}
+
+// ── createQuote: a dealer posts a FIRM (dealer-signed) Quote answering an RfqRequest ──
+export const createQuote = async (
+  dealer: string,
+  requester: string,
+  price: number,
+  quantity: number,
+): Promise<{ quoteCid: string; dealer: string; price: number; quantity: number }> => {
+  const instrument = bondInstrumentRef()
+  await submitAndWait(
+    [
+      {
+        CreateCommand: {
+          templateId: `${PKG}:Umbra.Rfq:Quote`,
+          createArguments: {
+            operator: operatorParty,
+            dealer,
+            requester,
+            instrument,
+            price: String(price), // Decimal marshaled as a string (Option-B)
+            quantity: String(quantity), // Int marshaled as a string
+          },
+        },
+      },
+    ],
+    [operatorParty, dealer],
+  )
+  const q = (await queryByEntity('Quote'))
+    .filter(
+      (c) =>
+        c.createArgument.dealer === dealer &&
+        c.createArgument.requester === requester &&
+        Number(c.createArgument.price) === price &&
+        Number(c.createArgument.quantity) === quantity,
+    )
+    .pop()
+  if (!q) throw new Error(`Quote not found after create for ${dealer}`)
+  return { quoteCid: q.contractId, dealer, price, quantity }
+}
+
+// ── listQuotes: the requester-visible firm quotes answering an RfqRequest ─────────────
+export const listQuotes = async (rfqCid: string): Promise<QuoteView[]> => {
+  const rfq = (await queryByEntity('RfqRequest')).find((c) => c.contractId === rfqCid)
+  if (!rfq) throw new Error(`RfqRequest ${rfqCid} not found`)
+  const requester = rfq.createArgument.requester
+  const instrId = rfq.createArgument.instrument?.id
+  return (await queryByEntity('Quote'))
+    .filter((c) => c.createArgument.requester === requester && c.createArgument.instrument?.id === instrId)
+    .map((c) => ({
+      contractId: c.contractId,
+      dealer: c.createArgument.dealer,
+      price: Number(c.createArgument.price),
+      quantity: Number(c.createArgument.quantity),
+    }))
+}
+
+// ── acceptQuote: the requester accepts the (best) quote → 1×1 DvP settle via settleBatch ──
+// Gathers the bond + cash source Holding cids from a FRESH ACS query (the way settle()
+// gathers its Holding cids), then exercises `AcceptQuote` — which builds a 1×1 batch and
+// calls the SAME on-ledger `settleBatch` DvP path. Direction follows the REQUESTER's side:
+// Buy → dealer delivers bond, requester pays cash; Sell → requester delivers bond, dealer
+// pays cash. Returns a secret-free settle summary (no token).
+export const acceptQuote = async (rfqCid: string, quoteCid: string): Promise<RfqSettleSummary> => {
+  const rfq = (await queryByEntity('RfqRequest')).find((c) => c.contractId === rfqCid)
+  if (!rfq) throw new Error(`RfqRequest ${rfqCid} not found`)
+  const quote = (await queryByEntity('Quote')).find((c) => c.contractId === quoteCid)
+  if (!quote) throw new Error(`Quote ${quoteCid} not found`)
+
+  const requester = rfq.createArgument.requester as string
+  const side = rfq.createArgument.side as Side
+  const quantity = Number(rfq.createArgument.quantity)
+  const dealer = quote.createArgument.dealer as string
+  const price = Number(quote.createArgument.price)
+  const bondInstrument = bondInstrumentRef(rfq.createArgument.instrument?.id ?? BOND_SYMBOL)
+  const cashInstrument = cashInstrumentRef()
+  const cashAmount = quantity * price
+
+  // Buy: dealer delivers bond, requester pays cash. Sell: requester delivers, dealer pays.
+  const bondSender = side === 'Buy' ? dealer : requester
+  const cashSender = side === 'Buy' ? requester : dealer
+
+  // Re-query live Holdings before the exercise (Option-B) and locate one sufficient
+  // (owner, instrument) source per leg — the same discipline as settle()'s gather.
+  const holdings = await queryByEntity('Holding')
+  const findHolding = (owner: string, instrId: string, need: number): CreatedEvent | undefined =>
+    holdings.find(
+      (c) =>
+        c.createArgument.owner === owner &&
+        c.createArgument.instrument?.id === instrId &&
+        Number(c.createArgument.amount) >= need,
+    )
+  const bondSrc = findHolding(bondSender, bondInstrument.id, quantity)
+  if (!bondSrc) {
+    throw new Error(`insufficient or missing ${bondInstrument.id} holding for ${bondSender} (need ${quantity})`)
+  }
+  const cashSrc = findHolding(cashSender, cashInstrument.id, cashAmount)
+  if (!cashSrc) {
+    throw new Error(`insufficient or missing ${cashInstrument.id} holding for ${cashSender} (need ${cashAmount})`)
+  }
+
+  await submitAndWait(
+    [
+      {
+        ExerciseCommand: {
+          templateId: `${PKG}:Umbra.Rfq:RfqRequest`,
+          contractId: rfqCid,
+          choice: 'AcceptQuote',
+          choiceArgument: {
+            quoteCid, // branded ContractId → the string cid at the exercise site
+            bondSourceCid: bondSrc.contractId,
+            cashSourceCid: cashSrc.contractId,
+            cashInstrument,
+          },
+        },
+      },
+    ],
+    [operatorParty, requester],
+  )
+  return { rfqId: rfqCid, quoteCid, requester, dealer, side, quantity, price, cashAmount, settled: true }
+}

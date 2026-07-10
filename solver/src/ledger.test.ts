@@ -37,6 +37,9 @@ const clearCalls: {
   allocations: { desk: string; side: string; filledQty: number }[]
   approvalCid?: string
 }[] = []
+// ADJ-02/03: capture every non-lifecycle exercise the client submits, so the RFQ +
+// issuance wrappers can be asserted on choice + argument-marshaling shape (no live ledger).
+const exerciseCalls: { template: string; choice: string; contractId: string; arg: Record<string, any> }[] = []
 
 const umbra = (templateId: string, createArgument: Record<string, any>, contractId = `cid-${++cidSeq}`): Created => ({
   contractId,
@@ -66,6 +69,8 @@ const mockFetch = vi.fn(async (url: unknown, opts?: any) => {
         createCalls.push({ template: t, args: cmd.CreateCommand.createArguments })
       } else if (cmd.ExerciseCommand) {
         const { contractId, choice, templateId, choiceArgument } = cmd.ExerciseCommand
+        // ADJ-02/03: record EVERY exercise (choice + args) for the wrapper-shape assertions.
+        exerciseCalls.push({ template: templateId, choice, contractId, arg: choiceArgument ?? {} })
         if (choice === 'Archive' || choice === 'Retire') {
           acs = acs.filter((c) => c.contractId !== contractId)
           archiveCalls.push({ template: templateId, cid: contractId })
@@ -206,6 +211,7 @@ beforeEach(() => {
   createCalls.length = 0
   archiveCalls.length = 0
   clearCalls.length = 0
+  exerciseCalls.length = 0
   vi.stubGlobal('fetch', mockFetch)
 })
 afterEach(() => {
@@ -370,6 +376,103 @@ describe('ledger.settle (IDEN-03 four-eyes — requests + collects a ClearingApp
     const { result } = await ledgerMod.settle('R1')
 
     expect(JSON.stringify(result)).not.toContain(SENTINEL_TOKEN)
+    for (const call of [...logSpy.mock.calls, ...errSpy.mock.calls]) {
+      expect(JSON.stringify(call)).not.toContain(SENTINEL_TOKEN)
+    }
+
+    logSpy.mockRestore()
+    errSpy.mockRestore()
+  })
+})
+
+// ── ADJ-02: RFQ orchestration (post → firm quote → list → accept→settleBatch) ────────
+describe('ledger RFQ wrappers (ADJ-02 — post/quote/list/accept over JSON Ledger API v2)', () => {
+  const bond = { issuer: 'operator::test', id: 'BONDX' }
+  const usdc = { issuer: 'operator::test', id: 'USDCx' }
+
+  const seedRfqAcceptWorld = (): { rfqCid: string; quoteCid: string } => {
+    // A Buy-side RFQ from bankA for 10 units; bankB quotes 100.0; the holdings needed for
+    // the 1×1 DvP (dealer delivers bond, requester pays cash) are seeded operator-custody.
+    acs.push(
+      umbra('#umbra:Umbra.Rfq:RfqRequest', {
+        operator: 'operator::test', requester: 'bankA::test', dealers: ['bankB::test'],
+        instrument: bond, side: 'Buy', quantity: '10',
+      }, 'rfq-1'),
+      umbra('#umbra:Umbra.Rfq:Quote', {
+        operator: 'operator::test', dealer: 'bankB::test', requester: 'bankA::test',
+        instrument: bond, price: '100.0', quantity: '10',
+      }, 'quote-1'),
+      // bankB (dealer) delivers the bond; bankA (requester) pays the cash.
+      umbra('#umbra:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'bankB::test', instrument: bond, amount: '20.0', lock: null }, 'h-bond-B'),
+      umbra('#umbra:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'bankA::test', instrument: usdc, amount: '5000.0', lock: null }, 'h-cash-A'),
+    )
+    return { rfqCid: 'rfq-1', quoteCid: 'quote-1' }
+  }
+
+  it('postRfq creates an RfqRequest with the quantity marshaled as a STRING', async () => {
+    const posted = await ledgerMod.postRfq('bankA::test', 'Buy', 10, ['bankB::test'])
+
+    expect(posted.rfqId).toBe('cid-1')
+    expect(posted.requester).toBe('bankA::test')
+    const create = createCalls.find((c) => c.template.endsWith(':RfqRequest'))
+    expect(create).toBeTruthy()
+    // Int marshaled as a string (Option-B); dealers exclude the requester.
+    expect(create!.args.quantity).toBe('10')
+    expect(typeof create!.args.quantity).toBe('string')
+    expect(create!.args.dealers).toEqual(['bankB::test'])
+    expect(create!.args.instrument).toEqual(bond)
+  })
+
+  it('createQuote creates a firm Quote with price + quantity marshaled as STRINGS', async () => {
+    const q = await ledgerMod.createQuote('bankB::test', 'bankA::test', 100.5, 10)
+
+    expect(q.quoteCid).toBe('cid-1')
+    const create = createCalls.find((c) => c.template.endsWith(':Quote'))
+    expect(create).toBeTruthy()
+    expect(create!.args.price).toBe('100.5')
+    expect(create!.args.quantity).toBe('10')
+    expect(typeof create!.args.price).toBe('string')
+  })
+
+  it('listQuotes returns the requester-visible firm quotes (dealer/price/quantity)', async () => {
+    seedRfqAcceptWorld()
+
+    const quotes = await ledgerMod.listQuotes('rfq-1')
+
+    expect(quotes).toHaveLength(1)
+    expect(quotes[0]).toMatchObject({ contractId: 'quote-1', dealer: 'bankB::test', price: 100, quantity: 10 })
+  })
+
+  it('acceptQuote gathers the bond+cash source cids like settle() and exercises AcceptQuote', async () => {
+    seedRfqAcceptWorld()
+
+    const summary = await ledgerMod.acceptQuote('rfq-1', 'quote-1')
+
+    // Secret-free settle summary — scalars + party/contract ids only.
+    expect(summary).toMatchObject({
+      rfqId: 'rfq-1', quoteCid: 'quote-1', requester: 'bankA::test', dealer: 'bankB::test',
+      side: 'Buy', quantity: 10, price: 100, cashAmount: 1000, settled: true,
+    })
+    // Exactly one AcceptQuote exercise on the RfqRequest, carrying the gathered source cids.
+    const accept = exerciseCalls.find((e) => e.choice === 'AcceptQuote')
+    expect(accept).toBeTruthy()
+    expect(accept!.contractId).toBe('rfq-1')
+    expect(accept!.arg.quoteCid).toBe('quote-1')
+    // Buy: dealer (bankB) delivers bond, requester (bankA) pays cash → gathered source cids.
+    expect(accept!.arg.bondSourceCid).toBe('h-bond-B')
+    expect(accept!.arg.cashSourceCid).toBe('h-cash-A')
+    expect(accept!.arg.cashInstrument).toEqual(usdc)
+  })
+
+  it('never leaks the Operator token through the RFQ post/quote/list/accept path', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const { rfqCid, quoteCid } = seedRfqAcceptWorld()
+    const quotes = await ledgerMod.listQuotes(rfqCid)
+    const summary = await ledgerMod.acceptQuote(rfqCid, quoteCid)
+
+    expect(JSON.stringify({ quotes, summary })).not.toContain(SENTINEL_TOKEN)
     for (const call of [...logSpy.mock.calls, ...errSpy.mock.calls]) {
       expect(JSON.stringify(call)).not.toContain(SENTINEL_TOKEN)
     }

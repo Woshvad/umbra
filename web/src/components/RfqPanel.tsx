@@ -262,9 +262,11 @@ export default function RfqPanel({ requester, firm }: Props) {
             {settled ? (
               <div
                 className="flex items-center font-mono text-13 font-semibold uppercase"
-                style={{ gap: '8px', letterSpacing: '.1em', color: '#E2231A' }}
+                // UI-REVIEW: a SUCCESSFUL settle stamp is INK, not brand red — red is
+                // reserved for down/reject signals (the reject/error states stay red).
+                style={{ gap: '8px', letterSpacing: '.1em', color: '#0A0A0A' }}
               >
-                <span style={{ width: '8px', height: '8px', background: '#E2231A', display: 'inline-block' }} />
+                <span style={{ width: '8px', height: '8px', background: '#0A0A0A', display: 'inline-block' }} />
                 SETTLED · ATOMIC — one DvP transaction
               </div>
             ) : (

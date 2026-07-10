@@ -73,6 +73,8 @@ const okFacilitator = (over?: Partial<FacilitatorClient>): FacilitatorClient => 
 const futureTs = () => Date.now() + 60_000
 const decodeHeader = (b64: string): SettlementResponse =>
   JSON.parse(Buffer.from(b64, 'base64').toString('utf8'))
+// fetch Response.json() is typed `unknown` under @types/node; narrow for assertions.
+const body = async (r: { json: () => Promise<unknown> }): Promise<any> => r.json()
 
 // ============================================================================
 // Layer 1 — pure wire helpers (Task 1)
@@ -187,7 +189,7 @@ describe('x402 gate middleware', () => {
     })
     const r = await fetch(`${base}/solve`)
     expect(r.status).toBe(402)
-    const j = await r.json()
+    const j = await body(r)
     expect(j.x402Version).toBe(1)
     expect(typeof j.error).toBe('string')
     expect(Array.isArray(j.accepts)).toBe(true)
@@ -248,7 +250,7 @@ describe('x402 gate middleware', () => {
     // malformed
     const rm = await fetch(`${base}/solve`, { headers: { 'X-PAYMENT': 'garbage-@@@' } })
     expect(rm.status).toBe(402)
-    expect((await rm.json()).error).toBe(X402_REASON.invalid_payload)
+    expect((await body(rm)).error).toBe(X402_REASON.invalid_payload)
 
     // expired (validBefore in the past)
     const expired = constructSelfPayment({
@@ -257,7 +259,7 @@ describe('x402 gate middleware', () => {
     })
     const re = await fetch(`${base}/solve`, { headers: { 'X-PAYMENT': expired } })
     expect(re.status).toBe(402)
-    expect((await re.json()).error).toBe(X402_REASON.payment_expired)
+    expect((await body(re)).error).toBe(X402_REASON.payment_expired)
 
     // verify-invalid (facilitator says no) → the facilitator's secret-free reason
     const good = constructSelfPayment({
@@ -266,7 +268,7 @@ describe('x402 gate middleware', () => {
     })
     const rv = await fetch(`${base}/solve-bad`, { headers: { 'X-PAYMENT': good } })
     expect(rv.status).toBe(402)
-    expect((await rv.json()).error).toBe(X402_REASON.amount_too_low)
+    expect((await body(rv)).error).toBe(X402_REASON.amount_too_low)
 
     // replayed nonce — pay once, resend the identical payload
     const p = constructSelfPayment({
@@ -276,7 +278,7 @@ describe('x402 gate middleware', () => {
     expect((await fetch(`${base}/solve`, { headers: { 'X-PAYMENT': p } })).status).toBe(200)
     const replay = await fetch(`${base}/solve`, { headers: { 'X-PAYMENT': p } })
     expect(replay.status).toBe(402)
-    expect((await replay.json()).error).toBe(X402_REASON.nonce_replayed)
+    expect((await body(replay)).error).toBe(X402_REASON.nonce_replayed)
   })
 
   it('secret sweep — a facilitator/Authorization sentinel never lands in a 402 body or X-PAYMENT-RESPONSE', async () => {
@@ -307,7 +309,7 @@ describe('x402 gate middleware', () => {
     })
     const rs = await fetch(`${base}/status`)
     expect(rs.status).toBe(200)
-    expect((await rs.json()).status).toBe('ok')
+    expect((await body(rs)).status).toBe('ok')
     // the metered route still 402s without payment (gate is active, just not global)
     expect((await fetch(`${base}/solve`)).status).toBe(402)
   })
@@ -319,6 +321,6 @@ describe('x402 gate middleware', () => {
     })
     const r = await fetch(`${base}/solve`)
     expect(r.status).toBe(200) // disabled ⇒ passthrough
-    expect((await r.json()).ran).toBe(true)
+    expect((await body(r)).ran).toBe(true)
   })
 })

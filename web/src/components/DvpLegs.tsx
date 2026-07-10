@@ -1,29 +1,71 @@
-// DvpLegs (UI-SPEC "05 — SETTLEMENT", lines 220-225) — the delivery-vs-payment legs.
-// Each leg is a paired asset(→, ink) + cash(←, red) arrow on a `120px 1fr 120px` grid.
-// The draw-on is driven by the SINGLE `settleProgress` (0→1) lifted from SettlementView's
-// one rAF clock — ALL legs share it, so they snap together SIMULTANEOUSLY (never
-// sequenced; RESEARCH Pattern 7 / Anti-pattern "never sequence legs"). The track widths
-// scale `${settleProgress*100}%` (the comp's HTML-div approach — RESEARCH A3).
+// DvpLegs (UI-SPEC "05 — SETTLEMENT", lines 220-225 + Phase-11 "Settlement deltas") — the
+// delivery-vs-payment legs of the Batch/Instruction settlement. Each leg is a paired
+// asset(→, ink) + cash(←, red) arrow on a `120px 1fr 120px` grid. The draw-on is driven by
+// the SINGLE `settleProgress` (0→1) lifted from SettlementView's one rAF clock — ALL legs
+// share it, so they snap together SIMULTANEOUSLY (atomicity = simultaneity; never sequenced;
+// RESEARCH Pattern 7 / Anti-pattern "never sequence legs"). The track widths scale
+// `${settleProgress*100}%` (the comp's HTML-div approach — RESEARCH A3).
 //
 // §4 legs: leg1 MERIDIAN → BLUEROCK 8 BONDX / 800 USDCx, leg2 HALWARD → BLUEROCK
 // 2 BONDX / 200 USDCx (derived from preview.allocations by SettlementView).
 //
+// Phase-11 deltas (all data-driven — DFIN-01/02/03):
+//   • the sub-label is `Delivery vs Payment · Batch/Instruction · {N} instructions`
+//     (`instructionCount`) + the `ALLOCATED → APPROVED → SETTLED` settlement-finality
+//     micro-grammar (the Batch settle commit IS the finality) — NEVER the standalone library
+//     name (unsatisfiable on this LF-2.1 / SDK-3.4.11 stack; the honest provenance tag lives
+//     in SettlementView, `CN TOKEN STANDARD (CIP-0056)` / `DAML-FINANCE-PATTERN (IN-REPO)`).
+//   • the cash arrow reads the token-agnostic instrument `symbol` from data (`← {cash}
+//     {symbol}`, defaults `USDCx`) — never a hardcoded literal (DFIN-03).
+//   • `netted` labels the current netting mode (net-per-party vs gross legs); the legs
+//     themselves are already computed for the mode by SettlementView and just rendered here
+//     off the SAME shared `settleProgress` clock (both modes stay simultaneous, conserving).
+//
 // DISPLAY only — no operator token, no @daml/react context (threat T-06-01).
 
-// One settlement leg: a seller delivers `qty` BONDX to a buyer who pays `cash` USDCx.
+// One settlement leg: a seller delivers `qty` bond units to a buyer who pays `cash` of the
+// (token-agnostic) cash instrument.
 export type DvpLeg = { seller: string; buyer: string; qty: number; cash: number }
 
-type Props = { legs: DvpLeg[]; settleProgress: number }
+type Props = {
+  legs: DvpLeg[]
+  settleProgress: number
+  // The Batch/Instruction count for the sub-label `… · {N} instructions` (DFIN-01).
+  // Defaults to one bond + one cash instruction per leg when not supplied by the caller.
+  instructionCount?: number
+  // The token-agnostic cash instrument symbol for the cash arrow (DFIN-03; defaults USDCx).
+  cashSymbol?: string
+  // The active netting mode (default NETTED) — labels the finality line, never re-sequences.
+  netted?: boolean
+}
 
-export default function DvpLegs({ legs, settleProgress }: Props) {
+export default function DvpLegs({
+  legs,
+  settleProgress,
+  instructionCount,
+  cashSymbol = 'USDCx',
+  netted = true,
+}: Props) {
   const pct = `${settleProgress * 100}%`
+  // Each DvP leg is a bond delivery + a cash payment (two Instructions) unless the caller
+  // passes an authoritative count from the settlement meta.
+  const nInstructions = instructionCount ?? legs.length * 2
   return (
     <div>
       <div
         className="font-body text-10 uppercase opacity-50"
         style={{ letterSpacing: '.14em' }}
       >
-        Delivery vs Payment · {legs.length} legs
+        Delivery vs Payment · Batch/Instruction · {nInstructions} instructions
+      </div>
+
+      {/* Settlement-finality micro-grammar (mono-9, opacity .6) — the Batch settle commit is
+          the finality signal. The mode tag reflects the netting toggle in SettlementView. */}
+      <div
+        className="font-mono text-9 uppercase"
+        style={{ letterSpacing: '.14em', opacity: 0.6, marginTop: '6px' }}
+      >
+        ALLOCATED → APPROVED → SETTLED · {netted ? 'NETTED' : 'GROSS LEGS'}
       </div>
 
       <div className="border-t" style={{ position: 'relative', marginTop: '12px' }}>
@@ -72,7 +114,7 @@ export default function DvpLegs({ legs, settleProgress }: Props) {
                 color="#E2231A"
                 direction="left"
                 pct={pct}
-                label={`← ${leg.cash} USDCx`}
+                label={`← ${leg.cash} ${cashSymbol}`}
                 labelColor="#E2231A"
               />
               <span />

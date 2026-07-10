@@ -13,7 +13,6 @@ import DA.Assert
 import DA.Foldable (forA_)
 import DA.List (sort)
 import Umbra.Setup
-import Umbra.Asset
 import Umbra.Auction
   ( Side(..), Allocation(..)
   , Order, Round(..), RoundStatus(..), TradeConfirmation, RoundStats(..)
@@ -25,67 +24,70 @@ import Umbra.Roles (Venue, SubmitOrder(..), CommitOrder(..), AnchorProof(..))
 import Umbra.Clearing
 import Umbra.Compliance (DeskEligibility(..), isEligible)
 import Umbra.Instrument (InstrumentId(..))
-import Umbra.Holding (Holding(..))
+import Umbra.Holding (Holding(..), Split(..), Merge(..), Reassign(..))
 import Umbra.Settlement
   ( Instruction(..)
   , buildGrossInstructions, netLegs, conservationOk, settleBatch
   )
 
 -- LEDG-02 — the §4 seed is the single correctness reference. Assert that after
--- `initialize` the operator sees exactly the 5 §4 Assets with the right
--- owner/symbol/quantity. A wrong mint literal fails here instead of silently
--- corrupting every downstream test (threat T-01-07).
+-- `initialize` the operator sees exactly the 5 §4 `Holding`s with the right
+-- owner/instrument/amount (DFIN-01: holdings, not Assets). A wrong mint literal
+-- fails here instead of silently corrupting every downstream test (threat T-01-07).
 test_setup_seeds : Script ()
 test_setup_seeds = do
   Parties{..} <- initialize
-  assets <- query @Asset operator
-  -- Exactly 5 Asset contracts minted.
-  length assets === 5
-  let holdings = [(a.owner, a.symbol, a.quantity) | (_, a) <- assets]
+  let bond = bondInstrumentOf operator
+      cash = cashInstrumentOf operator
+  holdings <- query @Holding operator
+  -- Exactly 5 Holding contracts minted.
+  length holdings === 5
+  let held = [(h.owner, h.instrument, h.amount) | (_, h) <- holdings]
   -- The four parties are distinct.
   assertMsg "parties must be distinct"
     (operator /= bankA && bankA /= bankB && bankB /= bankC && operator /= bankC)
-  -- Every §4 holding is present (owner, symbol, quantity).
+  -- Every §4 holding is present (owner, instrument, amount).
   let expected =
-        [ (bankA, "USDCx", 5000.0)
-        , (bankB, "BONDX", 20.0)
-        , (bankB, "USDCx", 1000.0)
-        , (bankC, "BONDX", 15.0)
-        , (bankC, "USDCx", 1000.0)
+        [ (bankA, cash, 5000.0)
+        , (bankB, bond, 20.0)
+        , (bankB, cash, 1000.0)
+        , (bankC, bond, 15.0)
+        , (bankC, cash, 1000.0)
         ]
   forA_ expected $ \h ->
-    assertMsg ("missing expected §4 holding: " <> show h) (h `elem` holdings)
+    assertMsg ("missing expected §4 holding: " <> show h) (h `elem` held)
 
--- LEDG-03 — operator-only Split/Merge preserve total quantity. Mint BONDX 10.0,
--- Split into 4.0 + 6.0 (conservation: sum == original), then Merge back to 10.0.
--- Also prove the ensure/assert guard rejects an out-of-range splitQty.
-test_asset_split_merge : Script ()
-test_asset_split_merge = do
+-- LEDG-03 — operator-only Split/Merge preserve total amount. Mint 10.0 of a bond
+-- Holding, Split into 4.0 + 6.0 (conservation: sum == original), then Merge back to
+-- 10.0. Also prove the ensure/assert guard rejects an out-of-range splitQty.
+test_holding_split_merge : Script ()
+test_holding_split_merge = do
   Parties{operator, bankB} <- allocateAll
-  assetCid <- mintAsset operator bankB "BONDX" 10.0
+  let bond = bondInstrumentOf operator
+  holdingCid <- mintHolding operator bankB bond 10.0
 
   -- Split 10.0 -> (4.0, 6.0)
   (aCid, bCid) <- submit operator do
-    exerciseCmd assetCid Split with splitQty = 4.0
+    exerciseCmd holdingCid Split with splitQty = 4.0
   a <- queryContractId operator aCid
   b <- queryContractId operator bCid
   case (a, b) of
     (Some av, Some bv) -> do
-      av.quantity === 4.0
-      bv.quantity === 6.0
+      av.amount === 4.0
+      bv.amount === 6.0
       -- conservation: the two halves sum to the original.
-      (av.quantity + bv.quantity) === 10.0
-    _ -> abort "Split did not produce two Asset contracts"
+      (av.amount + bv.amount) === 10.0
+    _ -> abort "Split did not produce two Holding contracts"
 
   -- Merge (4.0) back with (6.0) -> 10.0
   mergedCid <- submit operator do
     exerciseCmd aCid Merge with otherCid = bCid
   merged <- queryContractId operator mergedCid
   case merged of
-    Some mv -> mv.quantity === 10.0
-    None    -> abort "Merge did not produce a merged Asset"
+    Some mv -> mv.amount === 10.0
+    None    -> abort "Merge did not produce a merged Holding"
 
-  -- Edge: out-of-range Split (>= quantity) is rejected by the assertMsg guard.
+  -- Edge: out-of-range Split (>= amount) is rejected by the assertMsg guard.
   submitMustFail operator do
     exerciseCmd mergedCid Split with splitQty = 10.0
 
@@ -322,34 +324,37 @@ test_conditional_drops = do
 -- CloseRound, and locate the Option-B ContractIds at the SCRIPT tier via `query`.
 -- ===========================================================================
 
--- Everything the real `Round.Clear` needs to settle the §4 fixture.
+-- Everything the real `Round.Clear` needs to settle the §4 fixture. Holdings-
+-- migrated (DFIN-01): `buyerCashCids` is the generalized N-buyer list Clear takes.
 data SeedResult = SeedResult with
     parties        : Parties
     roundCid       : ContractId Round
     orderCids      : [ContractId Order]
-    buyerUsdcCid   : ContractId Asset
-    sellerBondCids : [(Party, ContractId Asset)]
+    buyerCashCids  : [(Party, ContractId Holding)]
+    sellerBondCids : [(Party, ContractId Holding)]
 
--- Locate the (single) Asset cid an owner holds for a given symbol from the
+-- Locate the (single) Holding cid an owner holds for a given instrument from the
 -- operator's view of the ACS (Script-tier query — exactly why Option B passes
 -- these into Clear; RESEARCH Pitfall 5).
-findAssetCid : Party -> [(ContractId Asset, Asset)] -> Party -> Text -> ContractId Asset
-findAssetCid owner assets _operator sym =
-  case [ cid | (cid, a) <- assets, a.owner == owner, a.symbol == sym ] of
+findHoldingCid : Party -> [(ContractId Holding, Holding)] -> InstrumentId -> ContractId Holding
+findHoldingCid owner holdings inst =
+  case [ cid | (cid, h) <- holdings, h.owner == owner, h.instrument == inst ] of
     (cid :: _) -> cid
-    []         -> error ("findAssetCid: no Asset for " <> show owner <> " " <> sym)
+    []         -> error ("findHoldingCid: no Holding for " <> show owner <> " " <> inst.id)
 
 -- Open a Round, submit the three §4 orders via the seeded Venue, CloseRound, and
 -- collect the Option-B ContractIds. `bondForB` lets the underfunded variant seed
 -- B with too little BONDX (it still SUBMITS the canonical §4 order — qty 8 @99 —
 -- so computeClearing returns the canonical A=10/B=8/C=2 @100.0; only the holding
--- is undersized, so the failure is the missing asset, not a bad proposal).
+-- is undersized, so the failure is the missing holding, not a bad proposal).
 seedAndClose : Decimal -> Script SeedResult
 seedAndClose bondForB = do
   p@Parties{..} <- initialize
-  -- The underfunded variant re-points B's BONDX holding at an undersized mint.
+  let bond = bondInstrumentOf operator
+      cash = cashInstrumentOf operator
+  -- The underfunded variant re-points B's bond holding at an undersized mint.
   -- (initialize already minted B 20.0 BONDX; for the underfunded case we mint a
-  -- second, too-small BONDX holding and use IT as B's sellerBondCid below.)
+  -- second, too-small bond holding and use IT as B's sellerBondCid below.)
   -- Open the Round (operator is signatory; desks observe). openedAt from getTime.
   now <- getTime
   roundCid0 <- submit operator do
@@ -362,51 +367,55 @@ seedAndClose bondForB = do
       windowSeconds = 60
       status        = Open
 
-  -- Find the seeded Venue (one created by initialize) and submit the §4 orders.
+  -- Find the seeded Venue + eligibility credentials (COMP-01 gate on SubmitOrder).
   venues <- query @Venue operator
   let venueCid = case venues of
         ((v, _) :: _) -> v
         []            -> error "seedAndClose: no Venue found after initialize"
+  creds <- query @DeskEligibility operator
   oa <- submit bankA do
     exerciseCmd venueCid SubmitOrder with
       desk = bankA; roundId = "R1"; side = Buy;  quantity = 10; limit = 101.0
       orderType = Limit; minQty = None; firmIf = None
+      eligCid = findEligCid operator creds bankA
   ob <- submit bankB do
     exerciseCmd venueCid SubmitOrder with
       desk = bankB; roundId = "R1"; side = Sell; quantity = 8;  limit = 99.0
       orderType = Limit; minQty = None; firmIf = None
+      eligCid = findEligCid operator creds bankB
   oc <- submit bankC do
     exerciseCmd venueCid SubmitOrder with
       desk = bankC; roundId = "R1"; side = Sell; quantity = 5;  limit = 100.0
       orderType = Limit; minQty = None; firmIf = None
+      eligCid = findEligCid operator creds bankC
 
   -- CloseRound → status flips to Closed (the new contract is what Clear settles).
   roundCid <- submit operator do
     exerciseCmd roundCid0 CloseRound
 
-  -- Optionally re-seed B's BONDX undersized (for the atomicity test): mint a
-  -- too-small BONDX holding for B and use it as B's sellerBondCid so the Split in
-  -- Clear (filledQty 8 > bondForB) throws and the whole tx rolls back.
+  -- Optionally re-seed B's bond undersized (for the atomicity test): mint a
+  -- too-small bond holding for B and use it as B's sellerBondCid so the Split in
+  -- settleBatch (filledQty 8 > bondForB) throws and the whole tx rolls back.
   bondBCidM <- if bondForB < 20.0
     then do
       -- B already has 20.0 BONDX from initialize; mint the undersized one and
       -- point sellerBondCids at it so the seller is effectively short.
-      cid <- mintAsset operator bankB "BONDX" bondForB
+      cid <- mintHolding operator bankB bond bondForB
       pure (Some cid)
     else pure None
 
   -- Locate the Option-B ContractIds (Script-tier query).
-  assets <- query @Asset operator
-  let buyerUsdcCid = findAssetCid bankA assets operator "USDCx"
-      bondCcid     = findAssetCid bankC assets operator "BONDX"
+  holdings <- query @Holding operator
+  let buyerCashCid = findHoldingCid bankA holdings cash
+      bondCcid     = findHoldingCid bankC holdings bond
       bondBcid     = case bondBCidM of
         Some cid -> cid                                       -- undersized holding
-        None     -> findAssetCid bankB assets operator "BONDX"
+        None     -> findHoldingCid bankB holdings bond
   pure SeedResult with
     parties        = p
     roundCid
     orderCids      = [oa, ob, oc]
-    buyerUsdcCid
+    buyerCashCids  = [(bankA, buyerCashCid)]
     sellerBondCids = [(bankB, bondBcid), (bankC, bondCcid)]
 
 -- Canonical §4 seed: B funded (20.0 BONDX) — used by test_settled_balances and
@@ -443,12 +452,14 @@ test_settled_balances = do
       clearingPrice  = 100.0
       allocations    = canonicalAllocs bankA bankB bankC
       orderCids
-      buyerUsdcCid
+      buyerCashCids
       sellerBondCids
+      cashInstrument = cashInstrumentOf operator
+      bondInstrument = bondInstrumentOf operator
       referencePrice = 100.0
-  -- Sum each owner's Assets per symbol from the operator's view of the ACS.
-  assets <- query @Asset operator
-  let bal owner sym = sum [ a.quantity | (_, a) <- assets, a.owner == owner, a.symbol == sym ]
+  -- Sum each owner's Holdings per instrument from the operator's view of the ACS.
+  holdings <- query @Holding operator
+  let bal owner sym = sum [ h.amount | (_, h) <- holdings, h.owner == owner, h.instrument.id == sym ]
   -- The EXACT spec §4 post-settlement balances (non-negotiable correctness ref).
   bal bankA "BONDX" === 10.0
   bal bankA "USDCx" === 4000.0
@@ -457,8 +468,8 @@ test_settled_balances = do
   bal bankC "BONDX" === 13.0
   bal bankC "USDCx" === 1200.0
   -- Conservation: global totals unchanged vs the §4 seed (no value created/destroyed).
-  let totalBondx = sum [ a.quantity | (_, a) <- assets, a.symbol == "BONDX" ]
-      totalUsdc  = sum [ a.quantity | (_, a) <- assets, a.symbol == "USDCx" ]
+  let totalBondx = sum [ h.amount | (_, h) <- holdings, h.instrument.id == "BONDX" ]
+      totalUsdc  = sum [ h.amount | (_, h) <- holdings, h.instrument.id == "USDCx" ]
   totalBondx === 35.0     -- 20 (B) + 15 (C) seeded; A had 0 BONDX
   totalUsdc  === 7000.0   -- 5000 (A) + 1000 (B) + 1000 (C)
   -- A per-desk TradeConfirmation receipt exists (one per participating desk).
@@ -490,8 +501,10 @@ test_surplus_nonneg = do
       clearingPrice  = 100.0
       allocations    = canonicalAllocs bankA bankB bankC
       orderCids
-      buyerUsdcCid
+      buyerCashCids
       sellerBondCids
+      cashInstrument = cashInstrumentOf operator
+      bondInstrument = bondInstrumentOf operator
       referencePrice = 100.0
   confs <- query @TradeConfirmation operator
   assertMsg "expected a TradeConfirmation per desk" (length confs == 3)
@@ -511,20 +524,22 @@ test_atomicity : Script ()
 test_atomicity = do
   SeedResult{..} <- seedUnderfundedSellerAndClose
   let Parties{..} = parties
-  -- Snapshot every Asset (owner, symbol, quantity) BEFORE the failing Clear.
-  before <- query @Asset operator
-  let snap xs = sort [ (show a.owner, a.symbol, a.quantity) | (_, a) <- xs ]
+  -- Snapshot every Holding (owner, instrument, amount) BEFORE the failing Clear.
+  before <- query @Holding operator
+  let snap xs = sort [ (show h.owner, h.instrument.id, h.amount) | (_, h) <- xs ]
   -- B holds only 5.0 BONDX but must deliver 8 → the Split throws → rollback.
   submitMustFail operator do
     exerciseCmd roundCid Clear with
       clearingPrice  = 100.0
       allocations    = canonicalAllocs bankA bankB bankC
       orderCids
-      buyerUsdcCid
+      buyerCashCids
       sellerBondCids
+      cashInstrument = cashInstrumentOf operator
+      bondInstrument = bondInstrumentOf operator
       referencePrice = 100.0
   -- All-or-nothing: the post-failure ACS is IDENTICAL to the pre-Clear snapshot.
-  after <- query @Asset operator
+  after <- query @Holding operator
   snap after === snap before
 
 -- SETL-04/CLEAR-05 — the on-ledger recompute-and-assert backstop rejects any
@@ -547,8 +562,10 @@ test_clear_rejects_bad_allocation = do
       clearingPrice  = 100.0
       allocations    = badAllocs
       orderCids
-      buyerUsdcCid
+      buyerCashCids
       sellerBondCids
+      cashInstrument = cashInstrumentOf operator
+      bondInstrument = bondInstrumentOf operator
       referencePrice = 100.0
   -- Wrong price: correct §4 fills but clearingPrice = 99.0 (not the recomputed
   -- p* = 100.0). REJECTED by the price half of the recompute-and-assert.
@@ -557,8 +574,10 @@ test_clear_rejects_bad_allocation = do
       clearingPrice  = 99.0
       allocations    = canonicalAllocs bankA bankB bankC
       orderCids
-      buyerUsdcCid
+      buyerCashCids
       sellerBondCids
+      cashInstrument = cashInstrumentOf operator
+      bondInstrument = bondInstrumentOf operator
       referencePrice = 100.0
 
 -- ===========================================================================
@@ -581,19 +600,23 @@ test_privacy_orders = do
   let venueCid = case venues of
         ((v, _) :: _) -> v
         []            -> error "test_privacy_orders: no Venue found after initialize"
+  creds <- query @DeskEligibility operator
   -- the three §4 orders, each submitted under its OWN desk authority
   _ <- submit bankA do
     exerciseCmd venueCid SubmitOrder with
       desk = bankA; roundId = "R1"; side = Buy;  quantity = 10; limit = 101.0
       orderType = Limit; minQty = None; firmIf = None
+      eligCid = findEligCid operator creds bankA
   _ <- submit bankB do
     exerciseCmd venueCid SubmitOrder with
       desk = bankB; roundId = "R1"; side = Sell; quantity = 8;  limit = 99.0
       orderType = Limit; minQty = None; firmIf = None
+      eligCid = findEligCid operator creds bankB
   _ <- submit bankC do
     exerciseCmd venueCid SubmitOrder with
       desk = bankC; roundId = "R1"; side = Sell; quantity = 5;  limit = 100.0
       orderType = Limit; minQty = None; firmIf = None
+      eligCid = findEligCid operator creds bankC
 
   -- seed RoundStats{count = 3} (operator-signed, observer = desks) for PRIV-02
   _ <- submit operator do
@@ -625,15 +648,15 @@ test_privacy_orders = do
     (all (\(_, s) -> s.sealedOrderCount == 3) aStats)
   -- (already proven above: BankA's query @Order returns ONLY its own — never B/C)
 
-  -- PRIV-04: Assets are visible only to owner + operator -------------------------
-  aAssets <- query @Asset bankA
+  -- PRIV-04: Holdings are visible only to owner + operator -----------------------
+  aAssets <- query @Holding bankA
   assertMsg "BankA sees only its own holdings"
-    (all (\(_, a) -> a.owner == bankA) aAssets)
-  bAssets <- query @Asset bankB
+    (all (\(_, h) -> h.owner == bankA) aAssets)
+  bAssets <- query @Holding bankB
   assertMsg "BankB sees only its own holdings"
-    (all (\(_, a) -> a.owner == bankB) bAssets)
-  -- operator (Asset signatory) sees ALL holdings (the §4 seed: 5 contracts)
-  allAssets <- query @Asset operator
+    (all (\(_, h) -> h.owner == bankB) bAssets)
+  -- operator (Holding signatory) sees ALL holdings (the §4 seed: 5 contracts)
+  allAssets <- query @Holding operator
   length allAssets === 5
 
 -- PRIV-03 — after a REAL Round.Clear settles the §4 fixture, each desk sees ONLY
@@ -649,8 +672,10 @@ test_privacy_confirmations = do
       clearingPrice  = 100.0
       allocations    = canonicalAllocs bankA bankB bankC
       orderCids
-      buyerUsdcCid
+      buyerCashCids
       sellerBondCids
+      cashInstrument = cashInstrumentOf operator
+      bondInstrument = bondInstrumentOf operator
       referencePrice = 100.0
 
   -- each desk sees exactly its own confirmation; operator sees all three
@@ -677,13 +702,13 @@ test_privacy_confirmations = do
 -- OrderCommitment.RevealOrder / .ForfeitBond and the Venue.CommitOrder escrow.
 -- ===========================================================================
 
--- Locate the (single) USDCx holding an owner has after `initialize`, from the
--- operator's view of the ACS (Script-tier query — same idiom as findAssetCid).
-findUsdcCid : Party -> [(ContractId Asset, Asset)] -> ContractId Asset
-findUsdcCid owner assets =
-  case [ cid | (cid, a) <- assets, a.owner == owner, a.symbol == "USDCx" ] of
+-- Locate the (single) cash Holding an owner has after `initialize`, from the
+-- operator's view of the ACS (Script-tier query — same idiom as findHoldingCid).
+findUsdcCid : InstrumentId -> Party -> [(ContractId Holding, Holding)] -> ContractId Holding
+findUsdcCid cash owner holdings =
+  case [ cid | (cid, h) <- holdings, h.owner == owner, h.instrument == cash ] of
     (cid :: _) -> cid
-    []         -> error ("findUsdcCid: no USDCx for " <> show owner)
+    []         -> error ("findUsdcCid: no cash Holding for " <> show owner)
 
 -- Find the single Venue seeded by `initialize`.
 findVenueCid : Party -> Script (ContractId Venue)
@@ -701,15 +726,18 @@ test_reveal_mismatch_rejected : Script ()
 test_reveal_mismatch_rejected = do
   Parties{..} <- initialize
   venueCid <- findVenueCid operator
-  -- Carve a small USDCx bond slice from BankA's own holding (value-conserving).
-  assets0 <- query @Asset operator
-  let aUsdc = findUsdcCid bankA assets0
+  let cash = cashInstrumentOf operator
+  -- Carve a small cash bond slice from BankA's own holding (value-conserving).
+  assets0 <- query @Holding operator
+  let aUsdc = findUsdcCid cash bankA assets0
   (aBond, _rem) <- submit operator do exerciseCmd aUsdc Split with splitQty = 10.0
+  creds <- query @DeskEligibility operator
   -- Commit the §4 Buy order under the correct salt.
   let comm = commitOf (serializeOrder Buy 10 101.0 Limit None None) "saltA"
   oc <- submit bankA do
     exerciseCmd venueCid CommitOrder with
       desk = bankA; roundId = "R1"; commitment = comm; bondCid = aBond
+      cashInstrument = cash; eligCid = findEligCid operator creds bankA
   -- Wrong salt → the recomputed digest differs → REJECTED on-ledger.
   submitMustFail bankA do
     exerciseCmd oc RevealOrder with
@@ -734,14 +762,17 @@ test_bond_returned : Script ()
 test_bond_returned = do
   Parties{..} <- initialize
   venueCid <- findVenueCid operator
-  assets0 <- query @Asset operator
-  let aUsdc = findUsdcCid bankA assets0
+  let cash = cashInstrumentOf operator
+  assets0 <- query @Holding operator
+  let aUsdc = findUsdcCid cash bankA assets0
   (aBond, _rem) <- submit operator do exerciseCmd aUsdc Split with splitQty = 10.0
+  creds <- query @DeskEligibility operator
   let comm = commitOf (serializeOrder Buy 10 101.0 Limit None None) "saltA"
   oc <- submit bankA do
     exerciseCmd venueCid CommitOrder with
       desk = bankA; roundId = "R1"; commitment = comm; bondCid = aBond
-  -- While the commitment is live the desk cannot move its own bond (every Asset
+      cashInstrument = cash; eligCid = findEligCid operator creds bankA
+  -- While the commitment is live the desk cannot move its own bond (every Holding
   -- choice is controller operator) — locked in operator custody.
   submitMustFail bankA do
     exerciseCmd aBond (Reassign with newOwner = bankB)
@@ -753,10 +784,10 @@ test_bond_returned = do
   -- The commitment is consumed (lock released) ...
   ocs <- query @OrderCommitment operator
   length ocs === 0
-  -- ... the desk still owns its 10.0 USDCx bond (returned/released) ...
-  afterA <- query @Asset bankA
+  -- ... the desk still owns its 10.0 cash bond (returned/released) ...
+  afterA <- query @Holding bankA
   assertMsg "bond is the desk's after a valid reveal"
-    (any (\(_, a) -> a.owner == bankA && a.symbol == "USDCx" && a.quantity == 10.0) afterA)
+    (any (\(_, h) -> h.owner == bankA && h.instrument == cash && h.amount == 10.0) afterA)
   -- ... and its sealed §4 Order now exists (visible to the desk, one order).
   aOrders <- query @Order bankA
   length aOrders === 1
@@ -771,26 +802,29 @@ test_bond_forfeit : Script ()
 test_bond_forfeit = do
   Parties{..} <- initialize
   venueCid <- findVenueCid operator
-  assets0 <- query @Asset operator
-  let bUsdc = findUsdcCid bankB assets0
+  let cash = cashInstrumentOf operator
+  assets0 <- query @Holding operator
+  let bUsdc = findUsdcCid cash bankB assets0
   (bBond, _rem) <- submit operator do exerciseCmd bUsdc Split with splitQty = 10.0
+  creds <- query @DeskEligibility operator
   let comm = commitOf (serializeOrder Sell 8 99.0 Limit None None) "saltB"
   oc <- submit bankB do
     exerciseCmd venueCid CommitOrder with
       desk = bankB; roundId = "R1"; commitment = comm; bondCid = bBond
+      cashInstrument = cash; eligCid = findEligCid operator creds bankB
   -- The desk never reveals; at close the operator seizes the bond.
   _ <- submit operator do exerciseCmd oc ForfeitBond
   -- The commitment is consumed (no reclaim path remains) ...
   ocs <- query @OrderCommitment operator
   length ocs === 0
   -- ... the bond now belongs to the operator pot (owner == operator) ...
-  opAssets <- query @Asset operator
+  opAssets <- query @Holding operator
   assertMsg "forfeited bond is now owned by the operator pot"
-    (any (\(_, a) -> a.owner == operator && a.symbol == "USDCx" && a.quantity == 10.0) opAssets)
+    (any (\(_, h) -> h.owner == operator && h.instrument == cash && h.amount == 10.0) opAssets)
   -- ... and BankB no longer owns that 10.0 bond (the deterrent bit).
-  bAssets <- query @Asset bankB
+  bAssets <- query @Holding bankB
   assertMsg "the desk no longer owns the forfeited bond"
-    (not (any (\(_, a) -> a.owner == bankB && a.symbol == "USDCx" && a.quantity == 10.0) bAssets))
+    (not (any (\(_, h) -> h.owner == bankB && h.instrument == cash && h.amount == 10.0) bAssets))
 
 -- CRYP-03 — the on-ledger ProofAnchor records ONLY hashes and is readable. The
 -- operator anchors a sample proof hash + vkey hash via Venue.AnchorProof; the
@@ -825,15 +859,17 @@ test_commit_reveal_clears_at_100 = do
       clearingPrice  = 100.0
       allocations    = canonicalAllocs bankA bankB bankC
       orderCids
-      buyerUsdcCid
+      buyerCashCids
       sellerBondCids
+      cashInstrument = cashInstrumentOf operator
+      bondInstrument = bondInstrumentOf operator
       referencePrice = 100.0
   -- The money-shot number, now flowing through commit → reveal → clear.
   result.clearingPrice === 100.0
   result.totalMatched === 10
   -- The EXACT §4 post-settlement balances (bond released → cash on the §4 finals).
-  assets <- query @Asset operator
-  let bal owner sym = sum [ a.quantity | (_, a) <- assets, a.owner == owner, a.symbol == sym ]
+  holdings <- query @Holding operator
+  let bal owner sym = sum [ h.amount | (_, h) <- holdings, h.owner == owner, h.instrument.id == sym ]
   bal bankA "BONDX" === 10.0
   bal bankA "USDCx" === 4000.0
   bal bankB "BONDX" === 12.0

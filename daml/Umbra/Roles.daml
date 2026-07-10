@@ -5,7 +5,9 @@
 module Umbra.Roles where
 
 import Umbra.Auction
-import Umbra.Asset (Asset(..))
+import Umbra.Holding (Holding(..))
+import Umbra.Instrument (InstrumentId)
+import Umbra.Compliance (DeskEligibility, assertDeskEligible)
 
 template Venue
   with
@@ -26,9 +28,18 @@ template Venue
         orderType : OrderType   -- AUCT-01 discriminator (Limit for §4 orders)
         minQty    : Optional Int      -- AllOrNone/MAQ only (inert until 09-02)
         firmIf    : Optional Decimal  -- Conditional only (inert until 09-03)
+        eligCid   : ContractId DeskEligibility  -- COMP-01: this desk's eligibility credential (D7 Option-B; keyless)
       controller desk
       do
         assertMsg "desk not registered" (desk `elem` desks)
+        -- COMP-01 (ERC-3643 analog) — on-ledger participation gate. The desk passes
+        -- its DeskEligibility ContractId (keyless: contract keys are unsupported on
+        -- Canton LF 2.1 — 11-02); `fetch` is authorized because Venue is
+        -- `signatory operator`, so operator authority co-flows (RESEARCH Pitfall 3),
+        -- and DeskEligibility's signatory (operator) is thus present. An ineligible
+        -- or mismatched-desk credential is REJECTED on-ledger (assertDeskEligible).
+        elig <- fetch eligCid
+        assertDeskEligible operator desk elig
         create Order with
           operator; desk; roundId; side; quantity; limit
           status = Sealed
@@ -38,26 +49,51 @@ template Venue
     -- SubmitOrder's "operator co-signs via the Venue signatory, controller desk"
     -- pattern: the choice body carries {operator (Venue signatory), desk
     -- (controller)} authority. The desk supplies a hash of its order and points at
-    -- its OWN USDCx bond Asset; an OrderCommitment records the hash + the bond cid.
-    -- The bond stays the desk's beneficial holding but is locked in operator
-    -- custody for the window (every Asset choice is controller operator, so the
-    -- desk cannot move it) — released on a valid reveal, seized by ForfeitBond on
-    -- non-reveal. The order contents never appear on-ledger here — only the hash.
+    -- its OWN cash bond `Holding` (DFIN-01); an OrderCommitment records the hash +
+    -- the bond cid. The bond stays the desk's beneficial holding but is locked in
+    -- operator custody for the window (every Holding choice is controller operator,
+    -- so the desk cannot move it) — released on a valid reveal, seized by ForfeitBond
+    -- on non-reveal. Now also COMP-01-gated. The order contents never appear
+    -- on-ledger here — only the hash.
     nonconsuming choice CommitOrder : ContractId OrderCommitment
       with
-        desk       : Party
-        roundId    : Text
-        commitment : Text             -- hex sha256(toHex(canonicalOrder ‖ salt))
-        bondCid    : ContractId Asset  -- the desk's own USDCx bond to lock
+        desk           : Party
+        roundId        : Text
+        commitment     : Text                  -- hex sha256(toHex(canonicalOrder ‖ salt))
+        bondCid        : ContractId Holding    -- the desk's own cash bond Holding to lock (DFIN-01)
+        cashInstrument : InstrumentId          -- DFIN-03: the cash instrument the bond must be denominated in
+        eligCid        : ContractId DeskEligibility  -- COMP-01: this desk's eligibility credential (keyless)
       controller desk
       do
         assertMsg "desk not registered" (desk `elem` desks)
-        -- Integrity: the bond must be the desk's OWN USDCx cash holding.
+        -- COMP-01 gate (same as SubmitOrder) — reject an ineligible desk on-ledger.
+        elig <- fetch eligCid
+        assertDeskEligible operator desk elig
+        -- Integrity: the bond must be the desk's OWN cash Holding (token-agnostic —
+        -- the instrument must equal the round's cash InstrumentId, no hardcoded "USDCx").
         bond <- fetch bondCid
-        assertMsg "bond must be the desk's own USDCx holding"
-          (bond.owner == desk && bond.symbol == "USDCx")
+        assertMsg "bond must be the desk's own cash holding"
+          (bond.owner == desk && bond.instrument == cashInstrument)
         create OrderCommitment with
           operator; desk; roundId; commitment; bondCid
+
+    -- COMP-01 (11-05) — the SECOND on-ledger eligibility enforcement point:
+    -- HOLDING ISSUANCE. Only an eligible receiver may be issued a bond/cash Holding.
+    -- Operator-authority create (the operator is the Holding's sole signatory), so
+    -- the credential `fetch` is authorized; an ineligible `owner`'s holding-receipt
+    -- is REJECTED on-ledger (assertDeskEligible), not in render logic. Nonconsuming
+    -- so the Venue persists. Newly-issued Holdings are free (`lock = None`).
+    nonconsuming choice IssueHolding : ContractId Holding
+      with
+        owner      : Party
+        instrument : InstrumentId
+        amount     : Decimal
+        eligCid    : ContractId DeskEligibility  -- COMP-01: the RECEIVER's eligibility credential
+      controller operator
+      do
+        elig <- fetch eligCid
+        assertDeskEligible operator owner elig
+        create Holding with operator; owner; instrument; amount; lock = None
 
     -- CRYP-03 (10-01) — anchor a ZK proof HASH on-ledger (operator plane). Records
     -- only the proof hash + verification-key hash (NO proof bytes) — off-ledger

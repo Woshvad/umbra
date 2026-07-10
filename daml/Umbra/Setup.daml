@@ -12,9 +12,11 @@
 module Umbra.Setup where
 
 import Daml.Script
-import Umbra.Asset
 import Umbra.Roles
 import Umbra.Auction
+import Umbra.Instrument (InstrumentId(..))
+import Umbra.Holding (Holding(..), Split(..))
+import Umbra.Compliance (DeskEligibility(..))
 
 -- Frozen shape returned by the export script → becomes parties.json.
 data Parties = Parties with
@@ -34,12 +36,31 @@ allocateAll = do
   bankC    <- allocatePartyByHint (PartyIdHint "bankC")
   pure Parties with operator, bankA, bankB, bankC
 
--- Mint one operator-custodied Asset for `owner`. All choices on Asset are
--- operator-authority alone, so the operator submits the create.
-mintAsset : Party -> Party -> Text -> Decimal -> Script (ContractId Asset)
-mintAsset operator owner symbol quantity =
+-- §4 token-agnostic InstrumentIds (DFIN-03). The operator is both issuer and
+-- custodian in the MVP topology; a different stablecoin/CBDC cash instrument can be
+-- swapped in WITHOUT changing Round.Clear (it takes cashInstrument as a parameter).
+bondInstrumentOf : Party -> InstrumentId
+bondInstrumentOf operator = InstrumentId with issuer = operator; id = "BONDX"
+
+cashInstrumentOf : Party -> InstrumentId
+cashInstrumentOf operator = InstrumentId with issuer = operator; id = "USDCx"
+
+-- Mint one operator-custodied `Holding` for `owner` (DFIN-01, replacing mintAsset).
+-- All choices on Holding are operator-authority alone, so the operator submits the
+-- create. Newly-minted holdings are free (`lock = None`).
+mintHolding : Party -> Party -> InstrumentId -> Decimal -> Script (ContractId Holding)
+mintHolding operator owner instrument amount =
   submit operator do
-    createCmd Asset with operator, owner, symbol, quantity
+    createCmd Holding with operator, owner, instrument, amount, lock = None
+
+-- COMP-01 keyless lookup (D7 Option-B): find a desk's DeskEligibility ContractId
+-- from the operator's visible credentials (contract keys are unsupported on Canton
+-- LF 2.1 — 11-02). Threaded into every SubmitOrder/CommitOrder call site.
+findEligCid : Party -> [(ContractId DeskEligibility, DeskEligibility)] -> Party -> ContractId DeskEligibility
+findEligCid operator creds desk =
+  case [ cid | (cid, e) <- creds, e.operator == operator, e.desk == desk ] of
+    (cid :: _) -> cid
+    []         -> error ("findEligCid: no DeskEligibility for " <> show desk)
 
 -- init-script for daml.yaml (`init-script: Umbra.Setup:initialize`). Allocates
 -- the four parties, creates one Venue{operator, desks=[A,B,C]}, and mints the
@@ -52,15 +73,28 @@ initialize = do
   -- one Venue, all three desks as observers
   submit operator do
     createCmd Venue with operator, desks = [bankA, bankB, bankC]
-  -- §4 holdings (every Decimal literal carries a decimal point):
+  -- COMP-01: seed A/B/C DeskEligibility (accredited + sanctions-clear) BEFORE any
+  -- SubmitOrder/CommitOrder so the new on-ledger eligibility gate passes for §4.
+  -- operator == compliance for the MVP stub (single trust domain).
+  let mkElig desk = submit operator do
+        createCmd DeskEligibility with
+          operator; compliance = operator; desk
+          accredited = True; jurisdiction = "US"; sanctionsClear = True
+  _ <- mkElig bankA
+  _ <- mkElig bankB
+  _ <- mkElig bankC
+  -- §4 holdings, now as token-agnostic `Holding`s (DFIN-01/03; every Decimal
+  -- literal carries a decimal point). Quantities are NON-NEGOTIABLE (spec §4):
   --   BankA → 5,000 USDCx
   --   BankB → 20 BONDX + 1,000 USDCx
   --   BankC → 15 BONDX + 1,000 USDCx
-  mintAsset operator bankA "USDCx" 5000.0
-  mintAsset operator bankB "BONDX" 20.0
-  mintAsset operator bankB "USDCx" 1000.0
-  mintAsset operator bankC "BONDX" 15.0
-  mintAsset operator bankC "USDCx" 1000.0
+  let bond = bondInstrumentOf operator
+      cash = cashInstrumentOf operator
+  _ <- mintHolding operator bankA cash 5000.0
+  _ <- mintHolding operator bankB bond 20.0
+  _ <- mintHolding operator bankB cash 1000.0
+  _ <- mintHolding operator bankC bond 15.0
+  _ <- mintHolding operator bankC cash 1000.0
   pure p
 
 -- Export script: run SEPARATELY against the live sandbox with
@@ -80,19 +114,24 @@ runCanonicalRound = do
   let (venueCid, _) = case venues of
         (v :: _) -> v
         []       -> error "runCanonicalRound: no Venue found after initialize"
+  -- COMP-01: gather each desk's eligibility credential (keyless) to gate SubmitOrder.
+  creds <- query @DeskEligibility operator
   -- A Buy 10 @ 101, B Sell 8 @ 99, C Sell 5 @ 100 (each submitted by its desk).
   submit bankA do
     exerciseCmd venueCid SubmitOrder with
       desk = bankA; roundId = "R1"; side = Buy;  quantity = 10; limit = 101.0
       orderType = Limit; minQty = None; firmIf = None
+      eligCid = findEligCid operator creds bankA
   submit bankB do
     exerciseCmd venueCid SubmitOrder with
       desk = bankB; roundId = "R1"; side = Sell; quantity = 8;  limit = 99.0
       orderType = Limit; minQty = None; firmIf = None
+      eligCid = findEligCid operator creds bankB
   submit bankC do
     exerciseCmd venueCid SubmitOrder with
       desk = bankC; roundId = "R1"; side = Sell; quantity = 5;  limit = 100.0
       orderType = Limit; minQty = None; firmIf = None
+      eligCid = findEligCid operator creds bankC
   pure ()
   -- DEFERRED to Phase 2: open a Round, CloseRound, then Round.Clear and assert
   -- clearingPrice == 100.0 with fills A=10 / B=8 / C=2 (C residual 3 unfilled).
@@ -128,18 +167,22 @@ seedOpenRound = do
   let (venueCid, _) = case venues of
         (v :: _) -> v
         []       -> error "seedOpenRound: no Venue found after initialize"
+  creds <- query @DeskEligibility operator
   submit bankA do
     exerciseCmd venueCid SubmitOrder with
       desk = bankA; roundId = "R1"; side = Buy;  quantity = 10; limit = 101.0
       orderType = Limit; minQty = None; firmIf = None
+      eligCid = findEligCid operator creds bankA
   submit bankB do
     exerciseCmd venueCid SubmitOrder with
       desk = bankB; roundId = "R1"; side = Sell; quantity = 8;  limit = 99.0
       orderType = Limit; minQty = None; firmIf = None
+      eligCid = findEligCid operator creds bankB
   submit bankC do
     exerciseCmd venueCid SubmitOrder with
       desk = bankC; roundId = "R1"; side = Sell; quantity = 5;  limit = 100.0
       orderType = Limit; minQty = None; firmIf = None
+      eligCid = findEligCid operator creds bankC
   -- (3) Seed RoundStats{count = 3} (operator-signed; observer = desks) — the ONLY
   --     pre-clear shared info any desk may read.
   submit operator do
@@ -163,16 +206,18 @@ seedOpenRound = do
 -- ===========================================================================
 
 -- Everything the real `Round.Clear` needs to settle the §4 commit→reveal batch.
+-- Holdings-migrated (DFIN-01): the buyer cash + seller bond legs are `Holding`s;
+-- `buyerCashCids` is the list Round.Clear now takes (generalized N-buyer form).
 data CommitRevealSeed = CommitRevealSeed with
     parties        : Parties
     roundCid       : ContractId Round
     orderCids      : [ContractId Order]
-    buyerUsdcCid   : ContractId Asset
-    sellerBondCids : [(Party, ContractId Asset)]
+    buyerCashCids  : [(Party, ContractId Holding)]
+    sellerBondCids : [(Party, ContractId Holding)]
 
--- The small per-desk USDCx bond carved from each desk's OWN §4 cash (so total
+-- The small per-desk cash bond carved from each desk's OWN §4 cash (so total
 -- value is conserved and the §4 finals stay exact). It MUST be < the §4
--- cash-needed threshold (the buyer pays 1000 USDCx), so the buyer's cash leg
+-- cash-needed threshold (the buyer pays 1000 cash), so the buyer's cash leg
 -- selects the large trade remainder, never a released bond slice.
 commitRevealBond : Decimal
 commitRevealBond = 10.0
@@ -184,15 +229,17 @@ commitRevealBond = 10.0
 seedCommitRevealRound : Script CommitRevealSeed
 seedCommitRevealRound = do
   p@Parties{..} <- initialize
-  -- Carve a bond slice from each desk's own USDCx (operator is the Asset custodian).
-  usdc0 <- query @Asset operator
-  let usdcCidFor owner =
-        case [ cid | (cid, a) <- usdc0, a.owner == owner, a.symbol == "USDCx" ] of
+  let bond = bondInstrumentOf operator
+      cash = cashInstrumentOf operator
+  -- Carve a bond slice from each desk's own cash Holding (operator is the custodian).
+  usdc0 <- query @Holding operator
+  let cashCidFor owner =
+        case [ cid | (cid, h) <- usdc0, h.owner == owner, h.instrument == cash ] of
           (cid :: _) -> cid
-          []         -> error ("seedCommitRevealRound: no USDCx for " <> show owner)
-  (aBond, _) <- submit operator do exerciseCmd (usdcCidFor bankA) Split with splitQty = commitRevealBond
-  (bBond, _) <- submit operator do exerciseCmd (usdcCidFor bankB) Split with splitQty = commitRevealBond
-  (cBond, _) <- submit operator do exerciseCmd (usdcCidFor bankC) Split with splitQty = commitRevealBond
+          []         -> error ("seedCommitRevealRound: no cash Holding for " <> show owner)
+  (aBond, _) <- submit operator do exerciseCmd (cashCidFor bankA) Split with splitQty = commitRevealBond
+  (bBond, _) <- submit operator do exerciseCmd (cashCidFor bankB) Split with splitQty = commitRevealBond
+  (cBond, _) <- submit operator do exerciseCmd (cashCidFor bankC) Split with splitQty = commitRevealBond
   -- Open the Round.
   now <- getTime
   roundCid0 <- submit operator do
@@ -204,17 +251,20 @@ seedCommitRevealRound = do
       openedAt      = now
       windowSeconds = 60
       status        = Open
-  -- Find the seeded Venue.
+  -- Find the seeded Venue + the eligibility credentials (COMP-01 gate on CommitOrder).
   venues <- query @Venue operator
   let venueCid = case venues of
         ((v, _) :: _) -> v
         []            -> error "seedCommitRevealRound: no Venue found after initialize"
-  -- Per desk: COMMIT (hash + lock bond) then REVEAL (recompute on-ledger + Order).
+  creds <- query @DeskEligibility operator
+  -- Per desk: COMMIT (hash + lock bond, eligibility-gated) then REVEAL (recompute
+  -- on-ledger + Order). The bond is now a cash Holding; the serializeOrder/sha256
+  -- commitment body is BYTE-UNCHANGED (only the bond field TYPE changed).
   ocA <- submit bankA do
     exerciseCmd venueCid CommitOrder with
       desk = bankA; roundId = "R1"
       commitment = commitOf (serializeOrder Buy 10 101.0 Limit None None) "saltA"
-      bondCid = aBond
+      bondCid = aBond; cashInstrument = cash; eligCid = findEligCid operator creds bankA
   oa <- submit bankA do
     exerciseCmd ocA RevealOrder with
       side = Buy; quantity = 10; limit = 101.0; orderType = Limit; minQty = None; firmIf = None
@@ -223,7 +273,7 @@ seedCommitRevealRound = do
     exerciseCmd venueCid CommitOrder with
       desk = bankB; roundId = "R1"
       commitment = commitOf (serializeOrder Sell 8 99.0 Limit None None) "saltB"
-      bondCid = bBond
+      bondCid = bBond; cashInstrument = cash; eligCid = findEligCid operator creds bankB
   ob <- submit bankB do
     exerciseCmd ocB RevealOrder with
       side = Sell; quantity = 8; limit = 99.0; orderType = Limit; minQty = None; firmIf = None
@@ -232,28 +282,28 @@ seedCommitRevealRound = do
     exerciseCmd venueCid CommitOrder with
       desk = bankC; roundId = "R1"
       commitment = commitOf (serializeOrder Sell 5 100.0 Limit None None) "saltC"
-      bondCid = cBond
+      bondCid = cBond; cashInstrument = cash; eligCid = findEligCid operator creds bankC
   oc <- submit bankC do
     exerciseCmd ocC RevealOrder with
       side = Sell; quantity = 5; limit = 100.0; orderType = Limit; minQty = None; firmIf = None
       salt = "saltC"
   -- Close the round → the recreated Closed contract is what Clear settles.
   roundCid <- submit operator do exerciseCmd roundCid0 CloseRound
-  -- Gather the Option-B ContractIds. The buyer's cash leg needs a SINGLE USDCx
-  -- holding >= 1000 (the §4 cash needed) — pick the large trade remainder, never
+  -- Gather the Option-B ContractIds. The buyer's cash leg needs a SINGLE cash
+  -- Holding >= 1000 (the §4 cash needed) — pick the large trade remainder, never
   -- the released 10.0 bond slice (the load-bearing reason bond < 1000).
-  assets <- query @Asset operator
-  let buyerUsdcCid =
-        case [ cid | (cid, a) <- assets, a.owner == bankA, a.symbol == "USDCx", a.quantity >= 1000.0 ] of
+  holdings <- query @Holding operator
+  let buyerCashCid =
+        case [ cid | (cid, h) <- holdings, h.owner == bankA, h.instrument == cash, h.amount >= 1000.0 ] of
           (cid :: _) -> cid
-          []         -> error "seedCommitRevealRound: no sufficient USDCx (>=1000) for the buyer"
+          []         -> error "seedCommitRevealRound: no sufficient cash Holding (>=1000) for the buyer"
       bondCidOf owner =
-        case [ cid | (cid, a) <- assets, a.owner == owner, a.symbol == "BONDX" ] of
+        case [ cid | (cid, h) <- holdings, h.owner == owner, h.instrument == bond ] of
           (cid :: _) -> cid
-          []         -> error ("seedCommitRevealRound: no BONDX for " <> show owner)
+          []         -> error ("seedCommitRevealRound: no bond Holding for " <> show owner)
   pure CommitRevealSeed with
     parties        = p
     roundCid
     orderCids      = [oa, ob, oc]
-    buyerUsdcCid
+    buyerCashCids  = [(bankA, buyerCashCid)]
     sellerBondCids = [(bankB, bondCidOf bankB), (bankC, bondCidOf bankC)]

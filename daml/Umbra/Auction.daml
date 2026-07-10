@@ -14,44 +14,34 @@ module Umbra.Auction
   , OrderType(..)
   ) where
 
-import DA.Action (when, foldlA)
 import DA.Foldable (forA_)
-import DA.List (sortOn, dedup)
+import DA.List (sortOn)
 -- CRYP-01 (10-01): on-ledger commitment hashing. `sha256 : BytesHex -> BytesHex`
 -- takes HEX input, so the payload is `toHex`-encoded FIRST (RESEARCH Pitfall 1).
 -- Alpha-flagged stdlib module — the warning is suppressed via daml.yaml
 -- build-options (`-Wno-crypto-text-is-alpha`), honestly labeled alpha.
 import DA.Crypto.Text (sha256, toHex)
-import Umbra.Asset (Asset(..), Split(..), Reassign(..))
+-- DFIN-01/02/03 (11-05): the live settlement path retires operator-custody `Asset`.
+-- The Phase-10 bond migrates to a cash `Holding` (operator-custody lock — the
+-- `lock` field is left `None` and immovability comes from every Holding choice
+-- being `controller operator`, exactly the Asset guarantee; RESEARCH A5), and
+-- Round.Clear settles a Batch of `Instruction`s (Umbra.Settlement) built from the
+-- VERIFIED allocation. `Settlement` imports only Holding/Instrument/Clearing (never
+-- Auction), so importing it here introduces NO module cycle.
+import Umbra.Instrument (InstrumentId)
+import Umbra.Holding (Holding, Reassign(..))
+import Umbra.Settlement (buildGrossInstructions, netLegs, conservationOk, settleBatch)
 import Umbra.Clearing (Side(..), Allocation(..), OrderType(..), OrderView(..), computeClearing)
 
 -- §7.3 — order status (verbatim). `Side` is defined in Umbra.Clearing and
 -- re-exported above (cycle-break); its Buy/Sell shape is byte-unchanged.
 data OrderStatus = Sealed | Filled | PartiallyFilled | Unfilled deriving (Eq, Show)
 
--- Settlement helper (Update-monad; top-level because it is reused per leg and
--- Daml-LF forbids recursive/closure-heavy local bindings). Moves EXACTLY `qty`
--- units off the holding `cid` to `newOwner`, returning the moved-slice cid.
---   * qty == holding.quantity → Reassign the WHOLE contract (Asset.Split is
---     STRICT `splitQty < quantity`, so a full move must NOT call Split).
---   * qty <  holding.quantity → Split a `qty` slice, Reassign that slice (the
---     remainder stays with the current owner).
---   * qty >  holding.quantity → Asset.Split's guard / `ensure quantity >= 0.0`
---     throws → the whole Clear transaction rolls back (atomicity, SETL-03).
--- Quantities cross to Decimal here via the caller's `intToDecimal` (units stay Int).
-moveExact : ContractId Asset -> Decimal -> Party -> Update (ContractId Asset)
-moveExact cid qty newOwner = do
-  holding <- fetch cid
-  if qty == holding.quantity
-    then exercise cid Reassign with newOwner
-    else do
-      (slice, _remainder) <- exercise cid Split with splitQty = qty
-      exercise slice Reassign with newOwner
-
--- Lookup a desk's filled quantity for a given side from the verified allocations.
-fillFor : [Allocation] -> Party -> Side -> Int
-fillFor allocs party sd =
-  sum [ a.filledQty | a <- allocs, a.desk == party, a.side == sd ]
+-- (DFIN-01/02, 11-05) The old Asset-based per-leg `moveExact` and the `fillFor`
+-- allocation-fill lookup are RETIRED from the settlement path: Round.Clear now
+-- delegates the DvP legs to `Umbra.Settlement.settleBatch`, which threads each
+-- source `Holding` across its receivers (`moveThread`) inside the one Clear
+-- transaction. `Asset` is off the live path (kept in git history / sandbox-mvp).
 
 -- AUCT-04 — per-desk best-execution (TCA) receipt math (pure; mirrored by the
 -- solver receipt surface). `surplusVsLimit` is the PROVEN, structurally-non-negative
@@ -167,24 +157,29 @@ commitOf payload salt = sha256 (toHex (payload <> "|" <> salt))
 -- window ONLY the `commitment : Text` hash and the bond reference are on-ledger —
 -- the order contents do not exist on the ledger until a verified reveal.
 --
--- BOND CUSTODY (operator-custody LOCK model): the bond is the desk's OWN USDCx
--- Asset. The operator is already that Asset's sole signatory/custodian and every
--- Asset choice (Split/Merge/Reassign) is `controller operator`, so while the
--- commitment is live the desk CANNOT move or archive its bond — it is locked in
--- operator custody. A valid reveal RELEASES the lock (the commitment is consumed,
--- the bond stays freely the desk's); a non-reveal lets the operator SEIZE it via
--- ForfeitBond. (An earlier "reassign the bond to the operator at commit" escrow
--- is not viable: an operator-OWNED Asset is invisible to the desk — Asset's
+-- BOND CUSTODY (operator-custody LOCK model): the bond is the desk's OWN cash
+-- `Holding` (DFIN-01, migrated off `Asset` in 11-05). The operator is already that
+-- Holding's sole signatory/custodian and every Holding choice (Split/Merge/Reassign)
+-- is `controller operator`, so while the commitment is live the desk CANNOT move or
+-- archive its bond — it is locked in operator custody. (The Holding also carries a
+-- `lock : Optional Text` field, but it is left `None` here: setting it would also
+-- block the operator's own ForfeitBond Reassign — the generic mutating choices
+-- refuse a locked holding by design (11-01) — so the immovability guarantee is
+-- provided by controller-operator custody, RESEARCH A5, exactly mirroring the old
+-- Asset lock.) A valid reveal RELEASES the lock (the commitment is consumed, the
+-- bond stays freely the desk's); a non-reveal lets the operator SEIZE it via
+-- ForfeitBond. (An earlier "reassign the bond to the operator at commit" escrow is
+-- not viable: an operator-OWNED Holding is invisible to the desk — Holding's
 -- observer is `owner` only — so the desk's controller-desk RevealOrder could not
 -- fetch it. The lock model gives the identical economic guarantee within Daml's
--- disclosure rules, and keeps the Asset settlement primitive byte-unchanged.)
+-- disclosure rules.)
 template OrderCommitment
   with
     operator   : Party
     desk       : Party
     roundId    : Text
     commitment : Text                -- hex sha256(toHex(canonicalOrder ‖ salt))
-    bondCid    : ContractId Asset    -- the desk's USDCx bond, locked in operator custody
+    bondCid    : ContractId Holding  -- the desk's cash bond Holding, locked in operator custody
   where
     signatory operator, desk         -- both; unforgeable, and private to these two
 
@@ -215,10 +210,10 @@ template OrderCommitment
 
     -- FORFEIT (T-10-02) — the deterrent against commit-then-vanish griefing. A
     -- commitment still live at close (never revealed) lets the operator SEIZE the
-    -- locked bond into the operator pot. Controller operator (the Asset custodian,
+    -- locked bond into the operator pot. Controller operator (the Holding custodian,
     -- so it can both see and Reassign the desk's bond); CONSUMING, so the desk can
     -- no longer RevealOrder to reclaim — the seizure is final.
-    choice ForfeitBond : ContractId Asset
+    choice ForfeitBond : ContractId Holding
       controller operator
       do
         exercise bondCid Reassign with newOwner = operator
@@ -315,19 +310,26 @@ template Round
         create this with status = Closed
 
     -- §10 — THE atomic settlement choice. The named frozen fields
-    -- (clearingPrice, allocations, controller operator, → ClearResult) are
-    -- UNCHANGED; the orderCids / buyerUsdcCid / sellerBondCids fields are
-    -- ADDITIVE settlement inputs (Option B, DECISIONS.md D7) — a choice body
-    -- cannot `query` the ACS, so the caller (Script test now, TS solver P4)
-    -- locates and passes in the ContractIds it operates on.
+    -- (clearingPrice, allocations, orderCids, referencePrice, controller operator,
+    -- → ClearResult) are UNCHANGED. DFIN-01/02/03 (11-05) generalize the settlement
+    -- inputs beyond the single-funded-buyer MVP to N buyers × M sellers and retire
+    -- operator-custody `Asset`:
+    --   * buyerCashCids  : [(Party, ContractId Holding)]  — each buyer's cash Holding
+    --   * sellerBondCids : [(Party, ContractId Holding)]  — each seller's bond Holding
+    --   * cashInstrument / bondInstrument : InstrumentId   — token-agnostic (DFIN-03),
+    --     no hardcoded "USDCx"/"BONDX"; the §4 caller passes the USDCx/BONDX instruments.
+    -- These remain ADDITIVE Option-B inputs (DECISIONS.md D7) — a choice body cannot
+    -- `query` the ACS, so the caller locates and passes in the ContractIds it operates on.
     choice Clear : ClearResult
       with
         clearingPrice  : Decimal
-        allocations    : [Allocation]               -- solver output, verified on-ledger
-        orderCids      : [ContractId Order]          -- the round's sealed orders
-        buyerUsdcCid   : ContractId Asset            -- buyer's USDCx holding to debit
-        sellerBondCids : [(Party, ContractId Asset)] -- each seller's BONDX holding
-        referencePrice : Decimal                     -- AUCT-04: labeled benchmark STUB (config, passed in — a choice body cannot read config)
+        allocations    : [Allocation]                    -- solver output, verified on-ledger
+        orderCids      : [ContractId Order]               -- the round's sealed orders
+        buyerCashCids  : [(Party, ContractId Holding)]    -- each buyer's cash Holding to debit
+        sellerBondCids : [(Party, ContractId Holding)]    -- each seller's bond Holding to deliver
+        cashInstrument : InstrumentId                     -- DFIN-03: pluggable cash instrument (no hardcoded "USDCx")
+        bondInstrument : InstrumentId                     -- DFIN-03: the tokenized bond instrument
+        referencePrice : Decimal                          -- AUCT-04: labeled benchmark STUB (config, passed in — a choice body cannot read config)
       controller operator
       do
         -- 0. Lifecycle guard (RESEARCH Pitfall 7 / T-02-07, double-settle): only a
@@ -364,63 +366,35 @@ template Round
         let totalSell = sum [ a.filledQty | a <- allocations, a.side == Sell ]
         assertMsg "fills not conserved (Σbuy /= Σsell)" (totalBuy == totalSell)
 
-        -- 2. SETTLE DvP in this ONE transaction (spec §10 step 2, SETL-01) under
-        --    sole operator authority (operator-custody — Clear is `controller
-        --    operator` and every Asset choice is `controller operator`, so
-        --    authority flows automatically; no counterparty submit). Any failing
-        --    leg rolls back the whole transaction (atomicity, SETL-03).
+        -- 2. SETTLE via the Batch/Instruction flow (spec §10 step 2, SETL-01;
+        --    DFIN-01/02/03) in this ONE transaction under sole operator authority
+        --    (operator-custody — Clear is `controller operator` and every Holding
+        --    choice is `controller operator`, so authority flows automatically; no
+        --    counterparty submit). Any failing leg rolls back the whole transaction
+        --    (atomicity, SETL-03). The single-funded-buyer `abort` guard is GONE;
+        --    the general N-buyer × M-seller Batch is built from the VERIFIED
+        --    allocation, and per-instrument conservation (fail-loud) REPLACES the
+        --    single-buyer shortcut.
         let priceDec = roundBankers 2 clearingPrice
-        -- The buyer is the SINGLE funded desk on the Buy side of the verified
-        -- allocation. Filter to filledQty > 0 so a 0-fill eligible buy never binds
-        -- the settlement counterparty, and FAIL LOUDLY (not via a partial `head`,
-        -- which would crash on an all-sell allocation) if the allocation is not
-        -- single-buyer — the operator-custody DvP legs below assume exactly one
-        -- buyer (spec §10 MVP single-buyer invariant).
-        let fundedBuyers = dedup [ a.desk | a <- allocations, a.side == Buy, a.filledQty > 0 ]
-        buyer <- case fundedBuyers of
-          [b] -> pure b
-          _   -> abort "Clear: settlement requires exactly one funded buyer (MVP single-buyer invariant)"
-
-        -- BONDX leg: each seller delivers `filledQty` BONDX to the buyer.
-        forA_ sellerBondCids $ \(seller, bondCid) -> do
-          let filled = fillFor allocations seller Sell
-          when (filled > 0) $ do
-            -- DvP integrity: the supplied holding must be THIS seller's own BONDX.
-            -- The recompute above verifies the allocation, not that the caller
-            -- passed each seller's own holding — a wrong/mismatched cid would
-            -- otherwise under-deliver while the round still reports Settled.
-            bond <- fetch bondCid
-            assertMsg "Clear: seller BONDX holding owner/symbol mismatch"
-              (bond.owner == seller && bond.symbol == symbol)
-            _ <- moveExact bondCid (intToDecimal filled) buyer
-            pure ()
-
-        -- Cash leg: debit the buyer's USDCx and credit each seller `filledQty * p*`.
-        -- Thread the buyer's USDCx ContractId through the per-seller splits so each
-        -- slice comes off the running remainder (the final remainder stays with the
-        -- buyer). The buyer's net debit is Σ(sellerFill * p*) = totalSell * p*.
-        -- DvP integrity: the supplied USDCx holding to debit must be the buyer's own
-        -- cash holding (symbol USDCx) — guards against debiting a wrong/foreign cid.
-        buyerCash <- fetch buyerUsdcCid
-        assertMsg "Clear: buyer USDCx holding owner/symbol mismatch"
-          (buyerCash.owner == buyer && buyerCash.symbol == "USDCx")
-        let creditCash usdcCid (seller, _) = do
-              let filled = fillFor allocations seller Sell
-              if filled <= 0
-                then pure usdcCid
-                else do
-                  let cashDue = intToDecimal filled * priceDec
-                  holding <- fetch usdcCid
-                  if cashDue == holding.quantity
-                    then do
-                      _ <- exercise usdcCid Reassign with newOwner = seller
-                      pure usdcCid   -- holding fully consumed; no remainder cid to thread
-                    else do
-                      (slice, remainder) <- exercise usdcCid Split with splitQty = cashDue
-                      _ <- exercise slice Reassign with newOwner = seller
-                      pure remainder
-        -- Fold the cash credits across sellers, threading the buyer's USDCx remainder.
-        _finalBuyerCash <- foldlA creditCash buyerUsdcCid sellerBondCids
+        -- Build the gross DvP Instructions (sellers deliver bond to buyers; buyers
+        -- pay `filledQty * p*` cash to sellers) from the verified allocation.
+        let legs = buildGrossInstructions priceDec allocations bondInstrument cashInstrument
+        -- Per-instrument conservation, on-ledger, fail-loud — Σ delivered == Σ
+        -- received for every instrument. Asserted on BOTH the gross legs and the
+        -- multilaterally-netted legs (netLegs default-on transform), so the netted
+        -- projection used for the topology/receipts is proven conserving too.
+        assertMsg "settlement batch violates per-instrument conservation"
+          (conservationOk legs [bondInstrument, cashInstrument]
+             && conservationOk (netLegs operator legs) [bondInstrument, cashInstrument])
+        -- Source map: each (owner, instrument) → the Holding it supplies. Buyers
+        -- fund their cash legs; sellers fund their bond legs. settleBatch verifies
+        -- DvP integrity (each source Holding's custodian/owner/instrument match) and
+        -- threads each source across its receivers (moveThread), settling every leg
+        -- as a Holding transfer in THIS transaction (all-or-nothing).
+        let sources =
+              [ (owner, cashInstrument, cid) | (owner, cid) <- buyerCashCids ]
+                <> [ (owner, bondInstrument, cid) | (owner, cid) <- sellerBondCids ]
+        settleBatch operator legs sources
 
         -- 3. Mark the Orders settled — Retire each (spec §10 step 3); the per-desk
         --    TradeConfirmation is the durable fill receipt. Use the operator-only

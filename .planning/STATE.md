@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Progress
-status: verifying
-stopped_at: Completed 10-09-PLAN.md
-last_updated: "2026-07-09T23:15:31.960Z"
-last_activity: 2026-07-09 -- Completed 10-04 (CRYP-03 ZK proof-of-correct-clearing PoC)
+status: building
+stopped_at: Completed Phase 11 (11/11) — built · live UAT pending
+last_updated: "2026-07-10T00:00:00.000Z"
+last_activity: 2026-07-10 -- Phase 11 built (Settlement & Institutional Grade — CN Token Standard CIP-0056 Batch/Instruction, multi-buyer netting, COMP-01 eligibility gate, guest 4th-desk QR, topology viz); §4 still clears $100.00. Next: Phase 12.
 progress:
   total_phases: 6
-  completed_phases: 3
-  total_plans: 24
-  completed_plans: 24
-  percent: 50
+  completed_phases: 4
+  total_plans: 35
+  completed_plans: 35
+  percent: 67
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-25)
 
 **Core value:** The privacy money shot — three desks submit sealed orders blind to each other, an AI solver clears them at one uniform price ($100.00 on the §4 fixture), and the whole batch settles atomically in a single Canton transaction.
-**Current focus:** Phase 10 — cryptographic-privacy
+**Current focus:** Phase 12 — real-on-chain (Canton DevNet) — next
 
 ## Current Position
 
-Phase: 10 (cryptographic-privacy) — EXECUTING
-Plan: 10 of 10
-Status: Phase complete — ready for verification
-Last activity: 2026-07-09 -- Completed 10-04 (CRYP-03 ZK proof-of-correct-clearing PoC)
+Phase: 11 (settlement-institutional-grade) — BUILT · live UAT pending
+Plan: 11 of 11 complete
+Status: Verified (4/4 criteria code-verified) · code-review 0 blocker/high · security passed (42/42) · UI 20/24 (3 advisory warnings fixed). Live 3-node/QR-on-phone/live-settle items → UAT.
+Last activity: 2026-07-10 -- Phase 11 built (settlement stack on CN Token Standard CIP-0056; §4 still clears $100.00 / A=10·B=8·C=2). Next: Phase 12 (Real On-Chain / DevNet).
 
 ## Performance Metrics
 

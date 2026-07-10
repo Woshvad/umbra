@@ -37,7 +37,8 @@ export const rotateSecret = async (key, value, { addr, token } = {}) => {
   if (value === undefined || value === '') throw new Error('NEW_VALUE is unset (nothing to rotate)')
 
   // KV v2 write: POST { data: { <key>: <value> } } to /v1/secret/data/umbra/<key>.
-  const res = await fetch(`${vaultAddr}/v1/secret/data/umbra/${key}`, {
+  // LO-02: encode the secret name in the path so a `../`/slash can never traverse the mount.
+  const res = await fetch(`${vaultAddr}/v1/secret/data/umbra/${encodeURIComponent(key)}`, {
     method: 'POST',
     headers: {
       'X-Vault-Token': vaultToken, // server-side ONLY; never printed/logged

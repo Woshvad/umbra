@@ -55,7 +55,10 @@ const envProvider: SecretsProvider = {
 // throws `Vault HTTP ${status}` (status ONLY — the response body is NOT interpolated).
 const vaultProvider: SecretsProvider = {
   get: async (name: string): Promise<string> => {
-    const res = await fetch(`${vaultAddr()}/v1/secret/data/umbra/${name}`, {
+    // LO-02: encode the secret name before interpolating it into the KV path. Today `name`
+    // is an internal constant (ANTHROPIC_API_KEY, operator/party tokens), but an unencoded
+    // `../` or slash would traverse the KV mount if a caller ever passed a dynamic name.
+    const res = await fetch(`${vaultAddr()}/v1/secret/data/umbra/${encodeURIComponent(name)}`, {
       method: 'GET',
       headers: { 'X-Vault-Token': vaultToken() }, // server-side ONLY; never returned/logged
     })

@@ -78,6 +78,23 @@ describe('vault backend (KV v2 over raw fetch — no node-vault)', () => {
     expect(fetchMock).toHaveBeenCalledOnce()
   })
 
+  it('LO-02: encodes the secret name in the KV path (a `../` cannot traverse the mount)', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      // The traversal chars are percent-encoded, so the request stays under umbra/.
+      expect(url).toBe(`${VAULT_ADDR}/v1/secret/data/umbra/${encodeURIComponent('../root')}`)
+      expect(url).not.toContain('umbra/../root')
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ data: { data: { '../root': 'v' }, metadata: {} } }),
+      } as Response
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const provider = createSecretsProvider()
+    await expect(provider.get('../root')).resolves.toBe('v')
+  })
+
   it('throws `Vault HTTP 403` on a non-2xx WITHOUT echoing the response body', async () => {
     const LEAKY_BODY = 'permission denied for token SENTINEL-VAULT-TOKEN-do-not-leak-7f21ab'
     const fetchMock = vi.fn(async () => ({

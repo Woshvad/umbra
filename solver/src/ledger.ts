@@ -699,10 +699,13 @@ export const tamperClear = async (
   const round = await queryRound(roundId)
   if (!round) throw new Error(`round ${roundId} not found`)
 
-  // IDEN-03: gather a VALID approval at the CORRECT recomputed price (the four-eyes field
-  // is required on Clear). The §8 recompute-and-assert fires BEFORE the approval fetch, so
-  // the tampered price/allocation is what the backstop rejects — the tamper demo is intact.
-  const approvalCid = await gatherApprovalCid(roundId, clearingPrice)
+  // IDEN-03 / LOW-02: do NOT mint a real ClearingApproval for the tamper path. Round.Clear
+  // runs the §8 recompute-and-assert BEFORE it fetches the four-eyes approval
+  // (Auction.daml), so a tampered price/allocation is rejected before `approvalCid` is ever
+  // dereferenced. Passing a placeholder keeps the demo's backstop (the §8 assert) exactly as
+  // credible while avoiding a dangling ClearingApprovalRequest+ClearingApproval accumulating
+  // on the round with every tamper run.
+  const approvalCid = 'tamper-no-approval-needed-section8-rejects-first'
 
   // Perturb ONLY numeric values (Pitfall 3): a still-valid Decimal price one dollar off
   // (wrong-price) OR an over-filled Buy leg breaking the recomputed allocation +
@@ -722,7 +725,7 @@ export const tamperClear = async (
       sellerBondCids,
       cashInstrument,
       bondInstrument,
-      approvalCid, // valid four-eyes credential; the §8 backstop rejects the tampered values before this is fetched
+      approvalCid, // placeholder (LOW-02); the §8 backstop rejects the tampered values BEFORE this cid is fetched
       referencePrice: REFERENCE_PRICE_STUB, // additive arg; the tampered numeric values are still what the backstop rejects
     })
   } catch (e) {

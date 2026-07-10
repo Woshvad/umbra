@@ -25,6 +25,16 @@ dependencies:
   - daml-prim
   - daml-stdlib
   - daml-script
+# CN Token Standard (CIP-0056) interface DARs — the REAL, correct-line settlement
+# standard for Canton 3.x (splice-api-token-*), vetted on all three cn-quickstart
+# LocalNet participants and used as data-dependencies by cn-quickstart's own
+# `licensing` project on this SDK 3.4.11. Umbra's own `Holding` template implements
+# `Splice.Api.Token.HoldingV1.Holding` for genuine interface conformance — this is
+# NOT the Daml Finance library (which is LF-1.17 / SDK-2.10 and cannot vet on this
+# LF-2.1 line). Provenance recorded in DECISIONS.md D13 = CN TOKEN STANDARD (CIP-0056).
+data-dependencies:
+  - vendor/splice-api-token-metadata-v1-1.0.0.dar
+  - vendor/splice-api-token-holding-v1-1.0.0.dar
 # DA.Crypto.Text (sha256/toHex) is an ALPHA-flagged daml-stdlib module used by
 # CRYP-01's on-ledger commit–reveal binding (OrderCommitment.RevealOrder). It
 # works on the pinned SDK 3.4.11 but the stdlib module carries an alpha WARNING;

@@ -291,3 +291,51 @@ guarantee. It is a liveness backstop for the demo, never the security claim.
 module-private (`node:crypto` `randomBytes`), NEVER exported/returned/logged; the drand
 path holds no long-term secret (the beacon is public). A secret-sweep test asserts no
 key/salt appears in any result, thrown error, or module export.
+
+---
+
+## D13 — Settlement-standard provenance (Phase 11, DFIN-01) — RESOLVED: CN TOKEN STANDARD (CIP-0056)
+
+**Decision:** Umbra's new custody `Holding` (`daml/Umbra/Holding.daml`) **implements the real
+Canton Network Token Standard (CIP-0056) interface** `Splice.Api.Token.HoldingV1.Holding`. The
+authorized on-screen / on-ledger settlement provenance tag is therefore:
+
+> **`CN TOKEN STANDARD (CIP-0056)`**
+
+**Why this path (not the plain in-repo fallback):** the CN Token Standard interface DARs
+(`splice-api-token-metadata-v1-1.0.0.dar`, `splice-api-token-holding-v1-1.0.0.dar`) are present
+on this box (copied from `cn-quickstart/quickstart/daml/dars/` into `daml/vendor/`, wired as
+`data-dependencies` in `daml/daml.yaml`). `HoldingV1.Holding` is a **pure view interface**
+(`viewtype HoldingView`, **no choices**), so conformance is a total projection of our custody
+fields onto `HoldingView` — it needs **no registry/factory context** (11-RESEARCH A1). The build
+is green (`daml build` ✓) and every existing `daml test` passes, so the interface-conformance
+spike did **not** exceed budget; the plain in-repo fallback (`DAML-FINANCE-PATTERN (IN-REPO)`) was
+**not** needed. Field mapping: our `InstrumentId {issuer, id}` → `HoldingV1.InstrumentId
+{admin, id}` (operator-custody: issuer is the registry admin); `lock : Optional Text` → the
+standard `HoldingV1.Lock` held by the operator, reason carried in `context`; `meta =
+emptyMetadata`.
+
+**HARD honesty rule (non-removable):** nothing in this project may EVER be labeled
+**"Daml Finance the library."** Daml Finance's latest packages are pinned to SDK 2.10.0 / Daml
+**LF 1.17**; Umbra runs **LF 2.1** (SDK 3.4.11, D8). No Daml Finance 3.x release exists and its
+LF-1.17 DARs cannot be vetted on the LF-2.1 participants. The only permitted provenance tags are
+`CN TOKEN STANDARD (CIP-0056)` (real interface conformance — the shipped path) or, if a future
+change loses interface conformance, `DAML-FINANCE-PATTERN (IN-REPO)` (a plain in-repo faithful
+layer). Any `daml-finance-*.dar` in `daml.yaml` is forbidden (it would fail vetting — 11-RESEARCH
+Pitfall 1). This mirrors the Phase-10 honesty-label bar (D12): a real, correct-line standard
+honestly labeled beats a broken/faked import.
+
+**Recorded boundaries (honest scope):**
+- **Wallet interoperability ≠ interface conformance** (11-RESEARCH Open Q1). Implementing
+  `HoldingV1`/`MetadataV1` gives real interface conformance and honest provenance, but an
+  Umbra-issued instrument is **not** registry-recognized by external Amulet/wallet tooling —
+  that needs a registry participant/app (Track B / Phase 12). Do NOT claim wallet interop.
+- **Full `AllocationV1` DvP conformance is out of this phase's budget** (11-RESEARCH A2). This plan
+  ships `HoldingV1`/`MetadataV1` conformance; the atomic allocate→approve→settle finality flow is
+  an in-repo `Batch`/`Instruction` (later Phase-11 plan), not the standard's `AllocationV1`
+  interface. Upgrading to full `AllocationV1`/`AllocationInstructionV1` conformance is a strictly
+  better follow-up if cheap.
+- **Vendored DARs are committed** via a `.gitignore` negation (`!daml/vendor/*.dar`) so a fresh
+  clone can `daml build`; they are official Splice/Canton Foundation artifacts already vetted on
+  all three LocalNet participants (no npm/PyPI supply-chain step — 11 threat register T-11-01-SC,
+  disposition *accept*).

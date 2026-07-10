@@ -6,6 +6,12 @@
 # --- Daml build artifacts ---
 .daml/
 *.dar
+# EXCEPTION: the vendored CN Token Standard (CIP-0056) interface DARs are
+# data-dependencies (Holding implements Splice.Api.Token.HoldingV1) — they MUST be
+# committed or a fresh clone cannot `daml build`. Official Splice/Canton Foundation
+# artifacts, copied from cn-quickstart (DECISIONS.md D13).
+!daml/vendor/
+!daml/vendor/*.dar
 # Canton runtime logs emitted by `daml build`/`daml test`/`daml start`.
 daml/log/
 canton.log

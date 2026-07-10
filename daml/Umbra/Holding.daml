@@ -22,6 +22,15 @@ module Umbra.Holding where
 
 import Umbra.Instrument (InstrumentId)
 
+-- CN Token Standard (CIP-0056) interface conformance (DFIN-01, D13). `Holding`
+-- implements `Splice.Api.Token.HoldingV1.Holding` — a REAL, on-the-correct-line
+-- standard interface vetted on the LocalNet participants — so settlement provenance
+-- reads `CN TOKEN STANDARD (CIP-0056)`, NOT the false "Daml Finance the library"
+-- (LF-1.17, unbuildable here). `HoldingV1.Holding` is a pure view interface (no
+-- choices), so conformance is a total projection of our fields onto `HoldingView`.
+import qualified Splice.Api.Token.HoldingV1 as HoldingV1
+import qualified Splice.Api.Token.MetadataV1 as MetadataV1
+
 template Holding
   with
     operator   : Party            -- sole signatory & custodian (MVP simplification)
@@ -69,6 +78,28 @@ template Holding
       do
         assertMsg "holding is locked" (lock == None)
         create this with owner = newOwner
+
+    -- CN Token Standard (CIP-0056) conformance: project our custody fields onto the
+    -- standard `HoldingView`. Our `InstrumentId {issuer, id}` maps to the standard's
+    -- `HoldingV1.InstrumentId {admin, id}` (operator-custody: the issuer IS the
+    -- registry admin here); the operator-custody `lock : Optional Text` maps to the
+    -- standard `Lock` held by the operator, carrying the reason as `context`. Empty
+    -- token metadata (no extra annotations in the MVP).
+    interface instance HoldingV1.Holding for Holding where
+      view = HoldingV1.HoldingView with
+        owner
+        instrumentId = HoldingV1.InstrumentId with
+          admin = instrument.issuer
+          id = instrument.id
+        amount
+        lock = fmap
+          (\reason -> HoldingV1.Lock with
+              holders = [operator]
+              expiresAt = None
+              expiresAfter = None
+              context = Some reason)
+          lock
+        meta = MetadataV1.emptyMetadata
 
 -- Move EXACTLY `qty` of a holding to `newOwner`, mirroring `Auction.moveExact`:
 -- a full-amount move is a Reassign; a partial move Splits first (strict `<`) then

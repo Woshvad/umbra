@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Progress
-status: verifying
-stopped_at: Completed 13-14-PLAN.md (S4 issuance panel — ADJ-03)
-last_updated: "2026-07-10T21:19:29.826Z"
-last_activity: 2026-07-10 -- Phase 13 execution started
+status: building
+stopped_at: Phase 13 built (14/14) + all gates passed — live UAT pending; milestone v2.0 6/6 phases built (--only 13 requested; milestone lifecycle not run)
+last_updated: "2026-07-10T22:40:00.000Z"
+last_activity: 2026-07-10 -- Phase 13 built (14/14): OPS-01..05 + ADJ-01..03; solver 291 / web 136 / daml test green, §4 $100.00; verify human_needed (4/4 offline-verified, live→UAT), code-review 7 findings (2 HIGH idempotency) ALL fixed+re-tested, security PASS (42/42, 0 high/crit), UI 23/24 (nit fixed). Live items → 13-UAT.md.
 progress:
   total_phases: 6
   completed_phases: 6
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-25)
 
 **Core value:** The privacy money shot — three desks submit sealed orders blind to each other, an AI solver clears them at one uniform price ($100.00 on the §4 fixture), and the whole batch settles atomically in a single Canton transaction.
-**Current focus:** Phase 13 — platform-baseline-adjacent-track-b-ongoing
+**Current focus:** Milestone v2.0 — 6/6 phases built (Phase 13 built · live UAT pending)
 
 ## Current Position
 
-Phase: 13 (platform-baseline-adjacent-track-b-ongoing) — EXECUTING
-Plan: 14 of 14
-Status: Phase complete — ready for verification
-Prev: Phase 11 built (settlement on CN Token Standard CIP-0056; §4 $100.00; verified 4/4, security 42/42, UI 20/24; live items → UAT).
-Next (NOT in this run): Phase 13 — Platform Baseline & Adjacent (Track B). Milestone v2.0 at 5/6 phases.
-Last activity: 2026-07-10 -- Phase 13 execution started
+Phase: 13 (platform-baseline-adjacent-track-b-ongoing) — BUILT · live UAT pending. All gates passed.
+Plan: 14 of 14 executed + all gates green — OPS-01 telemetry/logger/alerts · OPS-02 secrets(env|vault)+token-free status page+Vault compose/rotate/runbook · OPS-03 idempotency+FSM · OPS-04 HMAC webhooks+sandbox($100) · OPS-05 hand-rolled FIX-4.4 subset · ADJ-01 competing solvers (§8 referee, AI off settle) · ADJ-02 keyless Rfq.daml (settleBatch DvP) · ADJ-03 keyless Issuance.daml+Coupon/Redeem.
+Status: Verified (human_needed — 8/8 requirements delivered + offline-verified; 4 live items → 13-UAT.md) · code-review 7 findings (2 HIGH idempotency-cache/namespacing + 2 MED + 3 LOW) ALL fixed + re-tested · security PASS (42/42 threats, 0 high/critical) · UI 23/24 (red-on-success nit fixed). solver 291/291, web 136/136, daml test exit 0 (§4 $100.00 / A=10·B=8·C=2 + test_rfq_×4 + issuance/coupon/redeem×3). Every Phase-13 commit author/committer = woshvad, zero Claude attribution.
+Prev: Phase 12 built (Real On-Chain/DevNet — four-eyes ClearingApproval, OIDC dual-mode Keycloak+jose+PKCE, Splice compose; live SV sponsorship + token-exchange = external/UAT gate).
+Next: Milestone v2.0 at 6/6 phases BUILT. Remaining are external/live gates only — live UAT (Phases 8–13 → *-UAT.md) + DevNet SV sponsorship (Phase 12). Optional ceremony: /gsd-autonomous (no --only) runs milestone audit→complete→cleanup.
+Last activity: 2026-07-10 -- Phase 13 built + all gates green (details in frontmatter last_activity).
 
 ## Performance Metrics
 

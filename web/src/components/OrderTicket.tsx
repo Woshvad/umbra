@@ -39,6 +39,10 @@ type Props = {
   // WOW-07 — the guest /join surface relabels the primary CTA to `SEAL GUEST ORDER`
   // (the desk plane keeps the default `COMMIT & POST BOND`). Presentation only.
   commitLabel?: string
+  // WOW-07 — the mobile /join phone surface. Enforces the ≥44px touch-target contract
+  // (UI-SPEC:76,227) on the side toggle + order-type segments WITHOUT altering the
+  // desk plane (views 01–06), where the shipped compact heights stay. Presentation only.
+  mobile?: boolean
   // COMP-01 — when a live on-ledger commit is REJECTED (an HTTP status from the ledger,
   // e.g. an ineligible party), the raw rejection text is surfaced VERBATIM to the caller
   // and the lifecycle does NOT advance. The guest /join renders it on a 1px-ink evidence
@@ -244,6 +248,7 @@ export default function OrderTicket({
   deskKey,
   order,
   commitLabel = 'COMMIT & POST BOND',
+  mobile = false,
   onCommitRejected,
 }: Props) {
   const ledger = ctx.useLedger()
@@ -542,7 +547,13 @@ export default function OrderTicket({
         className="font-mono text-13 font-bold disabled:cursor-not-allowed"
         style={{
           flex: 1,
-          padding: '10px 0',
+          // Mobile /join: ≥44px touch target (UI-SPEC:227), centered. Desk plane keeps
+          // the shipped compact 10px vertical padding (~36px) — unchanged.
+          padding: mobile ? '0' : '10px 0',
+          minHeight: mobile ? '44px' : undefined,
+          display: mobile ? 'flex' : undefined,
+          alignItems: mobile ? 'center' : undefined,
+          justifyContent: mobile ? 'center' : undefined,
           letterSpacing: '.08em',
           background: active ? activeColor : 'transparent',
           color: active ? '#fff' : 'rgba(10,10,10,.45)',
@@ -641,7 +652,13 @@ export default function OrderTicket({
                 className="font-mono text-9 uppercase disabled:cursor-not-allowed"
                 style={{
                   flex: 1,
-                  padding: '8px 0',
+                  // Mobile /join: ≥44px touch target (UI-SPEC:227), centered. Desk plane
+                  // keeps the shipped compact 8px vertical padding (~33px) — unchanged.
+                  padding: mobile ? '0' : '8px 0',
+                  minHeight: mobile ? '44px' : undefined,
+                  display: mobile ? 'flex' : undefined,
+                  alignItems: mobile ? 'center' : undefined,
+                  justifyContent: mobile ? 'center' : undefined,
                   letterSpacing: '.16em',
                   background: 'transparent',
                   color: active ? '#0A0A0A' : 'rgba(10,10,10,.45)',

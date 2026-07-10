@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
 milestone: v2.1
-milestone_name: Agentic Payments (x402)
-status: building
-stopped_at: Milestone v2.1 opened — Phase 14 (x402 metered solver access) registered + CONTEXT authored; feasibility confirmed (Canton x402 live via FTP dev-fund #78, DevNet ref dev.cantrustai.xyz). Prior: v2.0 6/6 phases built (--only 13; milestone lifecycle not run).
-last_updated: "2026-07-10T23:20:00.000Z"
-last_activity: 2026-07-10 -- Opened v2.1: researched x402-on-Canton (chain-agnostic, real facilitator/SDK/middleware via FTP; asset = Canton Coin; Umbra has operator-custody USDCx, NO Amulet/CC wired — D13). Registered Phase 14 (PAY-01) + authored 14-CONTEXT.md. Next: gsd-plan-phase 14.
+milestone_name: Progress
+status: executing
+stopped_at: Completed 14-01-PLAN.md (x402 v1 wire envelope + default-OFF 402 gate + FacilitatorClient interface — PAY-01)
+last_updated: "2026-07-10T23:23:30.000Z"
+last_activity: 2026-07-10 -- Completed 14-01 (x402 gate wire+seam)
 progress:
   total_phases: 1
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_plans: 3
+  completed_plans: 1
+  percent: 33
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-25)
 
 **Core value:** The privacy money shot — three desks submit sealed orders blind to each other, an AI solver clears them at one uniform price ($100.00 on the §4 fixture), and the whole batch settles atomically in a single Canton transaction.
-**Current focus:** Milestone v2.1 — Agentic Payments (x402). Phase 14 (PAY-01) opened; v2.0 6/6 phases built.
+**Current focus:** Phase 14 — agentic-payments-x402
 
 ## Current Position
 
-Phase: 14 (agentic-payments-x402) — PLANNING. Milestone v2.1 opened.
-Plan: TBD (gsd-plan-phase 14 next). Requirement PAY-01 — x402 metered access to the AI solver (`/solve-preview` + `/competing`) behind a spec-accurate Canton HTTP 402; `FacilitatorClient` self(on-ledger USDCx verify)|canton-cc(FTP `/verify`+`/settle`); default-OFF; fee via operator-custody `moveExactHolding`/`Reassign`; §4 untouched; AI off settle; secrets server-side.
-Status: Feasibility CONFIRMED + CONTEXT authored. x402-on-Canton is real (FTP/CanTrustAI dev-fund #78 MERGED: facilitator `/verify`+`/settle` + client SDK + resource-server middleware, Canton Coin scheme; live DevNet ref dev.cantrustai.xyz). Umbra cash = operator-custody USDCx (CN Token Standard HoldingV1 view interface); NO Amulet/CC/AllocationV1 wired (D13) → self-settle offline-verifiable, real-$CC = DevNet-sponsorship-gated UAT.
-Prev: Phase 13 built (14/14) + all gates green — OPS-01..05 + ADJ-01..03; solver 291/web 136/daml test exit 0; §4 $100.00. v2.0 6/6 phases built (live UAT + Phase 12 SV gate pending).
-Next: gsd-plan-phase 14 → PLAN waves → gsd-execute-phase 14 → verify+security(+UI). Then 14-UAT.md for live $CC-on-DevNet.
-Last activity: 2026-07-10 -- v2.1 opened; Phase 14 registered + 14-CONTEXT.md authored (details in frontmatter last_activity).
+Phase: 14 (agentic-payments-x402) — EXECUTING
+Plan: 2 of 3
+Status: Executing Phase 14 (1/3 plans complete)
+Prev: 14-01 complete — hand-rolled x402 v1 wire envelope + default-OFF 402 gate + FacilitatorClient seam; solver 305/305, §4 $100.00, tsc clean (x402).
+Next: 14-02 (FacilitatorClient factory: self on-ledger USDCx + canton-cc FTP fetch, offline-mocked) → 14-03 (wire gate into api.ts/index.ts + X402_* config). Then 14-UAT.md for live $CC-on-DevNet.
+Last activity: 2026-07-10 -- Completed 14-01 (x402 gate wire+seam)
 
 ## Performance Metrics
 
@@ -106,6 +106,7 @@ Last activity: 2026-07-10 -- v2.1 opened; Phase 14 registered + 14-CONTEXT.md au
 | Phase 13 P12 | 20min | 2 tasks | 5 files |
 | Phase 13 P13 | ~12min | 1 tasks | 3 files |
 | Phase 13 P14 | ~14min | 1 tasks | 3 files |
+| Phase 14 P01 | ~7min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -190,6 +191,8 @@ Recent decisions affecting current work:
 - [Phase ?]: 13-13: S3 RfqPanel exports its pure core (bestQuoteIndex/legsFromAccept/classifyRfqError) from the component, DOM-free tested (TopologyNode precedent)
 - [Phase ?]: 13-13: RFQ settled state reuses DvpLegs + AtomicStamp off one rAF settleProgress clock — honest 1x1 DvP, no new settlement grammar
 - [Phase ?]: S4 IssuancePanel BUILT (not deferred): primary-issuance uniform-price clear reusing CrossingChart + PriceReveal (the one allowed lime use) + coupon/redeem LifecycleRow, on a self-contained dark stage; theatre-plane credential-free
+- [14-01 / PAY-01]: solver/src/x402.ts is a hand-rolled, dependency-free x402 **v1** payment gate (NO x402-express — EVM/Solana-oriented, can't speak Canton; recorded deviation). buildAccepts emits the v1 accepts[] envelope (Canton-Coin primary + honestly-labeled operator-custody USDCx-self second; `maxAmountRequired`, never v2 `amount`) — ALL v1 field mapping isolated to that one helper for a cheap v2 flip. decodePayment = base64→JSON→paymentPayloadSchema (zod `.strict`, bounded lengths, 8KB header bound) throwing X402Error(reason-code-only, never the raw header). Gate's FIRST line `if (!opts.enabled) return next()` = the default-OFF byte-unchanged invariant (proven by `off unchanged` test). verify→settle delegated to an injected FacilitatorClient (Plan 02 implements self|canton-cc); TTL-bounded spent-nonce + spent-holdingCid sets + validBefore expiry (nonce_replayed/payment_expired/invalid_holding). safeReason whitelists facilitator reasons so a backend can't leak a secret; secret-sweep proves an X402_FACILITATOR_KEY/Authorization sentinel never reaches a 402 body or X-PAYMENT-RESPONSE. validBefore=unix ms, atomic units 2dp (toAtomic/fromAtomic). createX402Gate/PaymentGate/X402Options = the DI seam for Plan 03. 14 tests, solver 305/305, §4 still $100.00, zero new npm deps.
+- [14-01 / pre-existing]: idempotency.test.ts:193 has a pre-existing `tsc` TS2571 (Response.json() typed `unknown` under @types/node) — verified present WITHOUT the x402 files; out of executor scope, logged to phases/14/deferred-items.md. x402 test uses a `body()` helper to narrow `.json()`.
 
 ### Pending Todos
 
@@ -215,6 +218,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-10T21:19:29.804Z
-Stopped at: Completed 13-14-PLAN.md (S4 issuance panel — ADJ-03)
+Last session: 2026-07-10T23:23:30.000Z
+Stopped at: Completed 14-01-PLAN.md (x402 v1 wire envelope + default-OFF 402 gate + FacilitatorClient interface — PAY-01)
 Resume file: None

@@ -134,8 +134,17 @@ export function fixToSubmitOrder(fields: FixFields | null): SubmitOrder | null {
     if (fields.get('40') !== '2') return null // only OrdType 2 (Limit)
     const sideRaw = fields.get('54')
     const side = sideRaw === '1' ? 'Buy' : sideRaw === '2' ? 'Sell' : undefined
-    const qty = Number(fields.get('38'))
-    const limit = Number(fields.get('44'))
+    // LO-01: a FIX OrderQty(38)/Price(44) is a plain CANONICAL numeric string. `Number()`
+    // alone would silently accept JS-numeric-but-not-FIX forms — '1e3'→1000, '0x1A'→26,
+    // ' 5 '→5, 'Infinity'→Infinity — smuggling them past submitOrderSchema as accepted
+    // 35=8 New reports. Validate the raw string SHAPE before coercion: qty is a run of
+    // digits; price is digits with an optional single decimal fraction. Anything else → null.
+    const qtyRaw = fields.get('38')
+    const priceRaw = fields.get('44')
+    if (qtyRaw === undefined || !/^\d+$/.test(qtyRaw)) return null
+    if (priceRaw === undefined || !/^\d+(\.\d+)?$/.test(priceRaw)) return null
+    const qty = Number(qtyRaw)
+    const limit = Number(priceRaw)
     const parsed = submitOrderSchema.safeParse({ side, qty, limit })
     return parsed.success ? parsed.data : null
   } catch {

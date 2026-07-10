@@ -134,6 +134,22 @@ describe('fix — fixToSubmitOrder maps 35=D → a validated sealed order', () =
     const bad = VECTOR.replace('54=1' + SOH, '54=9' + SOH)
     expect(fixToSubmitOrder(parseFix(bad)!)).toBeNull()
   })
+
+  it('LO-01: non-canonical FIX numerics (1e3, 0x1A, whitespace, Infinity) → null', () => {
+    // qty forms that Number() would accept but a FIX OrderQty(38) must reject.
+    for (const badQty of ['1e3', '0x1A', ' 5 ', 'Infinity', '+5', '1_000']) {
+      const m = VECTOR.replace('38=10' + SOH, `38=${badQty}` + SOH)
+      expect(fixToSubmitOrder(parseFix(m)!)).toBeNull()
+    }
+    // price forms that Number() would accept but a FIX Price(44) must reject.
+    for (const badPrice of ['1e2', '0x64', ' 100 ', 'Infinity', '100.']) {
+      const m = VECTOR.replace('44=100' + SOH, `44=${badPrice}` + SOH)
+      expect(fixToSubmitOrder(parseFix(m)!)).toBeNull()
+    }
+    // Sanity: a canonical decimal price still maps (regression guard).
+    const ok = VECTOR.replace('44=100' + SOH, '44=100.5' + SOH)
+    expect(fixToSubmitOrder(parseFix(ok)!)).toMatchObject({ limit: 100.5 })
+  })
 })
 
 describe('fix — handleFixMessage: 35=D → 35=8 ExecutionReport, malformed → reject', () => {

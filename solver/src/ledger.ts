@@ -503,7 +503,11 @@ const gatherApprovalCid = async (roundId: string, clearingPrice: number): Promis
   //    header for THIS submission; falls back to the current operator bearer when no
   //    dedicated compliance token exists (operator-held dev compliance).
   const req = (await queryByEntity('ClearingApprovalRequest')).find(
-    (c) => c.createArgument.roundId === roundId && Number(c.createArgument.clearingPrice) === clearingPrice,
+    (c) =>
+      c.createArgument.roundId === roundId &&
+      // LOW-01: compare at 2dp (mirrors assertClearingApproved's roundBankers 2) rather
+      // than exact float equality on a value that round-tripped through the JSON wire.
+      Number(c.createArgument.clearingPrice).toFixed(2) === clearingPrice.toFixed(2),
   )
   if (!req) throw new Error(`no ClearingApprovalRequest to approve for round ${roundId}`)
   const approveBearer = _complianceToken || (await bearerToken())
@@ -517,7 +521,10 @@ const gatherApprovalCid = async (roundId: string, clearingPrice: number): Promis
   )
   // 3. Operator collects the resulting ClearingApproval cid (matching round + price).
   const appr = (await queryByEntity('ClearingApproval')).find(
-    (c) => c.createArgument.roundId === roundId && Number(c.createArgument.clearingPrice) === clearingPrice,
+    (c) =>
+      c.createArgument.roundId === roundId &&
+      // LOW-01: 2dp compare (see above) — mirror the on-ledger 2dp gate.
+      Number(c.createArgument.clearingPrice).toFixed(2) === clearingPrice.toFixed(2),
   )
   if (!appr) throw new Error(`no ClearingApproval collected for round ${roundId}`)
   return appr.contractId

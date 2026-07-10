@@ -1,0 +1,336 @@
+{
+  "realm": "umbra",
+  "displayName": "Umbra — sealed-bid batch-auction venue",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+
+  "_comment_secrets": "PLACEHOLDERS ONLY — every secret/password below is a non-live placeholder. Real client secrets + user passwords are injected at UAT via env / the Keycloak admin console (NEVER committed). The confidential client secret for umbra-solver lands in the solver's gitignored .env as OIDC_CLIENT_SECRET.",
+
+  "roles": {
+    "realm": [
+      {
+        "name": "Trader",
+        "description": "Desk trader — may submit sealed orders on its own party (bankA/bankB/bankC/guest). No settlement authority.",
+        "composite": false
+      },
+      {
+        "name": "Compliance",
+        "description": "Four-eyes approver (IDEN-03) — approves the solver's recomputed clearing price before Round.Clear commits. SETTLEMENT-AFFECTING → MFA (OTP) required.",
+        "composite": false
+      },
+      {
+        "name": "Admin",
+        "description": "Venue operator/admin — SETTLEMENT-AFFECTING → MFA (OTP) required.",
+        "composite": false
+      }
+    ]
+  },
+
+  "requiredActions": [
+    {
+      "alias": "CONFIGURE_TOTP",
+      "name": "Configure OTP",
+      "providerId": "CONFIGURE_TOTP",
+      "enabled": true,
+      "defaultAction": false,
+      "priority": 10,
+      "config": {}
+    }
+  ],
+
+  "otpPolicyType": "totp",
+  "otpPolicyAlgorithm": "HmacSHA1",
+  "otpPolicyDigits": 6,
+  "otpPolicyPeriod": 30,
+
+  "clientScopes": [
+    {
+      "name": "daml_ledger_api",
+      "description": "Canton ledger-API audience + RBAC-roles scope stamped on every access token. Default scope for both umbra-solver and umbra-web.",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "canton-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "https://canton.network.global",
+            "included.client.audience": "",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "client-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "resource_access.${client_id}.roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "usermodel.clientRoleMapping.clientId": "",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "realm-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+
+  "clients": [
+    {
+      "clientId": "umbra-solver",
+      "name": "Umbra Solver (confidential, client-credentials)",
+      "description": "Server-side solver machine-to-machine client. Mirrors the Canton guide's validator-app-backend. Holds a confidential secret (server-side .env ONLY) and mints operator tokens via grant_type=client_credentials.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": false,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "REPLACE_WITH_REAL_CLIENT_SECRET_AT_UAT",
+      "redirectUris": [],
+      "webOrigins": [],
+      "defaultClientScopes": ["daml_ledger_api"],
+      "optionalClientScopes": ["openid", "profile", "email"],
+      "attributes": {
+        "access.token.lifespan": "300"
+      }
+    },
+    {
+      "clientId": "umbra-web",
+      "name": "Umbra Web (public, auth-code + PKCE)",
+      "description": "Desk browser login. Mirrors the Canton guide's wallet-web-ui. PUBLIC client — NO secret; PKCE S256 enforced. Desks authenticate via auth-code and forward the access token to the participant as their Bearer.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "bearerOnly": false,
+      "serviceAccountsEnabled": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": [
+        "http://localhost:5173/*",
+        "http://localhost:5173/callback"
+      ],
+      "webOrigins": [
+        "http://localhost:5173"
+      ],
+      "defaultClientScopes": ["openid", "daml_ledger_api"],
+      "optionalClientScopes": ["profile", "email"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5173/*"
+      }
+    }
+  ],
+
+  "users": [
+    {
+      "username": "bankA",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "bankA@umbra.dev",
+      "credentials": [{ "type": "password", "value": "CHANGE_ME_AT_UAT", "temporary": true }],
+      "realmRoles": ["Trader"]
+    },
+    {
+      "username": "bankB",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "bankB@umbra.dev",
+      "credentials": [{ "type": "password", "value": "CHANGE_ME_AT_UAT", "temporary": true }],
+      "realmRoles": ["Trader"]
+    },
+    {
+      "username": "bankC",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "bankC@umbra.dev",
+      "credentials": [{ "type": "password", "value": "CHANGE_ME_AT_UAT", "temporary": true }],
+      "realmRoles": ["Trader"]
+    },
+    {
+      "username": "guest",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "guest@umbra.dev",
+      "credentials": [{ "type": "password", "value": "CHANGE_ME_AT_UAT", "temporary": true }],
+      "realmRoles": ["Trader"]
+    },
+    {
+      "username": "compliance",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "compliance@umbra.dev",
+      "credentials": [{ "type": "password", "value": "CHANGE_ME_AT_UAT", "temporary": true }],
+      "requiredActions": ["CONFIGURE_TOTP"],
+      "realmRoles": ["Compliance"]
+    },
+    {
+      "username": "admin",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "admin@umbra.dev",
+      "credentials": [{ "type": "password", "value": "CHANGE_ME_AT_UAT", "temporary": true }],
+      "requiredActions": ["CONFIGURE_TOTP"],
+      "realmRoles": ["Admin"]
+    }
+  ],
+
+  "browserFlow": "umbra-browser-mfa",
+  "authenticationFlows": [
+    {
+      "alias": "umbra-browser-mfa",
+      "description": "Umbra browser flow — username/password then a CONDITIONAL OTP subflow bound to the settlement-affecting roles (Compliance, Admin). Traders skip OTP; Compliance/Admin MUST provide OTP.",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "auth-cookie",
+          "requirement": "ALTERNATIVE",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false
+        },
+        {
+          "flowAlias": "umbra-forms",
+          "requirement": "ALTERNATIVE",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "autheticatorFlow": true
+        }
+      ]
+    },
+    {
+      "alias": "umbra-forms",
+      "description": "Username+password, then a conditional OTP subflow for settlement-affecting roles.",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "auth-username-password-form",
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false
+        },
+        {
+          "flowAlias": "umbra-otp-compliance",
+          "requirement": "CONDITIONAL",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "autheticatorFlow": true
+        },
+        {
+          "flowAlias": "umbra-otp-admin",
+          "requirement": "CONDITIONAL",
+          "priority": 30,
+          "userSetupAllowed": false,
+          "autheticatorFlow": true
+        }
+      ]
+    },
+    {
+      "alias": "umbra-otp-compliance",
+      "description": "OTP required WHEN the user holds the Compliance role (MFA on settlement-affecting role).",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "conditional-user-role",
+          "authenticatorConfig": "umbra-cond-compliance",
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false
+        },
+        {
+          "authenticator": "auth-otp-form",
+          "requirement": "REQUIRED",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false
+        }
+      ]
+    },
+    {
+      "alias": "umbra-otp-admin",
+      "description": "OTP required WHEN the user holds the Admin role (MFA on settlement-affecting role).",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "conditional-user-role",
+          "authenticatorConfig": "umbra-cond-admin",
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false
+        },
+        {
+          "authenticator": "auth-otp-form",
+          "requirement": "REQUIRED",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false
+        }
+      ]
+    }
+  ],
+
+  "authenticatorConfig": [
+    {
+      "alias": "umbra-cond-compliance",
+      "config": {
+        "condUserRole": "Compliance",
+        "negate": "false"
+      }
+    },
+    {
+      "alias": "umbra-cond-admin",
+      "config": {
+        "condUserRole": "Admin",
+        "negate": "false"
+      }
+    }
+  ]
+}

@@ -1,0 +1,188 @@
+-- Umbra — the pure Batch/Instruction settlement layer (DFIN-02/03).
+--
+-- This is the primitive that (in 11-05) replaces the single-buyer `Asset`
+-- Split/Reassign legs inside `Round.Clear`. It transforms a VERIFIED allocation
+-- at the uniform clearing price p* into a list of `Instruction`s (sender →
+-- receiver, instrument, amount), optionally NETS them per (party, instrument)
+-- through a settlement custodian (default ON, gross still derivable), proves
+-- per-instrument conservation, and `settleBatch`es every Holding transfer in ONE
+-- Daml transaction — atomicity IS Daml transactionality, never a sequence of
+-- separate commits.
+--
+-- Provenance: this mirrors the Daml-Finance / CN Token Standard (CIP-0056)
+-- Batch/Instruction allocate→settle pattern with IN-REPO templates (`Holding`
+-- implements `HoldingV1.Holding`, 11-01). It is NOT the Daml Finance library
+-- (unbuildable on LF 2.1 / SDK 3.4.11 — 11-RESEARCH). §8 clearing math
+-- (`Clearing.daml`) is UNCHANGED: this is a settlement-leg change only.
+--
+-- This module is standalone: it imports only `Holding`/`Instrument` and the leaf
+-- `Clearing` types (`Allocation`/`Side`) — NEVER `Auction` — so 11-05 can import
+-- `Settlement` into `Auction.Round.Clear` without a module cycle.
+module Umbra.Settlement where
+
+import DA.Action (foldlA)
+import DA.Foldable (forA_)
+import DA.List (sortOn, dedup, lookup)
+import Umbra.Instrument (InstrumentId)
+import Umbra.Holding (Holding(..), Split(..), Reassign(..))
+import Umbra.Clearing (Allocation(..), Side(..))
+
+-- A single DvP leg: `sender` delivers `amount` of `instrument` to `receiver`.
+-- Token-agnostic (DFIN-03): the instrument is an `InstrumentId {issuer, id}`, not
+-- a hardcoded "USDCx"/"BONDX" string. Pure data — testable without the ledger.
+data Instruction = Instruction with
+    sender     : Party
+    receiver   : Party
+    instrument : InstrumentId
+    amount     : Decimal
+  deriving (Eq, Show)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Pure builders (top-level, ledger-free — unit-testable)
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- Expand one side of the verified allocation into a flat list of per-unit party
+-- slots, ordered deterministically by desk (so the pairing below is stable). Each
+-- filled unit becomes one slot; a 0-fill or opposite-side row contributes nothing.
+unitsFor : Side -> [Allocation] -> [Party]
+unitsFor sd allocs =
+  concatMap (\a -> replicate a.filledQty a.desk)
+    (sortOn (\a -> show a.desk) [ a | a <- allocs, a.side == sd, a.filledQty > 0 ])
+
+-- Build the GROSS DvP legs from the VERIFIED allocation at p*. Generalizes the
+-- current single-buyer fold to N buyers × M sellers:
+--   * every Sell desk delivers `filledQty` of `bondInstrument` to buyer(s);
+--   * each buyer pays `filledQty * p*` of `cashInstrument`.
+-- Pairing rule (documented, deterministic): because the clearing price is UNIFORM,
+-- the cash owed per matched unit is identical for every pair, so ANY unit pairing
+-- conserves — we pair the desk-sorted buy-unit slots against the desk-sorted
+-- sell-unit slots position-by-position (`zip`), then aggregate each distinct
+-- (buyer, seller) pair into one bond leg (seller→buyer) + one cash leg
+-- (buyer→seller). The KEY invariant is per-instrument conservation, not the
+-- specific pairing. On a VERIFIED allocation Σbuy == Σsell, so `zip` loses no unit.
+buildGrossInstructions : Decimal -> [Allocation] -> InstrumentId -> InstrumentId -> [Instruction]
+buildGrossInstructions price allocs bondInstrument cashInstrument =
+  let buys  = unitsFor Buy  allocs
+      sells = unitsFor Sell allocs
+      pairs = zip buys sells                       -- [(buyer, seller)] per matched unit
+      distinctPairs = dedup pairs
+      unitsOf p = intToDecimal (length (filter (== p) pairs))
+      legsFor pr@(buyer, seller) =
+        let units = unitsOf pr
+        in -- BOND leg: seller delivers units to buyer; CASH leg: buyer pays units*p* to seller
+           [ Instruction with sender = seller; receiver = buyer; instrument = bondInstrument; amount = units
+           , Instruction with sender = buyer; receiver = seller; instrument = cashInstrument; amount = units * price
+           ]
+  in concatMap legsFor distinctPairs
+
+-- Every party mentioned in a batch (as sender or receiver), de-duplicated.
+batchParties : [Instruction] -> [Party]
+batchParties legs = dedup ([ l.sender | l <- legs ] <> [ l.receiver | l <- legs ])
+
+-- Net position of `party` in `inst` across a batch: Σ received − Σ delivered.
+-- Positive = the party is owed (a net receive); negative = the party owes (a net
+-- deliver); zero = flat.
+netAmount : [Instruction] -> Party -> InstrumentId -> Decimal
+netAmount legs party inst =
+  sum [ l.amount | l <- legs, l.receiver == party, l.instrument == inst ]
+    - sum [ l.amount | l <- legs, l.sender == party, l.instrument == inst ]
+
+-- Multilateral netting through a settlement `custodian` (DEFAULT ON). Collapses
+-- the gross legs to EXACTLY ONE net `Instruction` per (party, instrument) with a
+-- non-zero net: a positive net becomes a receive from the custodian
+-- (sender = custodian), a negative net becomes a deliver to the custodian
+-- (receiver = custodian). The custodian is the netting counterparty (CCP) — the
+-- only way to guarantee one net leg per (party, instrument). The gross list is
+-- NOT mutated (callers keep it for the topology viz / gross receipts). Because the
+-- gross batch conserves per instrument, the custodian's own net is zero.
+netLegs : Party -> [Instruction] -> [Instruction]
+netLegs custodian legs =
+  let insts   = dedup [ l.instrument | l <- legs ]
+      parties = filter (/= custodian) (batchParties legs)
+      oneLeg party inst =
+        let net = netAmount legs party inst
+        in if net > 0.0
+             then [ Instruction with sender = custodian; receiver = party; instrument = inst; amount = net ]
+             else if net < 0.0
+               then [ Instruction with sender = party; receiver = custodian; instrument = inst; amount = negate net ]
+               else []
+  in concat [ oneLeg p i | p <- parties, i <- insts ]
+
+-- Per-instrument conservation predicate — the fail-loud gate 11-05's `Round.Clear`
+-- rewrite will `assertMsg` on the built legs. A batch is conserving iff, for every
+-- instrument, every party's net summed over ALL parties is zero (no value created
+-- or destroyed), AND every leg is well-formed (non-negative amount, no self-leg).
+-- Note: for the balanced-transfer `Instruction` shape each leg is a
+-- sender→receiver move, so the summed-net-is-zero part is structurally implied;
+-- the discriminating power here is the well-formedness screen plus catching any
+-- future one-sided/asymmetric leg. The SUBSTANTIVE numeric conservation is
+-- additionally proven on-ledger by before/after `Holding` totals in
+-- `test_netting_conserves`.
+conservationOk : [Instruction] -> [InstrumentId] -> Bool
+conservationOk legs instruments =
+  all (\l -> l.amount >= 0.0) legs
+    && all (\l -> l.sender /= l.receiver) legs
+    && all instrumentConserves instruments
+  where
+    parties = batchParties legs
+    instrumentConserves inst =
+      sum [ netAmount legs p inst | p <- parties ] == 0.0
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Ledger execution — atomic all-or-nothing settlement
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- Move EXACTLY `qty` off the source `Holding` `cid` to `newOwner`, returning the
+-- REMAINING source cid to thread into the next same-sender leg (`None` if the
+-- holding was fully consumed). Mirrors `Auction.moveExact` / `moveExactHolding`
+-- but surfaces the remainder so `settleBatch` can debit one source holding across
+-- several receivers (e.g. a buyer paying multiple sellers). `Split` is STRICT
+-- (`splitQty < amount`), so a full move must Reassign the whole contract; an
+-- over-draw makes `Split`'s guard throw → the whole enclosing transaction rolls
+-- back (atomicity).
+moveThread : ContractId Holding -> Decimal -> Party -> Update (Optional (ContractId Holding))
+moveThread cid qty newOwner = do
+  holding <- fetch cid
+  if qty == holding.amount
+    then do
+      _ <- exercise cid Reassign with newOwner
+      pure None
+    else do
+      (slice, remainder) <- exercise cid Split with splitQty = qty
+      _ <- exercise slice Reassign with newOwner
+      pure (Some remainder)
+
+-- Execute every `Instruction` as a `Holding` transfer in the ONE calling
+-- transaction (all-or-nothing: any failing leg rolls back the whole `Update` — do
+-- NOT open separate transactions or sequence commits). `sources` supplies the
+-- source `Holding` cid per (owner, instrument); the fold threads each source's
+-- remainder so a sender paying several receivers from one holding is debited
+-- correctly. Runs under the caller's authority (in 11-05 that is sole operator
+-- authority inside `Round.Clear`, since every `Holding` choice is
+-- controller-operator). `custodian` is the settlement counterparty used for the
+-- netted path; here it also anchors a DvP-integrity check that every source
+-- holding is operator-custodied by it.
+settleBatch : Party -> [Instruction] -> [(Party, InstrumentId, ContractId Holding)] -> Update ()
+settleBatch custodian instructions sources = do
+  -- DvP integrity: every offered source holding must be custodied by `custodian`
+  -- and owned by the (owner, instrument) it is registered under — a wrong/foreign
+  -- cid would otherwise silently under-deliver while the batch still "settles".
+  forA_ sources $ \(owner, inst, cid) -> do
+    h <- fetch cid
+    assertMsg "settleBatch: source holding custodian/owner/instrument mismatch"
+      (h.operator == custodian && h.owner == owner && h.instrument == inst)
+  let initial = [ ((owner, inst), cid) | (owner, inst, cid) <- sources ]
+  _final <- foldlA
+    (\acc instr -> do
+        let key = (instr.sender, instr.instrument)
+        case lookup key acc of
+          None      -> abort ("settleBatch: no source holding for " <> show instr.sender)
+          Some cid  -> do
+            mRem <- moveThread cid instr.amount instr.receiver
+            let acc' = filter (\(k, _) -> k /= key) acc
+            pure $ case mRem of
+              Some r -> (key, r) :: acc'
+              None   -> acc')
+    initial
+    instructions
+  pure ()

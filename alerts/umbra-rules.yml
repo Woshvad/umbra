@@ -1,0 +1,85 @@
+# alerts/umbra-rules.yml — OPS-01 Prometheus/Alertmanager alerting rules (config-only).
+#
+# These threshold rules are COMMITTED CONFIG, not a running alerting pipeline. No
+# Prometheus server or Alertmanager runs in-repo — live scrape + delivery (PagerDuty/
+# Slack/email) is a UAT/ops gate (13-RESEARCH: "Ship alerts/umbra-rules.yml config only;
+# delivery is UAT"). The metric names below are the PromQL projection of the OTel
+# instruments defined in solver/src/telemetry.ts (OTLP dots become underscores when the
+# collector exports to Prometheus): umbra.clear.latency_ms -> umbra_clear_latency_ms, etc.
+#
+# Load path (at UAT): reference this file from prometheus.yml `rule_files:` and point a
+# route in alertmanager.yml at the `severity` label. The `up{job="umbra-solver"}` series
+# is produced by a Prometheus scrape of the solver's /health readiness endpoint (also a
+# UAT wiring step); it is NOT emitted by the solver itself.
+
+groups:
+  - name: umbra
+    # Evaluate the rule expressions on each Prometheus rule-evaluation tick.
+    rules:
+      # ── Availability ────────────────────────────────────────────────────────────
+      # The solver scrape target has been unreachable for a full minute. `up` is the
+      # standard Prometheus per-target health gauge (1 = scrape ok, 0 = down/absent).
+      - alert: SolverDown
+        expr: up{job="umbra-solver"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Umbra solver is down"
+          description: >-
+            The umbra-solver scrape target has reported up == 0 for 1m. The venue cannot
+            open/clear/settle rounds. NOTE: live delivery of this alert is a UAT/ops gate —
+            no Alertmanager runs in-repo; this rule is committed config only.
+
+      # ── Latency (clearing) ──────────────────────────────────────────────────────
+      # p95 of the §8 clear-compute latency histogram over 5m has crossed 500ms. Derived
+      # from umbra_clear_latency_ms (OTel histogram umbra.clear.latency_ms). A sustained
+      # p95 breach signals clearing-path degradation well before a round fails.
+      - alert: ClearLatencyP95High
+        expr: >-
+          histogram_quantile(0.95, sum(rate(umbra_clear_latency_ms_bucket[5m])) by (le)) > 500
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Clearing p95 latency is high"
+          description: >-
+            The 95th-percentile §8 clear-compute latency (umbra_clear_latency_ms) has
+            exceeded 500ms over the last 5m. Investigate solver load / round size.
+            Live delivery is a UAT/ops gate (config-only in-repo).
+
+      # ── Settlement latency ──────────────────────────────────────────────────────
+      # p95 of the DvP settlement latency histogram over 5m above 2s. Derived from
+      # umbra_settle_latency_ms (OTel histogram umbra.settle.latency_ms). Settlement is a
+      # JSON Ledger API v2 client leg into Canton, so this tracks ledger-round-trip health.
+      - alert: SettleLatencyP95High
+        expr: >-
+          histogram_quantile(0.95, sum(rate(umbra_settle_latency_ms_bucket[5m])) by (le)) > 2000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Settlement p95 latency is high"
+          description: >-
+            The 95th-percentile atomic DvP settlement latency (umbra_settle_latency_ms) has
+            exceeded 2000ms over the last 5m — likely Canton participant / JSON Ledger API
+            round-trip pressure. Live delivery is a UAT/ops gate (config-only in-repo).
+
+      # ── Webhook delivery reliability ────────────────────────────────────────────
+      # More than 20% of webhook deliveries over 5m ended in status="failed". Derived from
+      # the umbra_webhook_delivery_total counter (OTel umbra.webhook.delivery_total{status}).
+      # The `> 0` denominator guard avoids a divide-by-zero when no webhooks are delivered.
+      - alert: WebhookFailureRateHigh
+        expr: >-
+          sum(rate(umbra_webhook_delivery_total{status="failed"}[5m]))
+          /
+          sum(rate(umbra_webhook_delivery_total[5m])) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Webhook delivery failure rate is high"
+          description: >-
+            Over 20% of round-lifecycle webhook deliveries (umbra_webhook_delivery_total)
+            failed in the last 5m. Subscribers may be missing round.opened/sealed/cleared/
+            settled events. Live delivery is a UAT/ops gate (config-only in-repo).

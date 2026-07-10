@@ -49,8 +49,9 @@ describe('webhooks — HMAC signing + replay guard', () => {
     )
 
     expect(verifySignature(SECRET, ts, body, sig)).toBe(true)
-    // Tampered signature fails.
-    expect(verifySignature(SECRET, ts, body, sig.slice(0, -1) + '0')).toBe(false)
+    // Tampered signature fails (flip the last hex nibble to a guaranteed-different one).
+    const tampered = sig.slice(0, -1) + (sig.endsWith('0') ? '1' : '0')
+    expect(verifySignature(SECRET, ts, body, tampered)).toBe(false)
     // Wrong secret fails.
     expect(verifySignature('wrong-secret', ts, body, sig)).toBe(false)
     // Length mismatch fails (no timingSafeEqual throw).

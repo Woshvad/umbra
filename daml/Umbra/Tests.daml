@@ -20,7 +20,7 @@ import Umbra.Auction
   , OrderCommitment(..), RevealOrder(..), ForfeitBond(..), ProofAnchor(..)
   , commitOf, serializeOrder
   )
-import Umbra.Roles (Venue, SubmitOrder(..), CommitOrder(..), AnchorProof(..))
+import Umbra.Roles (Venue(..), SubmitOrder(..), CommitOrder(..), IssueHolding(..), AnchorProof(..))
 import Umbra.Clearing
 import Umbra.Compliance (DeskEligibility(..), isEligible)
 import Umbra.Instrument (InstrumentId(..))
@@ -1166,3 +1166,136 @@ test_cash_instrument_agnostic = do
   confs <- query @TradeConfirmation operator
   let cashMovedOf d = sum [ t.cashMoved | (_, t) <- confs, t.desk == d ]
   cashMovedOf bankD === 400.0
+
+-- COMP-01 — an INELIGIBLE desk is rejected ON-LEDGER at ORDER CREATION (the first
+-- enforcement point). The desk is REGISTERED in the Venue (so `desk elem desks`
+-- passes) but holds an ineligible credential — so the ONLY thing that can reject
+-- its submit is `assertDeskEligible`. Proven for BOTH sealed-entry paths
+-- (SubmitOrder + CommitOrder), for a substituted rival credential, and isolated
+-- from a mere registration failure by a positive control that succeeds.
+test_ineligible_submit_rejected : Script ()
+test_ineligible_submit_rejected = do
+  Parties{..} <- initialize
+  bankBad <- allocatePartyByHint (PartyIdHint "bankBad")
+  let cash = cashInstrumentOf operator
+  -- A Venue that REGISTERS bankBad so `desk elem desks` passes; the eligibility
+  -- gate is then the sole possible cause of a submit rejection below.
+  venueCid <- submit operator do
+    createCmd Venue with operator; desks = [bankA, bankB, bankC, bankBad]
+  -- An INELIGIBLE credential (accredited = False) for the registered desk.
+  badElig <- submit operator do
+    createCmd DeskEligibility with
+      operator; compliance = operator; desk = bankBad
+      accredited = False; jurisdiction = "US"; sanctionsClear = True
+  -- SubmitOrder REJECTED on-ledger by assertDeskEligible (registered but ineligible).
+  submitMustFail bankBad do
+    exerciseCmd venueCid SubmitOrder with
+      desk = bankBad; roundId = "R1"; side = Buy; quantity = 5; limit = 100.0
+      orderType = Limit; minQty = None; firmIf = None; eligCid = badElig
+  -- CommitOrder (the second sealed-entry path) REJECTED the same way.
+  badCash <- mintHolding operator bankBad cash 10.0
+  submitMustFail bankBad do
+    exerciseCmd venueCid CommitOrder with
+      desk = bankBad; roundId = "R1"
+      commitment = commitOf (serializeOrder Buy 5 100.0 Limit None None) "sBad"
+      bondCid = badCash; cashInstrument = cash; eligCid = badElig
+  -- A credential for ANOTHER desk cannot be substituted (assertDeskEligible checks
+  -- cred.desk == desk) — bankA's eligible credential is still rejected for bankBad.
+  creds <- query @DeskEligibility operator
+  submitMustFail bankBad do
+    exerciseCmd venueCid SubmitOrder with
+      desk = bankBad; roundId = "R1"; side = Buy; quantity = 5; limit = 100.0
+      orderType = Limit; minQty = None; firmIf = None
+      eligCid = findEligCid operator creds bankA
+  -- POSITIVE CONTROL — the SAME registered desk WITH an eligible credential submits
+  -- successfully. This proves the rejections above are the eligibility gate, NOT a
+  -- registration failure (the "bankBad is simply unregistered" hypothesis would
+  -- make THIS submit fail too — it does not).
+  goodElig <- submit operator do
+    createCmd DeskEligibility with
+      operator; compliance = operator; desk = bankBad
+      accredited = True; jurisdiction = "US"; sanctionsClear = True
+  ocid <- submit bankBad do
+    exerciseCmd venueCid SubmitOrder with
+      desk = bankBad; roundId = "R1"; side = Buy; quantity = 5; limit = 100.0
+      orderType = Limit; minQty = None; firmIf = None; eligCid = goodElig
+  Some o <- queryContractId bankBad ocid
+  o.desk === bankBad
+  o.quantity === 5
+
+-- COMP-01 — an INELIGIBLE receiver is rejected ON-LEDGER at HOLDING ISSUANCE (the
+-- second enforcement point). Venue.IssueHolding is controller operator with NO
+-- registration check, so the rejection is purely the eligibility assert. A
+-- positive control proves an eligible receiver IS issued the holding.
+test_ineligible_holding_rejected : Script ()
+test_ineligible_holding_rejected = do
+  Parties{..} <- initialize
+  bankBad <- allocatePartyByHint (PartyIdHint "bankBadH")
+  venueCid <- findVenueCid operator
+  let cash = cashInstrumentOf operator
+  -- INELIGIBLE receiver credential.
+  badElig <- submit operator do
+    createCmd DeskEligibility with
+      operator; compliance = operator; desk = bankBad
+      accredited = False; jurisdiction = "US"; sanctionsClear = True
+  -- IssueHolding to an ineligible OWNER is REJECTED on-ledger (assertDeskEligible).
+  submitMustFail operator do
+    exerciseCmd venueCid IssueHolding with
+      owner = bankBad; instrument = cash; amount = 100.0; eligCid = badElig
+  -- POSITIVE CONTROL — an ELIGIBLE receiver IS issued the holding.
+  goodElig <- submit operator do
+    createCmd DeskEligibility with
+      operator; compliance = operator; desk = bankBad
+      accredited = True; jurisdiction = "US"; sanctionsClear = True
+  hcid <- submit operator do
+    exerciseCmd venueCid IssueHolding with
+      owner = bankBad; instrument = cash; amount = 100.0; eligCid = goodElig
+  Some h <- queryContractId operator hcid
+  h.owner === bankBad
+  h.amount === 100.0
+  h.instrument === cash
+
+-- WOW-07 — a GUEST 4th desk (bankD) submits a sealed order and settles in the 2×2
+-- batch, and its own-fill privacy is STRUCTURAL — identical to A/B/C. PRE-CLEAR
+-- each desk sees ONLY its own sealed Order (the guest's is invisible to rivals,
+-- and rivals' are invisible to the guest); POST-CLEAR each desk sees ONLY its own
+-- TradeConfirmation. The guest is a first-class participant, not a special case.
+test_privacy_guest_fill : Script ()
+test_privacy_guest_fill = do
+  MultiBuyerSeed{..} <- seedMultiBuyerRound "USDCx"
+  -- PRE-CLEAR order privacy: each desk sees ONLY its own sealed order.
+  aOrders <- query @Order bankA
+  dOrders <- query @Order bankD
+  length aOrders === 1
+  length dOrders === 1
+  assertMsg "guest sees only its OWN order" (all (\(_, o) -> o.desk == bankD) dOrders)
+  assertMsg "guest's order is INVISIBLE to rival A" (notElem bankD [ o.desk | (_, o) <- aOrders ])
+  assertMsg "rival A's order is INVISIBLE to the guest" (notElem bankA [ o.desk | (_, o) <- dOrders ])
+  -- operator (Order signatory) sees all four sealed orders.
+  ops <- query @Order operator
+  length ops === 4
+
+  -- Settle the 2×2 batch via the real Round.Clear.
+  _ <- submit operator do
+    exerciseCmd roundCid Clear with
+      clearingPrice  = 100.0
+      allocations
+      orderCids
+      buyerCashCids
+      sellerBondCids
+      cashInstrument
+      bondInstrument
+      referencePrice = 100.0
+
+  -- POST-CLEAR fill privacy: each desk sees ONLY its own TradeConfirmation.
+  dConfs <- query @TradeConfirmation bankD
+  aConfs <- query @TradeConfirmation bankA
+  length dConfs === 1
+  length aConfs === 1
+  assertMsg "guest sees only its OWN fill" (all (\(_, t) -> t.desk == bankD) dConfs)
+  assertMsg "guest's fill is INVISIBLE to rival A" (notElem bankD [ t.desk | (_, t) <- aConfs ])
+  -- The guest's own fill is exactly Buy 4 (a first-class participant).
+  assertMsg "guest's own fill is Buy 4" (all (\(_, t) -> t.side == Buy && t.filledQty == 4) dConfs)
+  -- operator sees all four confirmations.
+  allConfs <- query @TradeConfirmation operator
+  length allConfs === 4

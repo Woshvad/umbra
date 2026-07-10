@@ -1,0 +1,127 @@
+# ============================================================================
+# Umbra — Splice DevNet validator (participant + validator-app + wallet/CNS UIs)
+#
+# ⚠ EXTERNAL GATE — RUN AT THE GATE, NEVER FAKED OFFLINE. This compose joins the
+#   REAL Global Synchronizer on Canton DevNet. It cannot connect without
+#   Super-Validator sponsorship (egress-IP allowlist 2–7d + SPONSOR_SV_URL +
+#   one-time JIT ONBOARDING_SECRET). See deploy/SV-SPONSOR-CHECKLIST.md and
+#   deploy/RUNBOOK.md. Every value below is parameterized from .env (copy
+#   .env.example → .env at UAT; NO real secret is committed).
+#
+#   This file is validated OFFLINE only (YAML parse). A running node = CHAIN-01
+#   live UAT. Booting it without sponsorship does NOT constitute a connection.
+#
+#   Canonical bring-up (from deploy/RUNBOOK.md), the official Splice invocation:
+#     ./start.sh -s "$SPONSOR_SV_URL" -o "$ONBOARDING_SECRET" \
+#                -p "$PARTY_HINT" -m "$MIGRATION_ID" -w -a
+#   (-w wallet UI, -a validator app; -p uses the namespaced hint umbra-operator-1.)
+# ============================================================================
+name: umbra-devnet-validator
+
+services:
+  # ── Canton participant (JSON Ledger API v2 — the SAME surface as LocalNet :3975,
+  #    only the endpoint + auth differ; devnet-deploy.mjs targets JSON_LEDGER_API_PORT). ──
+  participant:
+    image: "${IMAGE_REPO}/canton-participant:${IMAGE_TAG}"
+    restart: unless-stopped
+    depends_on:
+      devnet-postgres:
+        condition: service_healthy
+    environment:
+      # OIDC (jwt-jwks) — dual-mode prod path; audience byte-identical to the dev token.
+      AUTH_JWKS_URL: "${AUTH_JWKS_URL}"
+      LEDGER_API_AUTH_AUDIENCE: "${LEDGER_API_AUTH_AUDIENCE}"
+      LEDGER_API_AUTH_SCOPE: "${LEDGER_API_AUTH_SCOPE}"
+      # Pitfall 3: this admin user MUST equal the client-credentials token `sub`,
+      # and devnet-deploy.mjs grants it the operator's actAs/readAs rights.
+      LEDGER_API_ADMIN_USER: "${LEDGER_API_ADMIN_USER}"
+      MIGRATION_ID: "${MIGRATION_ID}"
+      CANTON_POSTGRES_HOST: "${POSTGRES_HOST}"
+      CANTON_POSTGRES_PORT: "${POSTGRES_PORT}"
+      CANTON_POSTGRES_DB: "${POSTGRES_DB}"
+      CANTON_POSTGRES_USER: "${POSTGRES_USER}"
+      CANTON_POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+    ports:
+      # Host JSON Ledger API v2 — off the LocalNet :3975/:2975/:4975 stack.
+      - "${JSON_LEDGER_API_PORT:-6975}:7575"
+    healthcheck:
+      # /readyz + /livez are the documented participant health probes (CHAIN-03).
+      test: ["CMD", "curl", "-fsS", "http://localhost:7575/readyz"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+
+  # ── Splice validator app — owns onboarding, party bootstrap, and Canton-Coin
+  #    traffic auto-top-up (DevNet auto-taps coin — no funded wallet needed). ──
+  validator-app:
+    image: "${IMAGE_REPO}/validator-app:${IMAGE_TAG}"
+    restart: unless-stopped
+    depends_on:
+      participant:
+        condition: service_healthy
+    environment:
+      # SV sponsorship inputs (EXTERNAL GATE — placeholders in .env.example).
+      SPONSOR_SV_URL: "${SPONSOR_SV_URL}"
+      ONBOARDING_SECRET: "${ONBOARDING_SECRET}"
+      MIGRATION_ID: "${MIGRATION_ID}"
+      PARTY_HINT: "${PARTY_HINT}"                       # umbra-operator-1 (Pitfall 7)
+      # Client-credentials confidential client (server-side ONLY; never a browser).
+      VALIDATOR_AUTH_CLIENT_ID: "${VALIDATOR_AUTH_CLIENT_ID}"
+      VALIDATOR_AUTH_CLIENT_SECRET: "${VALIDATOR_AUTH_CLIENT_SECRET}"
+      AUTH_URL: "${AUTH_URL}"
+      AUTH_JWKS_URL: "${AUTH_JWKS_URL}"
+      LEDGER_API_AUTH_AUDIENCE: "${LEDGER_API_AUTH_AUDIENCE}"
+      LEDGER_API_ADMIN_USER: "${LEDGER_API_ADMIN_USER}"
+      # Traffic auto-top-up (CHAIN-03) — see deploy/devnet/traffic-topup.env.example.
+      TARGET_TRAFFIC_THROUGHPUT: "${TARGET_TRAFFIC_THROUGHPUT}"
+      MIN_TRAFFIC_TOPUP_INTERVAL: "${MIN_TRAFFIC_TOPUP_INTERVAL}"
+    ports:
+      - "${VALIDATOR_ADMIN_PORT:-5003}:5003"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:5003/livez"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 180s
+
+  # ── CN wallet web UI (-w) — read-only demo surface; no secret. ──
+  wallet-ui:
+    image: "${IMAGE_REPO}/wallet-web-ui:${IMAGE_TAG}"
+    restart: unless-stopped
+    depends_on:
+      - validator-app
+    ports:
+      - "${WALLET_UI_PORT:-3020}:8080"
+
+  # ── Canton Name Service UI. ──
+  cns-ui:
+    image: "${IMAGE_REPO}/cns-web-ui:${IMAGE_TAG}"
+    restart: unless-stopped
+    depends_on:
+      - validator-app
+    ports:
+      - "${CNS_UI_PORT:-3021}:8080"
+
+  # ── Isolated per-network Postgres for the participant store. The full-featured
+  #    standalone definition (volume, health, backup wiring) lives in
+  #    deploy/devnet/postgres/docker-compose.yaml; this inline service keeps the
+  #    validator compose self-contained for the ./start.sh path. ──
+  devnet-postgres:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB}"
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+    volumes:
+      - devnet-participant-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  devnet-participant-data:
+    name: umbra-devnet-participant-data

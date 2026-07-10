@@ -95,6 +95,10 @@ export type RoundResponse = {
   // AUCT-04: per-desk best-ex / TCA receipts — present ONLY on the POST-settle GET body
   // (reconstructed from the on-ledger TradeConfirmations; two-distinct-surplus).
   receipts?: Receipt[]
+  // DFIN-01/02/03: the Batch/Instruction settlement-meta block — present ONLY on a
+  // terminal (Cleared/Settled) body. Additive + OPTIONAL so decode never breaks against
+  // a solver that has not yet emitted it (the SettlementView delta, 11-11, consumes it).
+  settlement?: SettlementMeta
 }
 
 // GET /round/:id/solve-preview — the full deterministic §8 proposal (always present).
@@ -106,6 +110,8 @@ export type SolvePreviewResponse = {
   curve: CurvePoint[]
   rationale: string // Claude or deterministic fallback (always populated, P5)
   agent: AgentMeta
+  // DFIN-01/02/03 additive settlement-meta (optional — see SettlementMeta below).
+  settlement?: SettlementMeta
 }
 
 // POST /round/:id/settle — the atomic DvP result.
@@ -116,6 +122,8 @@ export type SettleResponse = {
   matchedVolume: number
   allocations: Allocation[]
   txConfirmations: number // 1 — the single atomic DvP transaction
+  // DFIN-01/02/03 additive settlement-meta (optional — see SettlementMeta below).
+  settlement?: SettlementMeta
 }
 
 // POST /round — open a round.
@@ -379,3 +387,73 @@ export const tamperProof = (id: string): Promise<TamperProofResponse> =>
 // (never a secret, never a token). GET, so no body.
 export const getStageOffsets = (id: string): Promise<StageOffsetsResponse> =>
   call<StageOffsetsResponse>(`/round/${id}/stage-offsets`)
+
+// ══ VIZ-03 party→participant topology (mirror solver/src/topology.ts TopologyResult) ══
+// The credential-free hosting map the "07 Topology" view renders. It rides the SAME
+// SOLVER_BASE_URL/call<T>() as everything else — NO :4100 literal, NO auth header, NO
+// operator/probe token in the bundle (the admin bearer lives ONLY inside topology.ts's
+// injected probe, server-side). The response mirrors topology.ts EXACTLY plus roundId.
+
+// One participant node: the participant id + the (focused) desk parties it locally hosts.
+// Byte-mirror of topology.ts TopologyNode.
+export type TopologyNode = { participant: string; parties: string[] }
+
+// GET /round/:id/topology response — `{ roundId, ...TopologyResult }` (api.ts). `demoReal`
+// TRUE ⇒ every hosted party maps to ONE participant (single-operator LocalNet) and the view
+// MUST render the HARD non-removable `DEMO-REAL · SINGLE-OPERATOR LOCALNET` / `SAME
+// PARTICIPANT (LOCALNET)` honesty caption (`caption`). `perParty` maps party → hosting
+// participant id(s) (a co-hosted guest can appear on >1). Live-ledger-optional: a down
+// LocalNet degrades to an empty/partial map, never an error (SolverError 'OFFLINE' on reject).
+export type TopologyMeta = {
+  roundId: string
+  nodes: TopologyNode[]
+  perParty: Record<string, string[]>
+  demoReal: boolean
+  caption: string
+}
+
+// VIZ-03 — the honest party→participant hosting map for a round. Credential-free GET.
+export const getTopology = (id: string): Promise<TopologyMeta> =>
+  call<TopologyMeta>(`/round/${id}/topology`)
+
+// ══ DFIN-01/02/03 settlement-meta (mirror solver/src/settlement.ts + the D13 provenance) ══
+// The additive Batch/Instruction settlement metadata the SettlementView delta (11-11)
+// consumes off the settle/preview/terminal-GET body. These types are DEFINED here (the
+// shared solver-client seam) so the Wave-6 views never edit solver.ts — they import these.
+// Every field is data-driven; NONE is a credential.
+
+// The HARD, data-driven settlement-provenance tag (DECISIONS.md D13 honesty rule). The
+// literal "DAML FINANCE" (the library) is NEVER one of these — the library is unsatisfiable
+// on the LF-2.1 / SDK-3.4.11 stack; the honest tags are CN-Standard interface conformance OR
+// the in-repo faithful pattern layer. The view renders whichever the settlement layer reports.
+export type SettlementProvenance = 'CN TOKEN STANDARD (CIP-0056)' | 'DAML-FINANCE-PATTERN (IN-REPO)'
+
+// Token-agnostic instrument reference (DFIN-03) — byte-mirror of settlement.ts InstrumentRef
+// / the Daml InstrumentId. `id` is the human symbol ("USDCx" / "BONDX"); a leg NEVER hardcodes
+// a symbol string — it references this pair.
+export type InstrumentRef = { issuer: string; id: string }
+
+// A single DvP leg: `sender` delivers `amount` of `instrument` to `receiver`. Byte-mirror
+// of settlement.ts Instruction (the Daml `Instruction` record). Pure data — the gross legs
+// are always derivable; the netted legs are one leg per (party, instrument).
+export type SettlementLeg = {
+  sender: string
+  receiver: string
+  instrument: InstrumentRef
+  amount: number
+}
+
+// The additive settlement-meta block on the settle / preview / terminal-GET body. OPTIONAL
+// on every response (decode never breaks against a solver that has not emitted it yet).
+// `netted` reflects the default-ON multilateral netting (one net leg per party·instrument);
+// `grossLegs`/`nettedLegs` back the `NETTED ⇄ GROSS LEGS` toggle + the topology viz;
+// `cashSymbol` is the token-agnostic cash instrument symbol (defaults "USDCx" for §4, never
+// hardcoded in copy); `instructionCount` is the `{N}` in "Batch/Instruction · {N} instructions".
+export type SettlementMeta = {
+  provenance: SettlementProvenance
+  instructionCount: number
+  netted: boolean
+  cashSymbol: string
+  grossLegs?: SettlementLeg[]
+  nettedLegs?: SettlementLeg[]
+}

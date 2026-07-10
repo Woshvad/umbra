@@ -39,6 +39,13 @@ import Umbra.Settlement
 -- ADJ-02 (13-06): the keyless RFQ side-mode — a firm signed Quote accepted by the
 -- requester settles a 1×1 batch via the SAME Umbra.Settlement.settleBatch DvP path.
 import Umbra.Rfq (RfqRequest(..), Quote(..), AcceptQuote(..))
+-- ADJ-03 (13-08): keyless uniform-price primary issuance (reusing §8) + Coupon/Redeem
+-- lifecycle. The issuance tranche mints a DISTINCT instrument ("BOND2"), so the §4
+-- secondary-market "BONDX" bond is provably untouched.
+import Umbra.Issuance
+  ( IssuanceRound(..), IssuanceBid(..)
+  , ClearIssuance(..), Coupon(..), Redeem(..)
+  )
 
 -- LEDG-02 — the §4 seed is the single correctness reference. Assert that after
 -- `initialize` the operator sees exactly the 5 §4 `Holding`s with the right
@@ -1707,3 +1714,193 @@ test_rfq_privacy = do
   cReqs <- query @RfqRequest bankC
   length bReqs === 1   -- the invited dealer sees the request
   length cReqs === 0   -- the uninvited dealer does NOT
+
+-- ===========================================================================
+-- ADJ-03 (13-08) — keyless UNIFORM-PRICE primary issuance (reusing the §8
+-- `computeClearing`) + a Coupon/Redeem lifecycle. An issuer offers a NEW bond
+-- tranche ("BOND2", DISTINCT from the §4 "BONDX"); desks submit sealed issuance
+-- bids; the SAME clearing allocates the tranche at ONE uniform price and mints the
+-- winners' bond Holdings while collecting their cash. Post-settlement, `Coupon`
+-- pays cash pro-rata to current holders (double-pay-guarded) and `Redeem` repays
+-- principal + retires the bond Holdings. The §4 secondary bond is UNTOUCHED and
+-- still clears $100.00 (Issuance.daml is keyless; Clearing.daml byte-unchanged).
+-- ===========================================================================
+
+-- Seed a cleared issuance tranche and return everything the lifecycle tests need.
+-- issuer == operator (operator-custody MVP, exactly as §4's `InstrumentId operator`).
+-- Book (reserve 100, issuer Sell 10; bids A Buy 6 @102, B Buy 5 @101, C Buy 4 @100):
+--   candidate prices {100,101,102}; @100 matched 10 (imb 5), @101 matched 10 (imb 1),
+--   @102 matched 6 (imb 4) ⇒ p*=101 (unique min-imbalance in the max-matched set).
+--   Fills at 101: A=6 (@102 eligible, top priority), B=4 (@101, rationed), C=0 (@100 < 101).
+--   ⇒ uniform price 101.0, totalIssued 10, winners A=6 / B=4.
+data IssuanceSeed = IssuanceSeed with
+    parties      : Parties
+    bond2        : InstrumentId
+    cash         : InstrumentId
+    clearedRound : ContractId IssuanceRound
+    aBond2       : ContractId Holding
+    bBond2       : ContractId Holding
+
+seedClearedIssuance : Script IssuanceSeed
+seedClearedIssuance = do
+  p@Parties{..} <- initialize
+  let bond2 = InstrumentId with issuer = operator; id = "BOND2"
+      cash  = cashInstrumentOf operator
+  -- Create the KEYLESS issuance round (issuer == operator ⇒ operator alone signs).
+  roundCid <- submit operator do
+    createCmd IssuanceRound with
+      operator; issuer = operator; bondInstrument = bond2; cashInstrument = cash
+      trancheSize = 10; reservePrice = 100.0
+      bids =
+        [ IssuanceBid with desk = bankA; quantity = 6; limit = 102.0
+        , IssuanceBid with desk = bankB; quantity = 5; limit = 101.0
+        , IssuanceBid with desk = bankC; quantity = 4; limit = 100.0
+        ]
+      cleared = False; couponsPaid = []
+  -- Option-B: gather each winner's cash source Holding cid (Script-tier query).
+  holdings0 <- query @Holding operator
+  let aCash = findHoldingCid bankA holdings0 cash
+      bCash = findHoldingCid bankB holdings0 cash
+  res <- submit operator do
+    exerciseCmd roundCid ClearIssuance with
+      winnerCashCids = [(bankA, aCash), (bankB, bCash)]
+  -- The uniform issuance price + total issued the §8 clear derived.
+  res.clearingPrice === 101.0
+  res.totalIssued === 10
+  -- Locate the minted bond Holdings for the lifecycle choices.
+  holdings1 <- query @Holding operator
+  let aBond2 = findHoldingCid bankA holdings1 bond2
+      bBond2 = findHoldingCid bankB holdings1 bond2
+  pure IssuanceSeed with
+    parties = p; bond2; cash; clearedRound = res.clearedRound; aBond2; bBond2
+
+-- ADJ-03 — UNIFORM-PRICE MINT. The tranche clears at ONE §8 price (101.0), mints
+-- exactly the cleared cross (10 BOND2: A=6 / B=4 / C=0), collects each winner's cash
+-- to the issuer, and conserves USDCx globally — while the §4 "BONDX" is UNTOUCHED.
+test_issuance_uniform_price : Script ()
+test_issuance_uniform_price = do
+  Parties{..} <- initialize
+  let bond2 = InstrumentId with issuer = operator; id = "BOND2"
+      cash  = cashInstrumentOf operator
+      bondx = bondInstrumentOf operator
+  -- Conservation reference BEFORE issuance.
+  before <- query @Holding operator
+  let totalOf hs inst = sum [ h.amount | (_, h) <- hs, h.instrument == inst ]
+      bal hs owner inst = sum [ h.amount | (_, h) <- hs, h.owner == owner, h.instrument == inst ]
+  totalOf before cash  === 7000.0   -- 5000 (A) + 1000 (B) + 1000 (C)
+  totalOf before bondx === 35.0     -- 20 (B) + 15 (C)  — the §4 secondary bond
+  totalOf before bond2 === 0.0      -- the tranche does not exist yet
+
+  roundCid <- submit operator do
+    createCmd IssuanceRound with
+      operator; issuer = operator; bondInstrument = bond2; cashInstrument = cash
+      trancheSize = 10; reservePrice = 100.0
+      bids =
+        [ IssuanceBid with desk = bankA; quantity = 6; limit = 102.0
+        , IssuanceBid with desk = bankB; quantity = 5; limit = 101.0
+        , IssuanceBid with desk = bankC; quantity = 4; limit = 100.0
+        ]
+      cleared = False; couponsPaid = []
+  let aCash = findHoldingCid bankA before cash
+      bCash = findHoldingCid bankB before cash
+  res <- submit operator do
+    exerciseCmd roundCid ClearIssuance with
+      winnerCashCids = [(bankA, aCash), (bankB, bCash)]
+
+  -- ONE uniform issuance price + total issued == the cleared cross (10, not the
+  -- full 15 units bid — proves §8 rationing, not a naive fill-everyone mint).
+  res.clearingPrice === 101.0
+  res.totalIssued === 10
+
+  after <- query @Holding operator
+  -- Minted bond Holdings: A=6, B=4, C=0 (C bid @100 < p*=101 ⇒ no allocation).
+  bal after bankA bond2 === 6.0
+  bal after bankB bond2 === 4.0
+  bal after bankC bond2 === 0.0
+  totalOf after bond2 === 10.0                      -- exactly the tranche, no over-mint
+  -- Cash collected to the issuer at the uniform price (A pays 6×101, B pays 4×101).
+  bal after bankA cash === (5000.0 - 606.0)         -- 4394
+  bal after bankB cash === (1000.0 - 404.0)         -- 596
+  bal after operator cash === (606.0 + 404.0)       -- 1010 proceeds to the issuer
+  -- CONSERVATION: USDCx global total unchanged (cash moved, never created).
+  totalOf after cash === 7000.0
+  -- THE §4 SECONDARY BOND IS UNTOUCHED: BONDX total is byte-identical (issuance
+  -- minted the DISTINCT "BOND2", never "BONDX").
+  totalOf after bondx === 35.0
+
+-- ADJ-03 — COUPON pro-rata + DOUBLE-PAY guard. After issuance the issuer pays a
+-- coupon (2.0 cash per bond unit) pro-rata to the current holders (A holds 6 ⇒ 12,
+-- B holds 4 ⇒ 8); a SECOND coupon for the SAME period is rejected on-ledger, while
+-- a DIFFERENT period is paid — proving the guard is period-scoped, not a blanket block.
+test_issuance_coupon_prorata : Script ()
+test_issuance_coupon_prorata = do
+  IssuanceSeed{..} <- seedClearedIssuance
+  let Parties{..} = parties
+      bal hs owner = sum [ h.amount | (_, h) <- hs, h.owner == owner, h.instrument == cash ]
+  -- The issuer funds a cash source to pay coupons from (operator == issuer).
+  issuerCash1 <- mintHolding operator operator cash 1000.0
+
+  beforeCoupon <- query @Holding operator
+  let aBefore = bal beforeCoupon bankA
+      bBefore = bal beforeCoupon bankB
+
+  -- Period 1 coupon: 2.0 per unit ⇒ A receives 12, B receives 8 (pro-rata to holdings).
+  round1 <- submit operator do
+    exerciseCmd clearedRound Coupon with
+      period = 1; couponPerUnit = 2.0
+      holderBondCids = [aBond2, bBond2]; issuerCashCid = issuerCash1
+  afterCoupon <- query @Holding operator
+  bal afterCoupon bankA === (aBefore + 12.0)   -- 6 units × 2.0
+  bal afterCoupon bankB === (bBefore + 8.0)    -- 4 units × 2.0
+
+  -- DOUBLE-PAY REJECTED: a second coupon for period 1 aborts (period ∈ couponsPaid).
+  issuerCash2 <- mintHolding operator operator cash 1000.0
+  submitMustFail operator do
+    exerciseCmd round1 Coupon with
+      period = 1; couponPerUnit = 2.0
+      holderBondCids = [aBond2, bBond2]; issuerCashCid = issuerCash2
+  -- POSITIVE CONTROL: a DIFFERENT period (2) IS paid — the guard is period-scoped.
+  afterFail <- query @Holding operator
+  let aMid = bal afterFail bankA
+      bMid = bal afterFail bankB
+  _ <- submit operator do
+    exerciseCmd round1 Coupon with
+      period = 2; couponPerUnit = 2.0
+      holderBondCids = [aBond2, bBond2]; issuerCashCid = issuerCash2
+  afterSecond <- query @Holding operator
+  bal afterSecond bankA === (aMid + 12.0)
+  bal afterSecond bankB === (bMid + 8.0)
+
+-- ADJ-03 — REDEEM retires + conserves. At maturity the issuer repays principal
+-- (100.0 per unit ⇒ A receives 600, B receives 400) and RETIRES the bond Holdings,
+-- so the BOND2 supply contracts back to zero; USDCx conserves (cash moved, never made).
+test_issuance_redeem : Script ()
+test_issuance_redeem = do
+  IssuanceSeed{..} <- seedClearedIssuance
+  let Parties{..} = parties
+      totalOf hs inst = sum [ h.amount | (_, h) <- hs, h.instrument == inst ]
+      bal hs owner inst = sum [ h.amount | (_, h) <- hs, h.owner == owner, h.instrument == inst ]
+  -- The issuer funds the principal repayment (1000 == 10 units × 100.0).
+  issuerCash <- mintHolding operator operator cash 1000.0
+
+  before <- query @Holding operator
+  let aBefore = bal before bankA cash
+      bBefore = bal before bankB cash
+      cashTotal0 = totalOf before cash
+  totalOf before bond2 === 10.0    -- the tranche exists pre-redemption
+
+  _ <- submit operator do
+    exerciseCmd clearedRound Redeem with
+      principalPerUnit = 100.0
+      holderBondCids = [aBond2, bBond2]; issuerCashCid = issuerCash
+
+  after <- query @Holding operator
+  -- Principal repaid at 100.0/unit: A +600, B +400.
+  bal after bankA cash === (aBefore + 600.0)   -- 6 units × 100.0
+  bal after bankB cash === (bBefore + 400.0)   -- 4 units × 100.0
+  -- The bond Holdings are RETIRED — BOND2 supply is back to zero (no dangling holdings).
+  bal after bankA bond2 === 0.0
+  bal after bankB bond2 === 0.0
+  totalOf after bond2 === 0.0
+  -- CONSERVATION: USDCx global total unchanged across the redemption (cash moved only).
+  totalOf after cash === cashTotal0

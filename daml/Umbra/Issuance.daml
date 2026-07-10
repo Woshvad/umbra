@@ -34,7 +34,7 @@ module Umbra.Issuance where
 import DA.Foldable (forA_)
 import Umbra.Instrument (InstrumentId)
 import Umbra.Clearing
-  ( Side(..), Allocation(..), OrderView(..), OrderType(..)
+  ( Side(..), OrderView(..), OrderType(..)
   , computeClearing
   )
 import Umbra.Holding (Holding(..), moveExactHolding)

@@ -15,10 +15,10 @@
 // 'OFFLINE' → graceful caption; Privacy still renders.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { OperatorViewState } from '../operatorState'
-import type { SolvePreviewResponse } from '../solver'
+import type { SolvePreviewResponse, SettlementProvenance } from '../solver'
 import { settle, SolverError, OFFLINE_CAPTION } from '../solver'
-import { codeForParty } from '../desks'
-import { deskBalancesFromAllocations, type DeskBalances } from '../lib/balance'
+import { codeForParty, GUEST } from '../desks'
+import { deskBalancesFromAllocations, type DeskBalances, type DeskBalance } from '../lib/balance'
 import { estimateLeakage, type LeakageLeg } from '../lib/leakage'
 import DvpLegs, { type DvpLeg } from '../components/DvpLegs'
 import BalanceTable, { type BalanceRow } from '../components/BalanceTable'
@@ -39,6 +39,9 @@ const BEFORE: DeskBalances = {
 }
 // Stable desk display order for the balance table.
 const DESK_ORDER = ['BLUEROCK', 'MERIDIAN', 'HALWARD']
+// GUEST (Desk D) BEFORE holdings — only used when a guest has actually joined and been
+// allocated a fill (WOW-07). §4 stays 3-desk (no guest) so this never perturbs the canary.
+const GUEST_BEFORE: DeskBalance = { bondx: 0, usdcx: 5000 }
 
 function prefersReducedMotion(): boolean {
   return (
@@ -48,11 +51,37 @@ function prefersReducedMotion(): boolean {
   )
 }
 
-// Map an allocation list onto display-code desks (BLUEROCK/MERIDIAN/HALWARD) so the
-// BEFORE balances + leg labels line up — the solver keys allocations by the live party
-// id, which `codeForParty` (desks.ts) resolves to the comp code.
+// Resolve a live party id to its comp CODE, INCLUDING the guest 4th desk (bankD → GUEST).
+// `codeForParty` (desks.ts) only knows the three primary desks; the guest is a separate
+// export, so map it here so a guest allocation surfaces as a `GUEST` leg/row when present.
+function codeOf(party: string): string {
+  return party.split('::')[0] === GUEST.key ? GUEST.code : codeForParty(party)
+}
+
+// Map an allocation list onto display-code desks (BLUEROCK/MERIDIAN/HALWARD, + GUEST when a
+// guest has joined) so the BEFORE balances + leg labels line up — the solver keys
+// allocations by the live party id.
 function codeAllocations(preview: SolvePreviewResponse) {
-  return preview.allocations.map((a) => ({ ...a, desk: codeForParty(a.desk) }))
+  return preview.allocations.map((a) => ({ ...a, desk: codeOf(a.desk) }))
+}
+
+// NETTED legs (default mode) — collapse the gross seller→buyer legs into one NET leg per
+// counterparty pair (DFIN-02: one net instruction per party·instrument). Totals are the sum
+// of the gross qty + cash, so the balance table stays CONSERVED across the toggle. On the §4
+// single-buyer fixture each seller already has exactly one leg → netted === gross (canary safe).
+function toNettedLegs(gross: DvpLeg[]): DvpLeg[] {
+  const byPair = new Map<string, DvpLeg>()
+  for (const leg of gross) {
+    const key = `${leg.seller}→${leg.buyer}`
+    const cur = byPair.get(key)
+    if (cur) {
+      cur.qty += leg.qty
+      cur.cash += leg.cash
+    } else {
+      byPair.set(key, { ...leg })
+    }
+  }
+  return [...byPair.values()]
 }
 
 // Derive the DvP legs from the allocations: every Sell desk delivers filledQty BONDX to
@@ -92,12 +121,18 @@ function composeFallbackBrief(preview: SolvePreviewResponse): string {
 }
 
 // Build the before→after balance rows from the allocations (the aggregate via :4100).
+// When a GUEST (Desk D) fill is present the guest row is appended (WOW-07) with its own
+// BEFORE balance; §4 has no guest so the table stays the canonical three desks.
 function balanceRowsFromPreview(preview: SolvePreviewResponse): BalanceRow[] {
-  const after = deskBalancesFromAllocations(codeAllocations(preview), preview.clearingPrice, BEFORE)
-  return DESK_ORDER.map((code) => ({
+  const coded = codeAllocations(preview)
+  const guestPresent = coded.some((a) => a.desk === GUEST.code)
+  const before: DeskBalances = guestPresent ? { ...BEFORE, [GUEST.code]: GUEST_BEFORE } : BEFORE
+  const after = deskBalancesFromAllocations(coded, preview.clearingPrice, before)
+  const order = guestPresent ? [...DESK_ORDER, GUEST.code] : DESK_ORDER
+  return order.map((code) => ({
     code,
-    before: BEFORE[code] ?? { bondx: 0, usdcx: 0 },
-    after: after[code] ?? BEFORE[code] ?? { bondx: 0, usdcx: 0 },
+    before: before[code] ?? { bondx: 0, usdcx: 0 },
+    after: after[code] ?? before[code] ?? { bondx: 0, usdcx: 0 },
   }))
 }
 
@@ -111,6 +146,9 @@ export default function SettlementView({
 }: Props) {
   const [settleProgress, setSettleProgress] = useState(phase === 'settled' ? 1 : 0)
   const [stampIn, setStampIn] = useState(phase === 'settled')
+  // DFIN-02 — netting toggle, DEFAULT ON (NETTED). Seeded from the settlement meta when the
+  // solver emits it, else defaults NETTED. Purely a display switch — balances stay conserved.
+  const [netted, setNetted] = useState(preview?.settlement?.netted ?? true)
   const rafRef = useRef<number>()
   const doneRef = useRef<ReturnType<typeof setTimeout>>()
 
@@ -153,6 +191,19 @@ export default function SettlementView({
   const settled = phase === 'settled'
   const settling = phase === 'settling'
 
+  // ── Settlement-meta (DFIN-01/02/03) — data-driven, decode-safe defaults ────────────────
+  // The solver emits `preview.settlement` on a terminal body; until then we fall back to the
+  // honest D13 shipped tag (`CN TOKEN STANDARD (CIP-0056)`) + the §4 `USDCx` cash symbol.
+  const meta = preview?.settlement
+  const cashSymbol = meta?.cashSymbol ?? 'USDCx'
+  const provenance: SettlementProvenance = meta?.provenance ?? 'CN TOKEN STANDARD (CIP-0056)'
+  // Gross (per seller→buyer) vs NETTED (one net leg per counterparty pair). Both conserve the
+  // balance-table totals; §4 single-buyer reduces to identical legs (canary safe).
+  const grossLegs = preview ? legsFromPreview(preview) : []
+  const activeLegs = netted ? toNettedLegs(grossLegs) : grossLegs
+  // Each DvP leg = one bond delivery + one cash payment (two Instructions).
+  const instructionCount = activeLegs.length * 2
+
   return (
     <main style={{ position: 'relative', padding: '30px 48px 72px', overflow: 'hidden' }}>
       {/* Section marker */}
@@ -189,7 +240,45 @@ export default function SettlementView({
         >
           {/* Left — DvP legs + the atomic stamp + the CTA */}
           <div style={{ position: 'relative' }}>
-            <DvpLegs legs={legsFromPreview(preview)} settleProgress={settleProgress} />
+            {/* Settlement-layer header: the HARD data-driven provenance tag (D13 honesty —
+                CN TOKEN STANDARD (CIP-0056) / DAML-FINANCE-PATTERN (IN-REPO); the standalone
+                library name is unsatisfiable on this stack and NEVER rendered) + the
+                NETTED ⇄ GROSS LEGS toggle (default NETTED). */}
+            <div className="flex items-center" style={{ gap: '10px', marginBottom: '18px' }}>
+              <span
+                className="font-mono text-9 uppercase"
+                style={{ letterSpacing: '.12em', padding: '3px 7px', border: '1px solid #0A0A0A' }}
+              >
+                {provenance}
+              </span>
+              <button
+                type="button"
+                onClick={() => setNetted((v) => !v)}
+                className="font-mono text-9 uppercase"
+                style={{
+                  marginLeft: 'auto',
+                  letterSpacing: '.12em',
+                  padding: '3px 7px',
+                  border: '1px solid #0A0A0A',
+                  background: 'transparent',
+                  cursor: 'pointer',
+                }}
+                aria-pressed={netted}
+                title="Toggle multilateral netting — balances stay conserved"
+              >
+                <span style={{ opacity: netted ? 1 : 0.4 }}>NETTED</span>
+                {' ⇄ '}
+                <span style={{ opacity: netted ? 0.4 : 1 }}>GROSS LEGS</span>
+              </button>
+            </div>
+
+            <DvpLegs
+              legs={activeLegs}
+              settleProgress={settleProgress}
+              instructionCount={instructionCount}
+              cashSymbol={cashSymbol}
+              netted={netted}
+            />
             <AtomicStamp show={stampIn} />
 
             <div style={{ marginTop: '34px' }}>

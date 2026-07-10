@@ -468,6 +468,47 @@ withCanonicalApproval operator = do
   compliance <- allocatePartyByHint (PartyIdHint "compliance")
   approveClearing operator compliance "R1" 100.0
 
+-- IDEN-03 (12-01 HIGH-01) — the FOUR-EYES DISTINCTNESS negative proof. The
+-- separation of duties must not rest on the test merely CHOOSING a distinct
+-- compliance party: the LEDGER itself must reject a collapsed-party approval
+-- (compliance == operator). Two on-ledger rejections prove it end-to-end:
+--   (1) `ApproveClearing` ABORTS when the request names compliance == operator,
+--       so the operator cannot MINT a self-approving `ClearingApproval` even
+--       while holding both authorities;
+--   (2) a directly-created collapsed `ClearingApproval` (operator is the sole
+--       signatory when the two ids coincide) threaded into `Round.Clear` is
+--       REJECTED by `assertClearingApproved` — self-approval can never authorize
+--       a settle. The §4 canary (operator /= compliance) is UNAFFECTED.
+test_four_eyes_requires_distinct_party : Script ()
+test_four_eyes_requires_distinct_party = do
+  SeedResult{..} <- seedCanonicalAndClose
+  let Parties{..} = parties
+  -- (1) The operator proposes a request naming ITSELF as compliance and tries to
+  --     self-approve. `ApproveClearing`'s on-ledger distinctness assert aborts.
+  selfReqCid <- submit operator do
+    createCmd ClearingApprovalRequest with
+      operator; compliance = operator; roundId = "R1"; clearingPrice = 100.0
+  submitMustFail operator do
+    exerciseCmd selfReqCid ApproveClearing
+  -- (2) Forge a collapsed `ClearingApproval` directly (operator alone satisfies
+  --     `signatory operator, compliance` when compliance == operator) and thread it
+  --     into a real `Round.Clear`. `assertClearingApproved` rejects it on-ledger,
+  --     so the operator-self-made approval can never authorize settlement.
+  collapsedAppr <- submit operator do
+    createCmd ClearingApproval with
+      operator; compliance = operator; roundId = "R1"; clearingPrice = 100.0
+  submitMustFail operator do
+    exerciseCmd roundCid Clear with
+      clearingPrice  = 100.0
+      allocations    = canonicalAllocs bankA bankB bankC
+      orderCids
+      buyerCashCids
+      sellerBondCids
+      cashInstrument = cashInstrumentOf operator
+      bondInstrument = bondInstrumentOf operator
+      referencePrice = 100.0
+      approvalCid    = collapsedAppr
+
 -- SETL-01/SETL-02 — after a successful Round.Clear on the §4 fixture the ledger
 -- shows the EXACT spec §4 post-balances (A:10/4000, B:12/1800, C:13/1200) and
 -- both BONDX and USDCx are conserved end-to-end (totals unchanged vs the seed:

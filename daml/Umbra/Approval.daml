@@ -61,6 +61,14 @@ template ClearingApprovalRequest
     choice ApproveClearing : ContractId ClearingApproval
       controller compliance
       do
+        -- FOUR-EYES DISTINCTNESS (on-ledger, fail-loud): the compliance approver
+        -- MUST be a DISTINCT party from the operator. If a deployment collapses the
+        -- two ids (compliance == operator), this aborts HERE — the operator can no
+        -- longer mint a self-approving `ClearingApproval`, even when it holds both
+        -- authorities. The separation is now a LEDGER invariant, not merely a
+        -- property of the test's party choice.
+        assertMsg "four-eyes requires a distinct compliance party (operator /= compliance)"
+          (compliance /= operator)
         create ClearingApproval with operator; compliance; roundId; clearingPrice
 
     -- Compliance may REJECT (consuming; no approval is created → the settle path
@@ -90,6 +98,13 @@ template ClearingApproval
 -- recompute pinned), so both sides are compared at 2dp.
 assertClearingApproved : Party -> Text -> Decimal -> ClearingApproval -> Update ()
 assertClearingApproved operator roundId priceDec appr = do
+  -- FOUR-EYES DISTINCTNESS (on-ledger, fail-loud): even the SETTLE gate re-checks
+  -- that the approval's compliance signatory is DISTINCT from the operator. A
+  -- collapsed-party `ClearingApproval` (compliance == operator) — however it came
+  -- into being — is rejected at `Round.Clear`, so operator self-approval can never
+  -- authorize a settlement. Belt-and-suspenders with the `ApproveClearing` guard.
+  assertMsg "four-eyes requires a distinct compliance party (operator /= compliance)"
+    (appr.compliance /= operator)
   assertMsg "approval is not for this operator/round"
     (appr.operator == operator && appr.roundId == roundId)
   assertMsg "compliance-approved price does not match the clearing price"

@@ -11,6 +11,7 @@ import { OFFLINE_CAPTION } from '../solver'
 import AgentProposal from '../components/AgentProposal'
 import AgentRationale from '../components/AgentRationale'
 import BreakTheAiPanel from '../components/BreakTheAiPanel'
+import SolverLeaderboard from '../components/SolverLeaderboard'
 
 type Props = OperatorViewState
 
@@ -66,6 +67,13 @@ export default function AgentView({ roundId, preview, offline }: Props) {
           correct $100.00 clear). Self-contained demo panel BELOW the shipped grid;
           operator plane (:4100) only — no operator token / @daml/react context here. */}
       <BreakTheAiPanel roundId={roundId} offline={offline} />
+
+      {/* ADJ-01 (S2) — competing-solvers leaderboard: a distinct NARRATIVE block below the grid.
+          Ranks solver proposals vs the deterministic §8 clear (VERIFIED/UNVERIFIED), marks the
+          deterministic result AUTHORITATIVE, and is explicitly NOT a settlement input. Operator
+          plane only (:4100 via getCompeting) — no operator token / @daml/react context. `ready`
+          gates the race on a cleared round (preview present). */}
+      <SolverLeaderboard roundId={roundId} ready={!!preview} offline={offline} />
     </main>
   )
 }

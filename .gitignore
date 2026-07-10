@@ -35,6 +35,9 @@ dist/
 web/src/tokens.json
 # Operator dev token is minted OUT of the browser bundle (D6) — also never committed.
 scripts/.operator-token
+# Compliance dev token (four-eyes distinct-authority, Phase 12 IDEN-03) — same dev-credential
+# class as .operator-token; never committed (DevNet compliance creds come from gitignored .env).
+scripts/.compliance-token
 # LocalNet (Daml 3.x / cn-quickstart) deploy record — per-deploy party IDs, ephemeral.
 scripts/localnet/.deploy.json
 scripts/localnet/.tokens.json

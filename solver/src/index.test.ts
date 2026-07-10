@@ -24,6 +24,7 @@ import { createApp, type RoundView, type SealedOrder, type SettleResult } from '
 import { buildDeps, bootTelemetry, type LedgerPort, type MathPort } from './index.js'
 import { createAgent, type AgentClient, type AgentResult } from './agent.js'
 import type { Clock, RoundState } from './clock.js'
+import type { Webhooks, WebhookEvent, WebhookSubscription } from './webhooks.js'
 
 const ROUND_SECONDS = 60
 
@@ -91,6 +92,17 @@ const makeClock = (
   })),
   setStatus: vi.fn(),
   rehydrate: vi.fn(),
+})
+
+// OPS-04: a spy webhook emitter so the boot-wiring proof can assert round.opened fires off
+// the open seam without any network. emit records (event, data); register/unregister inert.
+const makeSpyWebhooks = (
+  emit: (event: WebhookEvent, data: Record<string, unknown>) => Promise<void>,
+): Webhooks => ({
+  register: vi.fn((): WebhookSubscription => ({ id: 'sub-1', url: 'https://x', events: [] })),
+  unregister: vi.fn((): boolean => true),
+  emit: vi.fn(emit),
+  deliveryLog: vi.fn(() => []),
 })
 
 const readJson = async (res: Response): Promise<Record<string, any>> =>
@@ -171,6 +183,90 @@ describe('solver boot wiring (buildDeps)', () => {
     const res = await fetch(`${started.base}/round/R2/close`, { method: 'POST' })
     expect(res.status).toBe(200)
     expect(clock.forceClose).toHaveBeenCalledWith('R2')
+  })
+
+  // ── OPS-04: round.opened fires off the open seam (buildDeps openRound wrapper) ─────
+  it('POST /round fires the round.opened webhook off the open seam (aggregate data only)', async () => {
+    const ledger = makeLedger()
+    const openRoundClock = vi.fn(
+      (roundId: string): RoundState => ({ roundId, status: 'Open', openedAt: 0, deadline: 0 }),
+    )
+    const clock = makeClock(openRoundClock)
+
+    const emitted: { event: WebhookEvent; data: Record<string, unknown> }[] = []
+    const webhooks = makeSpyWebhooks(async (event, data) => {
+      emitted.push({ event, data })
+    })
+
+    const deps = buildDeps({
+      ledger,
+      math,
+      clock,
+      openRoundClock,
+      roundSeconds: ROUND_SECONDS,
+      proposeClearing,
+      parseOrder,
+      streamRationale,
+      composeBrief,
+      webhooks,
+    })
+    const started = await listen(createApp(deps))
+    server = started.server
+
+    const res = await fetch(`${started.base}/round`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ roundId: 'R9', desks: ['BankA', 'BankB', 'BankC'] }),
+    })
+    expect(res.status).toBe(201)
+
+    // The emit is fire-and-forget (scheduled off the request path) — let the microtask drain.
+    await new Promise((r) => setTimeout(r, 0))
+
+    // round.opened fired exactly once, off the open seam, carrying aggregate/round data ONLY
+    // (roundId + desk COUNT — never a desk identity or order content).
+    const opened = emitted.filter((e) => e.event === 'round.opened')
+    expect(opened).toHaveLength(1)
+    expect(opened[0].data.roundId).toBe('R9')
+    expect(opened[0].data.desks).toBe(3)
+    // Secret/order-content sweep: the payload carries no desk identity string.
+    expect(JSON.stringify(opened[0].data)).not.toContain('BankA')
+  })
+
+  it('POST /round still returns 201 even when a webhook emit rejects (fire-and-forget, never blocks the open path)', async () => {
+    const ledger = makeLedger()
+    const openRoundClock = vi.fn(
+      (roundId: string): RoundState => ({ roundId, status: 'Open', openedAt: 0, deadline: 0 }),
+    )
+    const clock = makeClock(openRoundClock)
+    // An emitter that always rejects — the open path must be unaffected.
+    const webhooks = makeSpyWebhooks(async () => {
+      throw new Error('subscriber unreachable')
+    })
+
+    const deps = buildDeps({
+      ledger,
+      math,
+      clock,
+      openRoundClock,
+      roundSeconds: ROUND_SECONDS,
+      proposeClearing,
+      parseOrder,
+      streamRationale,
+      composeBrief,
+      webhooks,
+    })
+    const started = await listen(createApp(deps))
+    server = started.server
+
+    const res = await fetch(`${started.base}/round`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ roundId: 'R10', desks: ['BankA'] }),
+    })
+    expect(res.status).toBe(201)
+    expect(ledger.openRound).toHaveBeenCalledTimes(1)
+    expect(openRoundClock).toHaveBeenCalledWith('R10', ROUND_SECONDS)
   })
 
   // ── OPS-01: telemetry-first boot ordering (Pitfall 1) ─────────────────────────────

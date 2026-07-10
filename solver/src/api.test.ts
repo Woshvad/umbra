@@ -42,6 +42,7 @@ import type { SealResult, DrandRoundInfo } from './tlock.js'
 import type { ClearingProof } from './zk/prove.js'
 import type { ProofAnchor } from './zk/verify.js'
 import type { StageOffsets } from './timemachine.js'
+import type { Webhooks, WebhookEvent, WebhookSubscription } from './webhooks.js'
 
 // The §4 canonical fixture: A Buy 10 @101, B Sell 8 @99, C Sell 5 @100 → clears 100,
 // matchedVolume = min(demand@100=10, supply@100=13) = 10.
@@ -1789,5 +1790,172 @@ describe('solver OPS-01/02/03 surfaces (status + idempotency + FSM)', () => {
     // After a settle the last clear surfaces on the aggregate /status (public uniform price).
     const status = await readJson(await fetch(`${started.base}/status`))
     expect(status.lastClearPrice).toBe(100)
+  })
+
+  // ══ OPS-04 lifecycle webhooks — register/unregister endpoints + settle-seam emits ═══
+  // A sentinel subscription secret — accepted by POST /webhooks but NEVER echoed back.
+  const SENTINEL_WEBHOOK_SECRET = 'WHSEC-SUBSCRIPTION-SECRET-do-not-leak-4d1c8e'
+
+  // A spy Webhooks that records every emit; register returns a secret-free handle.
+  const makeSpyWebhooks = (): {
+    webhooks: Webhooks
+    emitted: { event: WebhookEvent; data: Record<string, unknown> }[]
+  } => {
+    const emitted: { event: WebhookEvent; data: Record<string, unknown> }[] = []
+    const webhooks: Webhooks = {
+      register: vi.fn((): WebhookSubscription => ({ id: 'sub-1', url: 'https://x', events: [] })),
+      unregister: vi.fn((): boolean => true),
+      emit: vi.fn(async (event: WebhookEvent, data: Record<string, unknown>) => {
+        emitted.push({ event, data })
+      }),
+      deliveryLog: vi.fn(() => []),
+    }
+    return { webhooks, emitted }
+  }
+
+  it('POST /webhooks registers a subscription and NEVER echoes the subscription secret', async () => {
+    const deps = makeDeps({}) // default in-memory webhooks (real createWebhooks)
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/webhooks`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        url: 'https://subscriber.example/webhook',
+        secret: SENTINEL_WEBHOOK_SECRET,
+        events: ['round.opened', 'round.settled', 'fill.posted'],
+      }),
+    })
+    const body = await readJson(res)
+
+    expect(res.status).toBe(201)
+    expect(typeof body.id).toBe('string')
+    expect(body.url).toBe('https://subscriber.example/webhook')
+    expect(body.events).toEqual(['round.opened', 'round.settled', 'fill.posted'])
+    // T-13-26: the subscription secret must NOT appear anywhere in the response body.
+    expect(JSON.stringify(body)).not.toContain(SENTINEL_WEBHOOK_SECRET)
+    expect(body.secret).toBeUndefined()
+  })
+
+  it('POST /webhooks rejects a malformed body (zod .strict) with a sanitized 400', async () => {
+    const deps = makeDeps({})
+    const started = await listen(deps)
+    server = started.server
+
+    // Missing secret + an unknown event → 400 INVALID_BODY (never a 500 / never env echo).
+    const res = await fetch(`${started.base}/webhooks`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ url: 'https://x', events: ['not.an.event'] }),
+    })
+    const body = await readJson(res)
+    expect(res.status).toBe(400)
+    expect(body.error.code).toBe('INVALID_BODY')
+  })
+
+  it('DELETE /webhooks/:id unregisters, and 404s an unknown id', async () => {
+    const deps = makeDeps({})
+    const started = await listen(deps)
+    server = started.server
+
+    const reg = await readJson(
+      await fetch(`${started.base}/webhooks`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ url: 'https://x.example/h', secret: 's', events: ['round.opened'] }),
+      }),
+    )
+    const del = await fetch(`${started.base}/webhooks/${reg.id}`, { method: 'DELETE' })
+    const delBody = await readJson(del)
+    expect(del.status).toBe(200)
+    expect(delBody.unregistered).toBe(true)
+
+    const missing = await fetch(`${started.base}/webhooks/does-not-exist`, { method: 'DELETE' })
+    const missingBody = await readJson(missing)
+    expect(missing.status).toBe(404)
+    expect(missingBody.error.code).toBe('SUBSCRIPTION_NOT_FOUND')
+  })
+
+  it('POST /settle fires round.cleared, round.settled, and fill.posted (once per confirmation) — aggregate data only', async () => {
+    const { webhooks, emitted } = makeSpyWebhooks()
+    const settle = vi.fn(async (): Promise<SettleResult> => ({
+      clearingPrice: 100,
+      allocations: [
+        { desk: 'BankA', side: 'Buy', filledQty: 10 },
+        { desk: 'BankB', side: 'Sell', filledQty: 8 },
+        { desk: 'BankC', side: 'Sell', filledQty: 2 },
+      ],
+      matchedVolume: 10,
+      txConfirmations: 1,
+    }))
+    const readTradeConfirmations = vi.fn(async () => [
+      { desk: 'BankA', side: 'Buy' as const, filledQty: 10, clearingPrice: 100 },
+      { desk: 'BankB', side: 'Sell' as const, filledQty: 8, clearingPrice: 100 },
+      { desk: 'BankC', side: 'Sell' as const, filledQty: 2, clearingPrice: 100 },
+    ])
+    const deps = makeDeps({
+      queryRound: vi.fn(async (roundId: string) => ({ roundId, status: 'Closed' })),
+      settle,
+      readTradeConfirmations,
+      webhooks,
+    })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/settle`, { method: 'POST' })
+    expect(res.status).toBe(200)
+    // §4 canary intact.
+    expect((await readJson(res)).clearingPrice).toBe(100)
+
+    // The emits are fire-and-forget (scheduled off the request path) — drain the microtasks.
+    await new Promise((r) => setTimeout(r, 10))
+
+    const events = emitted.map((e) => e.event)
+    expect(events).toContain('round.cleared')
+    expect(events).toContain('round.settled')
+    // fill.posted fires ONCE PER confirmation (3 desks).
+    expect(events.filter((e) => e === 'fill.posted')).toHaveLength(3)
+
+    // round.settled carries the public uniform price + matched volume (aggregate only).
+    const settled = emitted.find((e) => e.event === 'round.settled')!
+    expect(settled.data.clearingPrice).toBe(100)
+    expect(settled.data.matchedVolume).toBe(10)
+    // Order-content sweep: no sealed order's limit price rides on the aggregate emits.
+    const clearedData = JSON.stringify(emitted.find((e) => e.event === 'round.cleared')!.data)
+    expect(clearedData).not.toContain('limit')
+  })
+
+  it('POST /settle still returns 200 with the byte-unchanged body when a webhook emit rejects', async () => {
+    // An emitter that always rejects — the legal settlement path must be unaffected.
+    const webhooks: Webhooks = {
+      register: vi.fn((): WebhookSubscription => ({ id: 'x', url: 'u', events: [] })),
+      unregister: vi.fn(() => true),
+      emit: vi.fn(async () => {
+        throw new Error('subscriber unreachable')
+      }),
+      deliveryLog: vi.fn(() => []),
+    }
+    const settle = vi.fn(async (): Promise<SettleResult> => ({
+      clearingPrice: 100,
+      allocations: [{ desk: 'BankA', side: 'Buy', filledQty: 10 }],
+      matchedVolume: 10,
+      txConfirmations: 1,
+    }))
+    const deps = makeDeps({
+      queryRound: vi.fn(async (roundId: string) => ({ roundId, status: 'Closed' })),
+      settle,
+      webhooks,
+    })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/settle`, { method: 'POST' })
+    const body = await readJson(res)
+    expect(res.status).toBe(200)
+    expect(body.status).toBe('Settled')
+    expect(body.clearingPrice).toBe(100)
+    expect(body.matchedVolume).toBe(10)
+    await new Promise((r) => setTimeout(r, 10)) // let the rejected emit settle harmlessly
   })
 })

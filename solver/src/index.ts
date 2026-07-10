@@ -20,6 +20,7 @@
 import { createApp, type AppDeps, type RoundView } from './api.js'
 import type { Clock, RoundStatus } from './clock.js'
 import type { Health } from './status.js'
+import type { Webhooks } from './webhooks.js'
 
 // Default window / port (overridable via env). ROUND_SECONDS drives the auto-close
 // timer; SOLVER_PORT is the :4100 bind.
@@ -98,6 +99,13 @@ export interface BuildDepsArgs {
   // the boot-wiring unit test (index.test.ts) need not inject it; buildDeps threads it through
   // unchanged. main() supplies the real ledger-backed source.
   statusSource?: AppDeps['statusSource']
+  // OPS-04: the lifecycle webhook emitter (webhooks.ts). Optional so the boot-wiring unit test
+  // can inject a SPY emitter to assert round.opened fires off the open seam. When present,
+  // buildDeps (a) fires round.opened off the openRound wrapper (FIRE-AND-FORGET — never blocking
+  // the open path) and (b) threads the SAME instance into AppDeps so createApp can serve the
+  // register/unregister endpoints + fire the settle-seam events. main() also wires round.sealed
+  // off the clock close seam via createClock's onClosed into this same instance.
+  webhooks?: Webhooks
 }
 
 // Assemble the AppDeps so the API routes are wired to the ledger + clock.
@@ -135,11 +143,21 @@ export const buildDeps = (args: BuildDepsArgs): AppDeps => {
     args.hostingMap ?? (async () => ({ nodes: [], perParty: {}, demoReal: true, caption: 'SAME PARTICIPANT (LOCALNET)' }))
   const onboardGuest: AppDeps['onboardGuest'] =
     args.onboardGuest ?? (async () => ({ party: '', joinUrl: '/join', roundId: '' }))
+  // OPS-04: FIRE-AND-FORGET webhook emit off the open seam — never block/branch the open path
+  // on a webhook (hard invariant). No-op when no emitter is injected (index.test default path).
+  const emitWebhook = (event: 'round.opened', data: Record<string, unknown>): void => {
+    if (!args.webhooks) return
+    void Promise.resolve()
+      .then(() => args.webhooks!.emit(event, data))
+      .catch(() => undefined)
+  }
   return {
-    // POST /round → ledger create THEN timer start (both).
+    // POST /round → ledger create THEN timer start (both), THEN fire round.opened.
     openRound: async (roundId, desks, windowSeconds): Promise<RoundView> => {
       const round = await ledger.openRound(roundId, desks, windowSeconds)
       openRoundClock(round.roundId, roundSeconds)
+      // OPS-04 round.opened — aggregate/round data only (id + desk count), never order content.
+      emitWebhook('round.opened', { roundId: round.roundId, desks: desks.length })
       return round
     },
     queryRound: ledger.queryRound,
@@ -181,6 +199,9 @@ export const buildDeps = (args: BuildDepsArgs): AppDeps => {
     onboardGuest,
     // OPS-02: the aggregate-only status source for the token-free /status surface (optional).
     statusSource: args.statusSource,
+    // OPS-04: thread the SAME webhook emitter into createApp for the register/unregister
+    // endpoints + the settle-seam emits (round.cleared/round.settled/fill.posted).
+    webhooks: args.webhooks,
     computeClearing: math.computeClearing,
     matchedAt: math.matchedAt,
     demandAt: math.demandAt,
@@ -237,6 +258,7 @@ const main = async (): Promise<void> => {
   const ledger = await import('./ledger.js')
   const auction = await import('./auction.js')
   const { createClock } = await import('./clock.js')
+  const { createWebhooks } = await import('./webhooks.js')
   const { createAgent } = await import('./agent.js')
   const { composeBrief } = await import('./brief.js')
   // TRUST-03: the decision proof bundle writer/reader (proof.ts). The write is an ADDITIVE
@@ -305,8 +327,23 @@ const main = async (): Promise<void> => {
     }
   }
 
-  // The clock force-closes ON-LEDGER via ledger.closeRound at the window / on demand.
-  const clock = createClock({ closeRound: ledger.closeRound })
+  // OPS-04: construct the lifecycle webhook emitter ONCE at boot. It is threaded into BOTH the
+  // clock (round.sealed off the close seam) and buildDeps/createApp (round.opened off the open
+  // seam + round.cleared/round.settled/fill.posted off the settle seam + the register/unregister
+  // endpoints). The per-subscription secret stays module-private inside webhooks.ts.
+  const webhooks: Webhooks = createWebhooks()
+
+  // The clock force-closes ON-LEDGER via ledger.closeRound at the window / on demand. OPS-04:
+  // onClosed fires round.sealed AFTER the authoritative close — FIRE-AND-FORGET (webhooks.emit
+  // never throws to the caller; the clock also guards it) so a webhook can never affect the seal.
+  const clock = createClock({
+    closeRound: ledger.closeRound,
+    onClosed: (roundId) => {
+      void Promise.resolve()
+        .then(() => webhooks.emit('round.sealed', { roundId }))
+        .catch(() => undefined)
+    },
+  })
 
   // REHYDRATE: recognize live rounds (the sandbox-seeded R1) so the solver does not
   // treat them as unknown. The ledger Round.status is authoritative.
@@ -603,6 +640,8 @@ const main = async (): Promise<void> => {
     onboardGuest,
     // OPS-02: the ledger-backed aggregate status source for the token-free /status surface.
     statusSource,
+    // OPS-04: the lifecycle webhook emitter (round.opened off the open seam; register/settle in createApp).
+    webhooks,
   })
 
   const app = createApp(deps)

@@ -43,6 +43,13 @@ export interface ClockDeps {
   // Force-close the round ON-LEDGER (ledger.ts closeRound). Called on timer expiry
   // and on an explicit forceClose. The ledger status remains authoritative.
   closeRound: (roundId: string) => Promise<unknown>
+  // OPS-04: OPTIONAL lifecycle seam fired AFTER a round transitions Open→Closed (window
+  // sealed) — whether by the auto-close timer OR an explicit forceClose. main() wires this
+  // to webhooks.emit('round.sealed', …). FIRE-AND-FORGET by contract: this is invoked after
+  // the authoritative on-ledger closeRound has already succeeded and its throw/rejection must
+  // NEVER be allowed to affect the close path (the caller wraps it so it can never block or
+  // branch the legal transition). The clock never passes a secret here — roundId only.
+  onClosed?: (roundId: string) => void
 }
 
 export interface Clock {
@@ -71,6 +78,16 @@ export const createClock = (deps: ClockDeps): Clock => {
     }
     await deps.closeRound(roundId)
     state.status = 'Closed'
+    // OPS-04 round.sealed seam — fired ONCE per Open→Closed transition, AFTER the
+    // authoritative on-ledger close. Guarded so a webhook-side throw can never affect the
+    // close (fire-and-forget, never block/branch the legal path).
+    if (deps.onClosed) {
+      try {
+        deps.onClosed(roundId)
+      } catch {
+        // Swallow — a lifecycle emitter must never perturb the round clock.
+      }
+    }
   }
 
   return {

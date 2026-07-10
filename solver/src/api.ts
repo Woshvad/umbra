@@ -37,6 +37,11 @@ import { buildStatus, renderStatusHtml, type Health, type RoundPhase, type Statu
 import { createIdempotency, type Idempotency } from './idempotency.js'
 import { transition, sealedAlias } from './fsm.js'
 import type { RoundStatus } from './clock.js'
+// OPS-04 webhooks.ts — the signed/retried lifecycle emitter + subscription registry. createApp
+// fires round.cleared/round.settled/fill.posted off the settle seam (FIRE-AND-FORGET — never
+// blocking/branching the legal path) and exposes register/unregister endpoints. The
+// per-subscription secret stays module-private inside webhooks.ts and is NEVER echoed.
+import { createWebhooks, type Webhooks, type WebhookEvent } from './webhooks.js'
 // CRYP-02/03 + VIZ-02 crypto types (TYPE-ONLY imports — erased at compile, so pulling
 // them in NEVER triggers tlock-js / snarkjs / circomlibjs module evaluation here; the real
 // implementations are dependency-injected via AppDeps, exactly like the ledger client).
@@ -231,6 +236,16 @@ export interface AppDeps {
   // fresh in-memory unit. The middleware is a no-op unless a POST carries an Idempotency-Key
   // header, so existing endpoints/tests are byte-unaffected.
   idempotency?: Idempotency
+
+  // ── OPS-04 lifecycle webhook emitter + subscription registry (webhooks.ts) ────────
+  // OPTIONAL: the signed/retried outbound webhook layer. When absent, createApp builds a
+  // fresh in-memory instance so existing endpoints/tests are byte-unaffected (an emit with no
+  // subscriptions is a no-op fan-out). createApp uses it to (a) serve POST /webhooks (register)
+  // + DELETE /webhooks/:id (unregister) and (b) FIRE round.cleared/round.settled/fill.posted off
+  // the settle seam — always FIRE-AND-FORGET so a webhook can never block or branch the legal
+  // settlement. round.opened (index.ts open seam) + round.sealed (clock.ts close seam) fire off
+  // the SAME instance, wired in main(). The per-subscription secret is never echoed/logged.
+  webhooks?: Webhooks
 }
 
 // WOW-07: the guest /join bootstrap returned by GET /guest/bootstrap. Party id + join
@@ -331,6 +346,24 @@ const proofEnvelopeBody = z
   })
   .strict()
 
+// ── zod schema for POST /webhooks (OPS-04 subscription register) ─────────────────
+// A subscriber registers a delivery URL + a per-subscription HMAC secret + an event filter.
+// The secret is accepted here and stored MODULE-PRIVATE inside webhooks.ts — it is NEVER
+// echoed back (the register response carries only { id, url, events }). Size caps bound a
+// hostile body (ASVS V5); `.strict()` rejects any unexpected field.
+const webhookRegisterBody = z
+  .object({
+    url: z.string().url().max(2048),
+    secret: z.string().min(1).max(512),
+    events: z
+      .array(
+        z.enum(['round.opened', 'round.sealed', 'round.cleared', 'round.settled', 'fill.posted']),
+      )
+      .min(1)
+      .max(5),
+  })
+  .strict()
+
 // Default timelock window (ms) when a request omits windowMs — one short demo batch.
 const DEFAULT_TIMELOCK_WINDOW_MS = 30_000
 
@@ -422,6 +455,20 @@ export const createApp = (deps: AppDeps): Express => {
   // a same-key-different-body → 422 IDEMPOTENCY_KEY_REUSED.
   const idempotency = deps.idempotency ?? createIdempotency()
   app.use(idempotency.middleware)
+
+  // OPS-04: the lifecycle webhook emitter + subscription registry. Absent in existing tests →
+  // a fresh in-memory instance (emit is a no-op fan-out with zero subscriptions), so the §11
+  // endpoints stay byte-compatible. round.opened/round.sealed fire off the index.ts/clock.ts
+  // seams into this SAME instance; round.cleared/round.settled/fill.posted fire off /settle below.
+  const webhooks = deps.webhooks ?? createWebhooks()
+  // FIRE-AND-FORGET emit: the legal settlement path must NEVER block on, branch on, or fail
+  // because of a webhook (hard invariant). We schedule the emit off the request path and
+  // swallow any rejection — the emitter already retries internally and logs secret-free.
+  const emitSafe = (event: WebhookEvent, data: Record<string, unknown>): void => {
+    void Promise.resolve()
+      .then(() => webhooks.emit(event, data))
+      .catch(() => undefined)
+  }
 
   // OPS-01/02: boot timestamp for uptime + the last clear (price/time), tracked in-closure and
   // set at settle. Both feed ONLY the aggregate /status surface — never any per-order data.
@@ -763,6 +810,34 @@ export const createApp = (deps: AppDeps): Express => {
       const matchedVolume =
         result.matchedVolume ??
         result.allocations.filter((a) => a.side === 'Buy').reduce((sum, a) => sum + a.filledQty, 0)
+      // OPS-04 lifecycle emits off the settle seam — FIRE-AND-FORGET, aggregate/round data
+      // only (NEVER a sealed order's limit / order content). round.cleared + round.settled
+      // carry the public uniform price + matched volume; fill.posted fires ONCE PER
+      // TradeConfirmation (Open Question 1). The confirmation read + fan-out run entirely off
+      // the request path so a webhook can never block or fail the byte-unchanged /settle reply.
+      emitSafe('round.cleared', { roundId: id, clearingPrice: result.clearingPrice, matchedVolume })
+      emitSafe('round.settled', {
+        roundId: id,
+        clearingPrice: result.clearingPrice,
+        matchedVolume,
+        txConfirmations: result.txConfirmations ?? 1,
+      })
+      void Promise.resolve()
+        .then(async () => {
+          const confs = await deps.readTradeConfirmations(id)
+          for (const c of confs) {
+            // The per-desk fill receipt — desk id + side + filled qty + the PUBLIC clearing
+            // price. This is the SETTLED fill, never the sealed order's private limit.
+            emitSafe('fill.posted', {
+              roundId: id,
+              desk: c.desk,
+              side: c.side,
+              filledQty: c.filledQty,
+              clearingPrice: c.clearingPrice,
+            })
+          }
+        })
+        .catch(() => undefined)
       res.json({
         roundId: id,
         status: 'Settled',
@@ -1030,6 +1105,41 @@ export const createApp = (deps: AppDeps): Express => {
     wrap(async (_req, res) => {
       const bootstrap = await deps.onboardGuest()
       res.json(bootstrap)
+    }),
+  )
+
+  // ══ OPS-04 webhook subscription management (operator-plane) ═══════════════════════
+  // POST /webhooks registers a { url, secret, events } subscription; DELETE /webhooks/:id
+  // unregisters it. These sit behind the SAME operator boundary as the §11 mutating
+  // endpoints. The per-subscription HMAC secret is stored MODULE-PRIVATE inside webhooks.ts
+  // and is NEVER echoed — the register response carries only { id, url, events } (T-13-26).
+
+  // POST /webhooks — register a lifecycle subscription (zod-validated, secret NEVER echoed).
+  app.post(
+    '/webhooks',
+    wrap(async (req, res) => {
+      const parsed = webhookRegisterBody.safeParse(req.body ?? {})
+      if (!parsed.success) {
+        const issue = parsed.error.issues[0]
+        const path = issue?.path.join('.') || '(body)'
+        throw new ApiError(400, 'INVALID_BODY', `invalid request body: ${path} — ${issue?.message ?? 'invalid'}`)
+      }
+      // register() stores the secret privately and returns a secret-free handle { id, url, events }.
+      const sub = webhooks.register(parsed.data)
+      res.status(201).json(sub)
+    }),
+  )
+
+  // DELETE /webhooks/:id — unregister a subscription. 404 when the id is unknown.
+  app.delete(
+    '/webhooks/:id',
+    wrap(async (req, res) => {
+      const { id } = req.params
+      const removed = webhooks.unregister(id)
+      if (!removed) {
+        throw new ApiError(404, 'SUBSCRIPTION_NOT_FOUND', `webhook subscription ${id} not found`)
+      }
+      res.json({ id, unregistered: true })
     }),
   )
 

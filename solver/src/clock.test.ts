@@ -86,6 +86,50 @@ describe('in-memory round clock', () => {
     expect(clock.getState('does-not-exist')).toBeUndefined()
   })
 
+  // ── OPS-04: the round.sealed close seam (onClosed) ────────────────────────────────
+  it('fires onClosed (round.sealed seam) EXACTLY once when the auto-close timer seals the window', async () => {
+    const closeRound = vi.fn(async () => undefined)
+    const onClosed = vi.fn()
+    const clock = createClock({ closeRound, onClosed })
+
+    clock.openRoundClock('R1', ROUND_SECONDS)
+    expect(onClosed).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(ROUND_SECONDS * 1000)
+
+    // The window sealed → the lifecycle seam fired once with the roundId (no secret).
+    expect(onClosed).toHaveBeenCalledTimes(1)
+    expect(onClosed).toHaveBeenCalledWith('R1')
+  })
+
+  it('fires onClosed on forceClose, and NOT a second time when the cancelled timer would have fired', async () => {
+    const closeRound = vi.fn(async () => undefined)
+    const onClosed = vi.fn()
+    const clock = createClock({ closeRound, onClosed })
+
+    clock.openRoundClock('R1', ROUND_SECONDS)
+    await clock.forceClose('R1')
+    expect(onClosed).toHaveBeenCalledTimes(1)
+
+    // The auto-close timer was cancelled — advancing past it must NOT re-fire the seam.
+    await vi.advanceTimersByTimeAsync(ROUND_SECONDS * 1000)
+    expect(onClosed).toHaveBeenCalledTimes(1)
+  })
+
+  it('an onClosed that throws never perturbs the close (round still transitions to Closed)', async () => {
+    const closeRound = vi.fn(async () => undefined)
+    const onClosed = vi.fn(() => {
+      throw new Error('webhook emitter blew up')
+    })
+    const clock = createClock({ closeRound, onClosed })
+
+    clock.openRoundClock('R1', ROUND_SECONDS)
+    // forceClose must resolve cleanly despite the throwing seam (fire-and-forget discipline).
+    await expect(clock.forceClose('R1')).resolves.toBeUndefined()
+    expect(closeRound).toHaveBeenCalledTimes(1)
+    expect(clock.getState('R1')?.status).toBe('Closed')
+  })
+
   it('rehydrate seeds map state from live rounds without starting a timer', async () => {
     const closeRound = vi.fn(async () => undefined)
     const clock = createClock({ closeRound })

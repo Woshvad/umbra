@@ -248,7 +248,13 @@ function CellFrame({ label, cell }: { label: string; cell: Cell }) {
   const dashed = cell.kind === 'reconstructed'
   const style: CSSProperties = {
     padding: '12px 12px 13px',
-    border: dashed ? '1px dashed #E2231A' : '1px solid rgba(10,10,10,.14)',
+    // T3 reconstructed = ink-dashed (red is carried by the tag, not the border); T1 visible = solid
+    // ink (truth); blinded = muted redaction surface.
+    border: dashed
+      ? '1px dashed #0A0A0A'
+      : cell.kind === 'visible'
+        ? '1px solid #0A0A0A'
+        : '1px solid rgba(10,10,10,.14)',
   }
   return (
     <div style={style}>

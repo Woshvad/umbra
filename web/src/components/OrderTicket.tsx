@@ -922,8 +922,8 @@ export default function OrderTicket({ ctx, deskKey, order }: Props) {
                     </div>
                   </div>
                   <div className="font-body text-13 opacity-70" style={{ lineHeight: 1.6, marginTop: '16px' }}>
-                    Undecryptable by anyone — including the venue — until the drand beacon publishes at
-                    close.
+                    Timelock-encrypted to the close beacon — the ciphertext is undecryptable until the
+                    drand round publishes; even the operator can&rsquo;t open it early.
                   </div>
                 </>
               )}

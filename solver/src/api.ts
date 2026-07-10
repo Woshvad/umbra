@@ -26,6 +26,17 @@ import { z } from 'zod'
 import type { OrderView, Allocation, ClearingResult } from './auction.js'
 import type { AgentResult } from './agent.js'
 import type { ProofBundle } from './proof.js'
+// OPS-01 observability (telemetry.ts): request-path spans + named metric instruments. Both
+// degrade to no-ops when initTelemetry() has not run (tests), so importing them is inert.
+import { withSpan, instruments } from './telemetry.js'
+// OPS-02 public status (status.ts): the pure aggregate builder + the token-free brand page.
+import { buildStatus, renderStatusHtml, type Health, type RoundPhase, type StatusInput } from './status.js'
+// OPS-03 reliability: the idempotency middleware (dedupe mutating POSTs) + the FSM guard
+// (reject illegal lifecycle transitions with 409). transition() throws an ApiError-shaped
+// error the secret-safe middleware serializes identically to a native ApiError.
+import { createIdempotency, type Idempotency } from './idempotency.js'
+import { transition, sealedAlias } from './fsm.js'
+import type { RoundStatus } from './clock.js'
 // CRYP-02/03 + VIZ-02 crypto types (TYPE-ONLY imports — erased at compile, so pulling
 // them in NEVER triggers tlock-js / snarkjs / circomlibjs module evaluation here; the real
 // implementations are dependency-injected via AppDeps, exactly like the ledger client).
@@ -204,6 +215,22 @@ export interface AppDeps {
   // delivered to the /join page there; it must NEVER appear in this response or a QR
   // payload (V2/V4 security / T-11-03-QR).
   onboardGuest: () => Promise<GuestBootstrap>
+
+  // ── OPS-02 public status source (token-free /status + /status.html) ──────────────
+  // OPTIONAL: the aggregate-only health source for the public status surface. Returns ONLY
+  // venue-level aggregates — health, the CURRENT round STATUS (never an order/desk/secret),
+  // and a build/version string. api.ts maps the round status → display phase via the FSM
+  // sealedAlias and adds uptime + the last clear (tracked in-closure at settle). When absent
+  // (existing tests), /status reports an idle, operational venue. NEVER carries private data.
+  statusSource?: () =>
+    | Promise<{ health: Health; roundStatus: RoundStatus | null; build: string }>
+    | { health: Health; roundStatus: RoundStatus | null; build: string }
+
+  // ── OPS-03 idempotency unit (opt-in dedupe of mutating POSTs) ─────────────────────
+  // OPTIONAL: an injected idempotency store + middleware. When absent, createApp builds a
+  // fresh in-memory unit. The middleware is a no-op unless a POST carries an Idempotency-Key
+  // header, so existing endpoints/tests are byte-unaffected.
+  idempotency?: Idempotency
 }
 
 // WOW-07: the guest /join bootstrap returned by GET /guest/bootstrap. Party id + join
@@ -228,6 +255,21 @@ class ApiError extends Error {
     this.name = 'ApiError'
   }
 }
+
+// Duck-type an ApiError-shaped error. api.ts and fsm.ts each define a structurally-identical
+// ApiError (fsm.ts keeps its own to avoid an api↔fsm import cycle); both carry a numeric
+// `status`, a string `code`, a string `message`, and `name === 'ApiError'`. The error
+// middleware uses this so the FSM guard's 409 serializes into the secret-safe envelope.
+const isApiErrorShaped = (
+  err: unknown,
+): err is { status: number; code: string; message: string } =>
+  err instanceof ApiError ||
+  (typeof err === 'object' &&
+    err !== null &&
+    (err as { name?: unknown }).name === 'ApiError' &&
+    typeof (err as { status?: unknown }).status === 'number' &&
+    typeof (err as { code?: unknown }).code === 'string' &&
+    typeof (err as { message?: unknown }).message === 'string')
 
 // ── zod schema for POST /round ───────────────────────────────────────────────────
 // Both fields optional (a canonical demo round needs no body); validate types/shape
@@ -365,11 +407,76 @@ const buildIndicative = (deps: AppDeps, views: OrderView[]): IndicativeBlock => 
   return { indicativePrice: pStar, netImbalance, estMatched }
 }
 
+// OPS-02: the build/version string surfaced by the public /status page (aggregate, non-secret).
+const STATUS_BUILD = process.env.UMBRA_BUILD ?? 'phase-13'
+
 export const createApp = (deps: AppDeps): Express => {
   const app = express()
   app.use(express.json())
-  // CORS scoped to the Vite dev origin ONLY — never '*' (T-04-09 / V4).
+  // CORS scoped to the Vite dev origin ONLY — never '*' (T-04-09 / V4). Registered BEFORE the
+  // idempotency guard so a replayed response still carries the CORS headers.
   app.use(cors({ origin: ALLOWED_ORIGIN }))
+  // OPS-03: the idempotency middleware registers AFTER express.json() so req.body is parsed
+  // when we hash it. OPT-IN — a no-op unless a POST carries an Idempotency-Key header, so the
+  // existing endpoints/tests are byte-unaffected. Deduped replays return the ORIGINAL response;
+  // a same-key-different-body → 422 IDEMPOTENCY_KEY_REUSED.
+  const idempotency = deps.idempotency ?? createIdempotency()
+  app.use(idempotency.middleware)
+
+  // OPS-01/02: boot timestamp for uptime + the last clear (price/time), tracked in-closure and
+  // set at settle. Both feed ONLY the aggregate /status surface — never any per-order data.
+  const bootAt = Date.now()
+  let lastClear: { price: number; at: string } | undefined
+
+  const uptimeSeconds = (): number => Math.floor((Date.now() - bootAt) / 1000)
+
+  // Assemble the aggregate-only StatusInput: health + display phase (Closed→'Sealed' via the
+  // FSM sealedAlias) + uptime + build + the optional last clear. Deliberately lists only
+  // allow-listed aggregate fields — no order/desk/secret can ride along (Pitfall 7 / T-13-19).
+  const buildStatusInput = async (): Promise<StatusInput> => {
+    const src = deps.statusSource
+      ? await deps.statusSource()
+      : { health: 'operational' as Health, roundStatus: null as RoundStatus | null, build: STATUS_BUILD }
+    const phase: RoundPhase = src.roundStatus === null ? null : (sealedAlias(src.roundStatus) as Exclude<RoundPhase, null>)
+    const input: StatusInput = {
+      health: src.health,
+      phase,
+      uptimeSeconds: uptimeSeconds(),
+      build: src.build,
+    }
+    if (lastClear) {
+      input.lastClearPrice = lastClear.price
+      input.lastClearAt = lastClear.at
+    }
+    return input
+  }
+
+  // ══ OPS-01/02 token-free public surfaces (S1) — NO auth context, aggregate-only ══════
+  // These three routes take NO token and expose ZERO private order/secret data (T-13-19).
+
+  // GET /health — liveness/readiness for alerting/orchestration. Aggregate-only.
+  app.get('/health', (_req, res) => {
+    res.json({ status: 'ok', uptimeSeconds: uptimeSeconds() })
+  })
+
+  // GET /status — the public venue-health JSON. buildStatus() lists only allow-listed
+  // aggregate keys (health, phase, last clear price/time, uptime, build) — NEVER an order,
+  // desk, limit, token, or operator identifier. Reachable without any token.
+  app.get(
+    '/status',
+    wrap(async (_req, res) => {
+      res.json(buildStatus(await buildStatusInput()))
+    }),
+  )
+
+  // GET /status.html — the self-contained brand-styled status page (no React/Tailwind/auth).
+  // renderStatusHtml inlines only the aggregate values + a client-side poll of /status.
+  app.get(
+    '/status.html',
+    wrap(async (_req, res) => {
+      res.type('html').send(renderStatusHtml(buildStatus(await buildStatusInput())))
+    }),
+  )
 
   // POST /round — open a round (zod-validated body).
   app.post(
@@ -387,6 +494,8 @@ export const createApp = (deps: AppDeps): Express => {
       const deskList = desks ?? []
       const windowSecs = windowSeconds ?? 60
       const round = await deps.openRound(id, deskList, windowSecs)
+      // OPS-01 metric: a round entered the Open window (no-op until initTelemetry runs).
+      instruments.roundsOpened.add(1)
       res.status(201).json({
         roundId: round.roundId,
         status: 'Open',
@@ -506,6 +615,13 @@ export const createApp = (deps: AppDeps): Express => {
     '/round/:id/close',
     wrap(async (req, res) => {
       const { id } = req.params
+      // OPS-03 FSM guard: the only legal edge into Closed is Open→Closed. A re-close of an
+      // already-Closed round stays idempotent (the clock's forceClose is a no-op), but
+      // closing a Cleared/Settled round is an illegal edge → 409 ILLEGAL_TRANSITION.
+      const round = await deps.queryRound(id)
+      if (round && round.status !== 'Closed') {
+        transition(round.status as RoundStatus, 'Closed')
+      }
       await deps.closeRound(id)
       res.json({ roundId: id, status: 'Closed' })
     }),
@@ -518,7 +634,12 @@ export const createApp = (deps: AppDeps): Express => {
       const { id } = req.params
       const sealed = await deps.readSealedOrders(id)
       const views: OrderView[] = sealed.map((s) => s.view)
-      const { clearingPrice, allocations } = deps.computeClearing(views)
+      // OPS-01: span-wrap the §8 clear-compute (round.id-correlated) + record its latency.
+      const clearStart = Date.now()
+      const { clearingPrice, allocations } = await withSpan('clear.compute', id, () =>
+        deps.computeClearing(views),
+      )
+      instruments.clearLatencyMs.record(Date.now() - clearStart)
       // matchedVolume is NOT on ClearingResult — derive it here from the exported helper.
       const matchedVolume = deps.matchedAt(views, clearingPrice)
       const curve = buildCurve(deps, views)
@@ -527,6 +648,8 @@ export const createApp = (deps: AppDeps): Express => {
       // {verified, source} block. proposeClearing never throws (it handles keyless /
       // SDK-error internally → deterministic fallback) — no try/catch needed.
       const agent = await deps.proposeClearing(views)
+      // OPS-01 metric: an agent proposal was reconciled against §8, labelled by its source.
+      instruments.agentVerifiedTotal.add(1, { source: agent.source })
       res.json({
         roundId: id,
         clearingPrice,
@@ -617,11 +740,22 @@ export const createApp = (deps: AppDeps): Express => {
       if (!round) {
         throw new ApiError(404, 'ROUND_NOT_FOUND', `round ${id} not found`)
       }
-      // Double-settle guard (T-04-06): reject a round already cleared/settled.
+      // Double-settle guard (T-04-06): reject a round already cleared/settled — kept EXACTLY
+      // as strict (ALREADY_SETTLED 409) so any consumer of that code stays byte-compatible.
       if (TERMINAL_STATUSES.has(round.status)) {
         throw new ApiError(409, 'ALREADY_SETTLED', `round ${id} is already ${round.status}`)
       }
-      const result = await deps.settle(id)
+      // OPS-03 FSM guard: fold the lifecycle pre-check in. The settle route performs the
+      // Closed→Cleared Round.Clear step, so a legal precondition is status === 'Closed'. A
+      // settle-before-close (Open) is an illegal edge → 409 ILLEGAL_TRANSITION (before any
+      // ledger work). Cleared/Settled were already rejected above; this catches the Open case.
+      transition(round.status as RoundStatus, 'Cleared')
+      // OPS-01: span-wrap the settle path (round.id-correlated) + record its latency.
+      const settleStart = Date.now()
+      const result = await withSpan('round.settle', id, () => deps.settle(id))
+      instruments.settleLatencyMs.record(Date.now() - settleStart)
+      // OPS-02: record the last clear for the aggregate /status surface (public uniform price).
+      lastClear = { price: result.clearingPrice, at: new Date().toISOString() }
       // matchedVolume is always set by the live settle path (Round.Clear's totalMatched);
       // if a deps impl omits it, reconstruct from the verified Buy-side allocations.
       // NEVER read the sealed book here — Round.Clear RETIRED those orders, so a recompute
@@ -905,7 +1039,10 @@ export const createApp = (deps: AppDeps): Express => {
   // exception (which COULD embed a path/token) never reaches the client. The Operator
   // token, ANTHROPIC_API_KEY, process.env, and request headers are NEVER serialized.
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-    if (err instanceof ApiError) {
+    // Recognize BOTH api.ts's ApiError AND the structurally-identical fsm.ts ApiError (which
+    // carries { status, code, message, name:'ApiError' } — see fsm.ts) by duck-typing, so the
+    // FSM guard's secret-free 409 serializes into the SAME secret-safe envelope.
+    if (isApiErrorShaped(err)) {
       res.status(err.status).json({ error: { code: err.code, message: err.message } })
       return
     }

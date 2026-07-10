@@ -1597,3 +1597,197 @@ describe('solver crypto endpoints (CRYP-02/03/VIZ-02)', () => {
     expect(wire).not.toContain(SENTINEL_WITNESS)
   })
 })
+
+// ── OPS-01/02/03: observability + public status + idempotency/FSM reliability ─────────
+// The token-free S1 surfaces (/health, /status, /status.html) must expose ZERO private
+// order/secret data (T-13-19); mutating POSTs carrying an Idempotency-Key must dedupe
+// (replay / 422 cross-body, T-13-20); and the round FSM must reject illegal edges with 409.
+describe('solver OPS-01/02/03 surfaces (status + idempotency + FSM)', () => {
+  let server: Server | undefined
+
+  beforeEach(() => {
+    server = undefined
+  })
+
+  afterEach(async () => {
+    if (server) {
+      await new Promise<void>((resolve) => server!.close(() => resolve()))
+      server = undefined
+    }
+  })
+
+  it('GET /health returns ok + uptimeSeconds without any token', async () => {
+    const started = await listen(makeDeps({}))
+    server = started.server
+
+    const res = await fetch(`${started.base}/health`)
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    expect(body.status).toBe('ok')
+    expect(typeof body.uptimeSeconds).toBe('number')
+  })
+
+  it('GET /status returns aggregate-only health JSON (idle default) — no order/secret keys', async () => {
+    const started = await listen(makeDeps({}))
+    server = started.server
+
+    const res = await fetch(`${started.base}/status`)
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    // Default (no statusSource) → an idle, operational venue.
+    expect(body.health).toBe('operational')
+    expect(body.phase).toBeNull()
+    expect(typeof body.uptimeSeconds).toBe('number')
+    expect(typeof body.build).toBe('string')
+    // The wire shape is a fixed allow-list — no order/desk/limit/allocation field rides along.
+    expect(Object.keys(body).sort()).toEqual(['build', 'health', 'phase', 'uptimeSeconds'])
+    for (const forbidden of ['allocations', 'orders', 'desk', 'limit', 'sealedOrderCount', 'curve']) {
+      expect(body).not.toHaveProperty(forbidden)
+    }
+  })
+
+  it('GET /status maps the round status → display phase via the FSM sealedAlias (Closed→Sealed)', async () => {
+    const started = await listen(
+      makeDeps({
+        statusSource: () => ({ health: 'operational', roundStatus: 'Closed', build: 'phase-13' }),
+      }),
+    )
+    server = started.server
+
+    const res = await fetch(`${started.base}/status`)
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    // A Closed round renders as the display phase "Sealed" (auction window sealed shut).
+    expect(body.phase).toBe('Sealed')
+  })
+
+  it('GET /status + /status.html pass an order-sweep + secret-sweep (T-13-19)', async () => {
+    // A statusSource closing over BOTH sentinels (as the real ledger/agent hold their
+    // secrets) plus a distinct desk name — none of which may reach either public surface.
+    const SENTINEL_DESK = 'DeskThatMustNeverLeak'
+    const statusSource = vi.fn(() => {
+      void SENTINEL_TOKEN
+      void SENTINEL_API_KEY
+      void SENTINEL_DESK
+      return { health: 'operational' as const, roundStatus: 'Open' as const, build: 'phase-13' }
+    })
+    const started = await listen(makeDeps({ statusSource }))
+    server = started.server
+
+    const jsonWire = await fetch(`${started.base}/status`).then((r) => r.text())
+    const htmlRes = await fetch(`${started.base}/status.html`)
+    const htmlWire = await htmlRes.text()
+
+    expect(htmlRes.headers.get('content-type')).toContain('text/html')
+    // The honest public-health tag is present; the page carries no order/secret data.
+    expect(htmlWire).toContain('PUBLIC HEALTH')
+    for (const wire of [jsonWire, htmlWire]) {
+      expect(wire).not.toContain(SENTINEL_TOKEN)
+      expect(wire).not.toContain(SENTINEL_API_KEY)
+      expect(wire).not.toContain(SENTINEL_DESK)
+    }
+  })
+
+  it('POST /round replays the ORIGINAL response for a same key+body (no re-open) — idempotent', async () => {
+    const openRound = vi.fn(async (roundId: string): Promise<RoundView> => ({
+      roundId,
+      status: 'Open',
+      openedAt: '2026-07-10T00:00:00Z',
+      windowSeconds: 60,
+    }))
+    const started = await listen(makeDeps({ openRound }))
+    server = started.server
+
+    const post = () =>
+      fetch(`${started.base}/round`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'key-abc' },
+        body: JSON.stringify({ roundId: 'R9', desks: ['BankA'] }),
+      })
+
+    const first = await post()
+    const firstJson = await readJson(first)
+    const second = await post()
+    const secondJson = await readJson(second)
+
+    expect(first.status).toBe(201)
+    expect(second.status).toBe(201)
+    // Byte-identical replay of the original response...
+    expect(secondJson).toEqual(firstJson)
+    // ...and the handler (ledger open) ran EXACTLY once.
+    expect(openRound).toHaveBeenCalledTimes(1)
+  })
+
+  it('POST /round with a reused key but a DIFFERENT body → 422 IDEMPOTENCY_KEY_REUSED', async () => {
+    const openRound = vi.fn(async (roundId: string): Promise<RoundView> => ({ roundId, status: 'Open' }))
+    const started = await listen(makeDeps({ openRound }))
+    server = started.server
+
+    const first = await fetch(`${started.base}/round`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'Idempotency-Key': 'key-xyz' },
+      body: JSON.stringify({ roundId: 'R10', desks: ['BankA'] }),
+    })
+    expect(first.status).toBe(201)
+
+    const reuse = await fetch(`${started.base}/round`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'Idempotency-Key': 'key-xyz' },
+      body: JSON.stringify({ roundId: 'R10-DIFFERENT', desks: ['BankB'] }),
+    })
+    const reuseJson = await readJson(reuse)
+
+    expect(reuse.status).toBe(422)
+    expect(reuseJson.error).toHaveProperty('code', 'IDEMPOTENCY_KEY_REUSED')
+    // The handler ran only for the FIRST body — the reused-key mismatch never re-executed it.
+    expect(openRound).toHaveBeenCalledTimes(1)
+  })
+
+  it('POST /round/:id/settle on a non-cleared (Open) round → 409 ILLEGAL_TRANSITION (FSM guard)', async () => {
+    const deps = makeDeps({
+      queryRound: vi.fn(async (roundId: string) => ({ roundId, status: 'Open' })),
+    })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/settle`, { method: 'POST' })
+    const body = await readJson(res)
+
+    expect(res.status).toBe(409)
+    expect(body.error).toHaveProperty('code', 'ILLEGAL_TRANSITION')
+    // settle must NOT run for an illegal settle-before-close edge.
+    expect(deps.settle).not.toHaveBeenCalled()
+  })
+
+  it('POST /round/:id/settle still clears the §4 fixture at $100.00 / matched 10 (FSM legal path)', async () => {
+    const { allocations } = computeClearing(SECTION4_VIEWS)
+    const settle = vi.fn(async (): Promise<SettleResult> => ({
+      clearingPrice: 100,
+      allocations,
+      matchedVolume: 10,
+      txConfirmations: 1,
+    }))
+    const deps = makeDeps({
+      queryRound: vi.fn(async (roundId: string) => ({ roundId, status: 'Closed' })),
+      settle,
+    })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/settle`, { method: 'POST' })
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    expect(body.status).toBe('Settled')
+    expect(body.clearingPrice).toBe(100) // §4 canary — 100.00 unchanged under the FSM guard.
+    expect(body.matchedVolume).toBe(10)
+    expect(settle).toHaveBeenCalledWith('R1')
+
+    // After a settle the last clear surfaces on the aggregate /status (public uniform price).
+    const status = await readJson(await fetch(`${started.base}/status`))
+    expect(status.lastClearPrice).toBe(100)
+  })
+})

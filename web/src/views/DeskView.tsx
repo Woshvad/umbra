@@ -12,6 +12,7 @@ import { Asset } from '@daml.js/umbra-0.1.0/lib/Umbra/Asset/module'
 import OrderTicket from '../components/OrderTicket'
 import HoldingsPanel from '../components/HoldingsPanel'
 import FillCard from '../components/FillCard'
+import RfqPanel from '../components/RfqPanel'
 
 const BOND_SYMBOL = 'BONDX'
 const CASH_SYMBOL = 'USDCx'
@@ -23,6 +24,10 @@ type Props = {
 // Inner body — rendered INSIDE the active desk's own ctx.DamlLedger provider, so every
 // hook here reads only this desk's own contracts.
 function DeskBody({ ctx, deskKey }: { ctx: Ctx; deskKey: DeskKey }) {
+  // The desk's OWN identity for the S3 RFQ panel (requester party + display firm code). The
+  // panel rides the credential-free solver seam — no token is threaded, only the identity.
+  const requester = tokens[deskKey].party
+  const firm = DESKS.find((d) => d.key === deskKey)?.code ?? deskKey
   const orders = ctx.useStreamQueries(Order)
   const order = orders.contracts[0]?.payload
 
@@ -49,30 +54,36 @@ function DeskBody({ ctx, deskKey }: { ctx: Ctx; deskKey: DeskKey }) {
   }
 
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'minmax(0,420px) 1fr',
-        gap: 0,
-        borderTop: '1px solid #0A0A0A',
-      }}
-    >
-      {/* Left — Order Ticket */}
-      <div style={{ padding: '28px 36px 30px 0', borderRight: '1px solid #0A0A0A' }}>
-        <OrderTicket ctx={ctx} deskKey={deskKey} order={order} />
+    <>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0,420px) 1fr',
+          gap: 0,
+          borderTop: '1px solid #0A0A0A',
+        }}
+      >
+        {/* Left — Order Ticket */}
+        <div style={{ padding: '28px 36px 30px 0', borderRight: '1px solid #0A0A0A' }}>
+          <OrderTicket ctx={ctx} deskKey={deskKey} order={order} />
+        </div>
+
+        {/* Right — Holdings + Fill */}
+        <div style={{ padding: '28px 0 0 40px' }}>
+          <HoldingsPanel
+            ctx={ctx}
+            bondAfter={bondAfter}
+            cashAfter={cashAfter}
+            fillColor={fillColor}
+          />
+          <FillCard ctx={ctx} deskKey={deskKey} />
+        </div>
       </div>
 
-      {/* Right — Holdings + Fill */}
-      <div style={{ padding: '28px 0 0 40px' }}>
-        <HoldingsPanel
-          ctx={ctx}
-          bondAfter={bondAfter}
-          cashAfter={cashAfter}
-          fillColor={fillColor}
-        />
-        <FillCard ctx={ctx} deskKey={deskKey} />
-      </div>
-    </div>
+      {/* S3 — ADJ-02 RFQ side-mode panel (additive, below the OrderTicket). Desk-plane
+          only: rides the credential-free solver seam on the desk's OWN identity. */}
+      <RfqPanel requester={requester} firm={firm} />
+    </>
   )
 }
 

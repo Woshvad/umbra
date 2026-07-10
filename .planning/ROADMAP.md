@@ -381,6 +381,41 @@ Plans:
   3. Only whitelisted, eligibility-checked (accreditation/jurisdiction/sanctions) desk parties can create an `Order` or hold the bond/cash asset; an ineligible party is rejected on-ledger (COMP-01).
   4. A guest joins as a 4th desk via QR/mobile and sees only their own fill; the three-node topology view shows orders resident on separate participants and the atomic cross-node settle (WOW-07, VIZ-03).
 
+
+**Plans**: 11 plans (6 waves)
+Plans:
+
+**Wave 1**
+
+- [ ] 11-01-PLAN.md — Instrument.daml + Holding.daml (token-agnostic CN-Token-Standard custody + bond lock; retire Asset) [DFIN-01, DFIN-03]
+- [ ] 11-02-PLAN.md — Compliance.daml DeskEligibility keyed credential + isEligible + positive test [COMP-01]
+- [ ] 11-03-PLAN.md — solver topology.ts (isLocal hosting probe) + /topology + guest-onboard.mjs (bankD + scoped token) [WOW-07, VIZ-03]
+
+**Wave 2** *(blocked on 11-01)*
+
+- [ ] 11-04-PLAN.md — Settlement.daml Batch/Instruction (buildInstructions/netLegs/conservationOk/settleBatch) + netting-conserves test [DFIN-02, DFIN-03]
+
+**Wave 3** *(blocked on 11-01/11-02/11-04)*
+
+- [ ] 11-05-PLAN.md — Round.Clear Batch rewrite (drop single-buyer guard, conservation asserts, cashInstrument) + eligibility gate + Holding bond + Setup/Tests migration; §4 clears $100.00 [DFIN-01, DFIN-02, DFIN-03, COMP-01]
+
+**Wave 4** *(blocked on 11-05)*
+
+- [ ] 11-06-PLAN.md — Daml goldens: multibuyer 2x2 + cash-agnostic + ineligible-rejected (both points) + guest-fill privacy [DFIN-02, DFIN-03, COMP-01, WOW-07]
+- [ ] 11-07-PLAN.md — solver settle() → Holding cids + N-buyer + cashInstrument; settlement.ts netLegs mirror + 2x2 TS golden (parity) [DFIN-02, DFIN-03]
+
+**Wave 5** *(blocked on 11-05/11-06/11-03)*
+
+- [ ] 11-08-PLAN.md — Regenerate+commit web/daml.js + guest desk (bankD) plumbing + Nav view 07 + solver.ts topology/settlement-meta client [DFIN-01, WOW-07, VIZ-03]
+
+**Wave 6** *(blocked on 11-08; views also on 11-03/11-07)*
+
+- [ ] 11-09-PLAN.md — TopologyView (view 07) + TopologyNode + demo-real badge + AtomicStamp cross-node settle [VIZ-03]
+- [ ] 11-10-PLAN.md — Guest /join mobile (OrderTicket/FillCard reuse) + QrJoin (qrcode.react gate / SVG) + Theatre QR host + verbatim COMP-01 reject [WOW-07, COMP-01]
+- [ ] 11-11-PLAN.md — SettlementView/DvpLegs deltas: Batch finality grammar + honest provenance tag + netting toggle + token-agnostic cash + guest row [DFIN-01, DFIN-02, DFIN-03, WOW-07]
+
+**UI hint**: yes
+
 ### Phase 12: Real On-Chain (Canton DevNet) — *parallel Track A*
 
 **Goal**: Take Umbra off LocalNet onto the real Canton Network (DevNet), on real auth/ops — the frozen DAR ports unchanged; the work is the connection/auth/ops layer plus the external sponsor gate.
@@ -418,6 +453,6 @@ Build waves run in numeric order 8 → 9 → 10 → 11. Track A (Phase 12) runs 
 | 8. Demo Hardening | 7/7 | Built · live UAT pending | 2026-07-09 |
 | 9. Auction Depth & Live Viz | 7/7 | Built · live UAT pending | 2026-07-09 |
 | 10. Cryptographic Privacy | 10/10 | Built · live UAT pending | 2026-07-10 |
-| 11. Settlement & Institutional Grade | 0/— | Not started | — |
+| 11. Settlement & Institutional Grade | 0/11 | Planned | — |
 | 12. Real On-Chain (Canton DevNet) | 0/— | Not started (external gate) | — |
 | 13. Platform Baseline & Adjacent | 0/— | Not started (ongoing) | — |

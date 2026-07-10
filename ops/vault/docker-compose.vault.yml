@@ -1,0 +1,52 @@
+# Umbra — HashiCorp Vault (dev mode) for the OPS-02 SecretsProvider `vault` backend.
+#
+# This is a STANDALONE compose file (NOT merged into the LocalNet or Keycloak stacks) so it
+# can be brought up/down independently for the vault-backed secrets UAT. The solver reads
+# managed secrets (ANTHROPIC_API_KEY / operator token / party tokens) from KV v2 over the
+# raw JSON API — `${VAULT_ADDR}/v1/secret/data/umbra/<key>` — see solver/src/secrets.ts.
+#
+# PORT is deliberately OFF the rest of the stack (:3975/:2975/:4975 Canton, :7575 dev JSON
+# API, :5173 web, :4100 solver, :8443/:8081/:55433 Keycloak) to avoid collisions:
+#   - Vault ......... host :8200  (http://127.0.0.1:8200)
+#
+# SECURITY (T-13-05, accept): dev mode runs UNSEALED, IN-MEMORY, with a FIXED ROOT TOKEN.
+# The root token below is **UNSAFE-DEV** — it exists only for the offline/UAT dev loop and
+# mirrors the LocalNet `unsafe` HMAC-secret precedent. It is NOT a production credential.
+# The production path is AppRole (short-lived, scoped) — see docs/SECRETS-RUNBOOK.md. Live,
+# zero-downtime, vault-backed rotation is a UAT gate, not an offline claim.
+#
+# Boot:  docker compose -f ops/vault/docker-compose.vault.yml up -d
+# Then:  export VAULT_ADDR=http://127.0.0.1:8200
+#        export VAULT_TOKEN=UNSAFE-DEV-umbra-root-token
+#        export SECRETS_PROVIDER=vault
+#        (seed secrets + rotate per the runbook)
+
+services:
+  vault:
+    image: hashicorp/vault:1.17
+    container_name: umbra-vault
+    restart: unless-stopped
+    # Dev mode: unsealed, in-memory, KV v2 mounted at secret/. Root token is FIXED so the
+    # solver + rotate script can authenticate deterministically in the dev loop.
+    environment:
+      # UNSAFE-DEV: dev-only fixed root token — never a production credential (T-13-05).
+      VAULT_DEV_ROOT_TOKEN_ID: UNSAFE-DEV-umbra-root-token
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+      VAULT_ADDR: http://127.0.0.1:8200
+    cap_add:
+      # Vault requests IPC_LOCK to mlock memory (prevents secrets swapping to disk).
+      - IPC_LOCK
+    ports:
+      - "8200:8200"
+    networks:
+      - umbra-vault
+    healthcheck:
+      # `vault status` exits 0 when the dev server is unsealed and ready.
+      test: ["CMD", "vault", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  umbra-vault:
+    driver: bridge

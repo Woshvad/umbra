@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Progress
 status: building
-stopped_at: Completed Phase 11 (11/11) — built · live UAT pending
-last_updated: "2026-07-10T00:00:00.000Z"
-last_activity: 2026-07-10 -- Phase 11 built (Settlement & Institutional Grade — CN Token Standard CIP-0056 Batch/Instruction, multi-buyer netting, COMP-01 eligibility gate, guest 4th-desk QR, topology viz); §4 still clears $100.00. Next: Phase 12.
+stopped_at: Completed Phases 11 & 12 (requested --to 12) — both built · live UAT pending; Phase 13 remains
+last_updated: "2026-07-10T12:00:00.000Z"
+last_activity: 2026-07-10 -- Phase 12 built (Real On-Chain / DevNet — on-ledger four-eyes ClearingApproval, OIDC dual-mode Keycloak+jose+PKCE, Splice DevNet compose + ops + runbook + SV-sponsor checklist); §4 still clears $100.00. Requested run (Phases 11–12) COMPLETE — stopped per --to 12; Phase 13 (Platform Baseline & Adjacent) not started.
 progress:
   total_phases: 6
-  completed_phases: 4
-  total_plans: 35
-  completed_plans: 35
-  percent: 67
+  completed_phases: 5
+  total_plans: 40
+  completed_plans: 40
+  percent: 83
 ---
 
 # Project State
@@ -21,15 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-25)
 
 **Core value:** The privacy money shot — three desks submit sealed orders blind to each other, an AI solver clears them at one uniform price ($100.00 on the §4 fixture), and the whole batch settles atomically in a single Canton transaction.
-**Current focus:** Phase 12 — real-on-chain (Canton DevNet) — EXECUTED, running quality gates
+**Current focus:** Phases 11 & 12 COMPLETE (requested --to 12) — stopped; Phase 13 remains for a future run
 
 ## Current Position
 
-Phase: 12 (real-on-chain-canton-devnet) — EXECUTED (5/5 plans), quality gates in progress
-Plan: 5 of 5 executed — 12-01 four-eyes ClearingApproval gate (§4 clears $100.00 WITH approval; +3 negative tests) · 12-02 OIDC dual-mode (solver client-credentials + jose JWKS verify; web PKCE; dev-HMAC preserved) · 12-03 Keycloak realm + Caddy TLS + Canton jwt-jwks config · 12-04 Splice DevNet compose + devnet-deploy + ops + RUNBOOK + SV-SPONSOR-CHECKLIST · 12-05 Compliance approve/reject UI. daml test green, solver 150/150, web 85/85.
-Status: Executing the Phase-12 gates (code-review → verify → security). Live/external items (SV-sponsored DevNet connection, live §4-on-real-Canton, live OIDC token exchange + MFA, unattended live ops) → UAT/external gate, honestly labeled — never faked. Plans 12-01..05 were authored inline (classifier outage blocked the gsd-planner); a plan-checker pass is folded into the gates.
-Prev: Phase 11 built (settlement on CN Token Standard CIP-0056; §4 clears $100.00; verified 4/4, security 42/42, UI 20/24; live items → UAT).
-Last activity: 2026-07-10 -- Phase 12 executed (5/5); four-eyes + OIDC dual-mode + DevNet/ops artifacts; §4 still clears $100.00.
+Phase: 12 (real-on-chain-canton-devnet) — BUILT · live UAT + external SV gate pending. Requested run (Phases 11–12) COMPLETE.
+Plan: 5 of 5 executed + all gates passed — 12-01 four-eyes ClearingApproval gate (§4 clears $100.00 WITH approval; +4 four-eyes tests incl. distinct-party) · 12-02 OIDC dual-mode (solver client-credentials + jose JWKS verify; web PKCE; dev-HMAC preserved) · 12-03 Keycloak realm + Caddy TLS + Canton jwt-jwks config · 12-04 Splice DevNet compose + devnet-deploy + ops + RUNBOOK + SV-SPONSOR-CHECKLIST · 12-05 Compliance approve/reject UI.
+Status: Verified (5/5 code+config deliverables, human_needed for live) · code-review 0 blocker (2 HIGH four-eyes-bypass + 3 MED + 3 LOW — ALL fixed) · security PASS (13/13 threats, 0 high/critical). daml test exit 0 (§4 $100.00 / A=10·B=8·C=2 with four-eyes + negatives), solver 151/151, web 85/85, realm 8/8, devnet 9/9, bundle secret-scan 0. Live/external items → 12-UAT.md (SV sponsorship = external business gate; live token-exchange/§4-on-real-Canton/ops = UAT). Plans 12-01..05 were authored inline during a classifier outage; the plan-checker pass was folded into code-review/verify/security.
+Prev: Phase 11 built (settlement on CN Token Standard CIP-0056; §4 $100.00; verified 4/4, security 42/42, UI 20/24; live items → UAT).
+Next (NOT in this run): Phase 13 — Platform Baseline & Adjacent (Track B). Milestone v2.0 at 5/6 phases.
+Last activity: 2026-07-10 -- Phases 11–12 built + all gates green; stopped per requested --to 12.
 
 ## Performance Metrics
 

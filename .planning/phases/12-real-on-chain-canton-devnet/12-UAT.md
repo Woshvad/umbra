@@ -1,0 +1,20 @@
+# Phase 12 — Live UAT + External-Gate Checklist
+
+**Status:** Built · live UAT + external SV gate pending (2026-07-10)
+**Why deferred:** Phase 12 delivers every code/config/ops artifact + a runbook, all offline-verified (`daml test` exit 0 with §4 = $100.00 + four-eyes; solver 151/151; web 85/85; realm 8/8; devnet 9/9; web bundle secret-scan 0). The remaining items are **genuinely live or external** — they need a Super-Validator sponsorship, a booted DevNet node, Keycloak + Canton wired to the OIDC issuer, and a second human. Verification status = `human_needed`; security = PASS (13/13). This mirrors the "Built · live UAT pending" pattern from Phases 8–11.
+
+## ⚠ External business gate (NOT code — start early)
+- [ ] **CHAIN-01 — Super-Validator sponsorship + live Global Synchronizer connection.** This is an external, **days–weeks** business gate (ROADMAP: "start immediately"). Follow `deploy/SV-SPONSOR-CHECKLIST.md`: obtain a static egress IP → send it to a sponsoring SV → wait for allowlist adoption (**2–7 days**, SV consensus) → get the sponsor URL → generate a JIT one-time onboarding secret (1h self-serve / 48h SV) → `./start.sh -s "$SPONSOR_SV_URL" -o "$ONBOARDING_SECRET" -p umbra-operator-1 -m "$MIGRATION_ID" -w -a`. **Cannot be done autonomously — no SV sponsorship or live DevNet exists on this box.**
+
+## Live UAT (need the CHAIN-01 node + booted services)
+- [ ] **CHAIN-02 — §4 on real Canton.** Run `deploy/devnet/devnet-deploy.mjs` against the live DevNet participant: upload + **vet** the frozen Umbra DAR (package hash changed with the additive four-eyes template — re-vet is required), allocate desk + operator + `umbra-compliance-1` parties, run `grantRights` so the OIDC token `sub` == `LEDGER_API_ADMIN_USER` holds the operator's actAs/readAs (RESEARCH Pitfall 3 — the #1 live-failure mode). Confirm the §4 fixture clears **$100.00 / A=10·B=8·C=2** end-to-end on real Canton.
+- [ ] **IDEN-01/02 — live OIDC token exchange + MFA.** Boot `deploy/keycloak/docker-compose.yaml` (Keycloak realm import + Caddy dev-TLS), point the Canton participant at `deploy/canton/participant-oidc-auth.conf` (jwt-jwks, audience `https://canton.network.global`), and confirm: the solver acquires a client-credentials RS256 token and calls the ledger; a desk logs in via auth-code/PKCE; OTP/MFA is enforced on Compliance + Admin. (Offline: jose JWKS verify + PKCE config are proven against a mocked issuer; the web bundle is secret-less.)
+- [ ] **IDEN-03 — live human four-eyes.** With a **distinct MFA'd Compliance operator** (separate from the operator — the ledger now enforces `operator ≠ compliance` on-ledger, and the solver hard-fails on a collapsed identity), approve/reject a clearing in the Compliance control and confirm settlement is gated. (Offline: the on-ledger distinct-authority gate is `daml test`-proven; the solver requires a distinct compliance token. Runtime auto-approval by a distinct compliance token vs a human clicking approve is the UAT delta.)
+- [ ] **CHAIN-03 — unattended ops.** Register the `pg_dump` backup schedule, point Prometheus at the live `/readyz`+`/livez` targets, and confirm Canton-Coin traffic auto-top-up on the live validator (DevNet auto-taps coin). Confirm the isolated per-network Postgres runs unattended.
+
+## Recorded honest limitations (not defects)
+- A single self-hosted, SV-sponsored validator is **"demo-real"** for the 3-desk privacy money shot; genuine 3-institution cross-node privacy needs **3 independent validators** each run by a different institution (recorded limitation).
+- The dev four-eyes uses a distinct compliance **token/party** the solver holds (real on-ledger separation); a live **human** MFA'd Compliance approver is the UAT delta above.
+- Dev TLS is self-signed (`caddy tls internal`); a real cert (Let's Encrypt / org CA) is UAT.
+- KMS/HSM-backed key custody + SOC 2 → **Track B** (Phase 13 / beyond).
+- `jose@6.2.3` + `oidc-client-ts@3.5.0` were admitted on official-org/no-postinstall grounds; `slopcheck` was unavailable at research time — re-run a package-legitimacy scan when tooling is available (both are widely-used panva/authts packages).

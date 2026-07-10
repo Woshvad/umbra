@@ -242,7 +242,7 @@ Milestone v1.0 shipped and proved the privacy money shot end-to-end. v2.0 harden
 - [ ] **Phase 9: Auction Depth & Live Viz** — Richer order types + explicit rulebook, aggregate indicative-price/imbalance preview, live crossing spectacle, per-desk best-ex/TCA + surplus proof, cost-of-leakage simulator
 - [x] **Phase 10: Cryptographic Privacy** — On-ledger commit–reveal, tlock/drand sealed-until-close, privacy time-machine replay, ZK proof-of-correct-clearing PoC *(cryptographer review gates production use)* (completed 2026-07-09)
 - [x] **Phase 11: Settlement & Institutional Grade** — CN Token Standard (CIP-0056) settlement Batch/Instruction (real HoldingV1 conformance; the Daml Finance library is unbuildable on this LF 2.1 / SDK 3.4.11 line — honest reconciliation) + multi-buyer netting + cash-agnostic leg, on-ledger KYC/eligibility gating, judge-as-4th-desk, three-node topology viz (built 2026-07-10; live UAT pending)
-- [ ] **Phase 12: Real On-Chain (Canton DevNet)** *(parallel Track A — start the SV-sponsor gate immediately)* — Sponsored DevNet node, OIDC/TLS/Postgres/KMS (= enterprise identity + four-eyes), DAR port + §4 on real Canton, ops hardening
+- [x] **Phase 12: Real On-Chain (Canton DevNet)** *(parallel Track A)* — Real on-ledger four-eyes (distinct-authority `ClearingApproval`, §4 still $100.00) + OIDC dual-mode (Keycloak client-credentials/PKCE + `jose` JWKS, dev-HMAC preserved) + Splice DevNet compose + DAR-vet/party scripts + Postgres/monitoring/backup/top-up + RUNBOOK + SV-sponsor checklist (built 2026-07-10; **the live SV-sponsored connection is a genuinely external, days–weeks business gate** + live token-exchange/§4-on-real-Canton/ops → UAT)
 - [ ] **Phase 13: Platform Baseline & Adjacent** *(Track B — ongoing)* — Observability/Vault/idempotency/webhooks/status/FIX/sandbox; competing solvers, RFQ mode, primary issuance, coupon lifecycle
 
 ## Phase Details
@@ -454,5 +454,5 @@ Build waves run in numeric order 8 → 9 → 10 → 11. Track A (Phase 12) runs 
 | 9. Auction Depth & Live Viz | 7/7 | Built · live UAT pending | 2026-07-09 |
 | 10. Cryptographic Privacy | 10/10 | Built · live UAT pending | 2026-07-10 |
 | 11. Settlement & Institutional Grade | 11/11 | Built · live UAT pending | 2026-07-10 |
-| 12. Real On-Chain (Canton DevNet) | 0/5 | Planned (external SV gate) | — |
+| 12. Real On-Chain (Canton DevNet) | 5/5 | Built · live UAT + external SV gate pending | 2026-07-10 |
 | 13. Platform Baseline & Adjacent | 0/— | Not started (ongoing) | — |

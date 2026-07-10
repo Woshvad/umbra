@@ -824,6 +824,98 @@ export const anchorProof = async (
 // numeric offset — no token, no headers.
 export const currentOffset = (): Promise<number> => ledgerEnd()
 
+// ════ PAY-01: x402 self-facilitator fee transfer — operator-custody, custodian-executed ════
+// on the presented authorization; reuses Holding Split/Reassign (no new Daml). The `self`
+// x402 facilitator backend (solver/src/facilitator.ts) settles a metered-access fee as a
+// single operator-custody USDCx Holding move from the paying desk to the venue party. These
+// two thin exports are the ONLY ledger surface it needs, REUSING the existing
+// `queryByEntity('Holding')` scan + `exerciseChoice` Split/Reassign — introducing NO new Daml
+// template/choice. This is the `OrderCommitment.ForfeitBond` "custodian Reassigns a desk
+// Holding to the venue" pattern (Auction.daml:222), generalized from "seize" to "pay". The
+// fee path is standalone: it NEVER calls settle()/tamperClear()/Round.Clear, so §8 stays the
+// sole securities-DvP authority (T-14-10). Like every export here the operator token stays
+// module-private — only party/contract ids + secret-free refs cross out (SOLV-04).
+
+// A secret-free projection of an operator-custody Holding (the gatherHoldingCids predicate
+// fields). `amount` is the v2 zero-padded Decimal STRING decoded via Number(); `locked`
+// collapses the `lock : Optional Text` marker to a boolean (Some _ ⇒ true).
+export interface HoldingRecord {
+  contractId: string
+  owner: string
+  instrumentId: string
+  amount: number
+  locked: boolean
+}
+
+// ── listHoldings: the operator-visible active Holdings (the x402 verify fee-source scan) ──
+// Reuses `queryByEntity('Holding')` (the same ACS scan settle() gathers cids from) and maps
+// each CreatedEvent to the secret-free HoldingRecord shape. instrument.id → instrumentId,
+// amount → Number(amount) (v2 string), lock != null → locked.
+export const listHoldings = async (): Promise<HoldingRecord[]> =>
+  (await queryByEntity('Holding')).map((c) => ({
+    contractId: c.contractId,
+    owner: c.createArgument.owner,
+    instrumentId: c.createArgument.instrument?.id,
+    amount: Number(c.createArgument.amount),
+    locked: c.createArgument.lock != null,
+  }))
+
+// ── moveFee: move EXACTLY `qty` of the presented Holding to `newOwner` (the venue) ──
+// Mirrors Holding.moveExactHolding (Holding.daml:109) in TS over the JSON Ledger API v2: a
+// full-amount move is a single `Reassign`; a partial move `Split`s the slice first (strict
+// on-ledger `<` guard) then `Reassign`s it — both under operator authority (actAs:
+// [operatorParty], the module-private operator bearer). Because `exerciseChoice` resolves
+// void, the Split slice is re-located by diffing the ACS (a new operator-owned USDCx Holding
+// of exactly `qty`). After the reassign, re-query and confirm a `newOwner`-owned USDCx
+// Holding ≥ qty now exists; return a secret-free settlement ref (the confirmed cid). Throws
+// ONLY secret-free errors (never the token, never raw ledger text beyond the settle path).
+export const moveFee = async (
+  holdingCid: string,
+  qty: number,
+  newOwner: string,
+): Promise<string> => {
+  // Locate the presented Holding to choose full-Reassign vs Split+Reassign. Amounts marshal
+  // as Decimal STRINGS on the v2 wire (Option-B). A missing/locked/insufficient cid throws a
+  // clean, secret-free error (the cid is an already-public ledger id, never a secret).
+  const before = await queryByEntity('Holding')
+  const beforeCids = new Set(before.map((c) => c.contractId))
+  const src = before.find((c) => c.contractId === holdingCid)
+  if (!src) throw new Error('x402 fee: presented holding not found')
+  if (src.createArgument.lock != null) throw new Error('x402 fee: presented holding is locked')
+  const srcOwner = src.createArgument.owner as string
+  const srcAmount = Number(src.createArgument.amount)
+  if (!(srcAmount >= qty)) throw new Error('x402 fee: presented holding amount insufficient')
+
+  if (srcAmount === qty) {
+    // Full-amount move: a single operator-authority Reassign (the ForfeitBond precedent).
+    await exerciseChoice('Umbra.Holding:Holding', holdingCid, 'Reassign', { newOwner })
+  } else {
+    // Partial move: Split off exactly `qty` (Decimal STRING, Option-B), then Reassign the
+    // slice. The slice retains the ORIGINAL owner until the Reassign, so re-locate it as the
+    // newly-created operator-owned USDCx Holding of exactly `qty` owned by the source owner.
+    await exerciseChoice('Umbra.Holding:Holding', holdingCid, 'Split', { splitQty: String(qty) })
+    const afterSplit = await queryByEntity('Holding')
+    const slice = afterSplit.find(
+      (c) =>
+        !beforeCids.has(c.contractId) &&
+        c.createArgument.owner === srcOwner &&
+        c.createArgument.instrument?.id === CASH_SYMBOL &&
+        Number(c.createArgument.amount) === qty,
+    )
+    if (!slice) throw new Error('x402 fee: split slice not found')
+    await exerciseChoice('Umbra.Holding:Holding', slice.contractId, 'Reassign', { newOwner })
+  }
+
+  // Confirm receipt: a `newOwner`-owned, unlocked USDCx Holding ≥ qty now exists (the same
+  // predicate shape verify uses). Return its cid as the secret-free settlement ref.
+  const after = await listHoldings()
+  const confirmed = after.find(
+    (h) => h.owner === newOwner && h.instrumentId === CASH_SYMBOL && !h.locked && h.amount >= qty,
+  )
+  if (!confirmed) throw new Error('x402 fee: settlement confirmation failed')
+  return `umbra-x402-${confirmed.contractId}`
+}
+
 // ════ ADJ-02: RFQ orchestration (post request → firm quote → list → accept→settle) ════
 // Keyless exercise wrappers over the JSON Ledger API v2 for the ADJ-02 request-for-quote
 // side-mode (Umbra.Rfq). They MIRROR the settle() discipline: address templates by

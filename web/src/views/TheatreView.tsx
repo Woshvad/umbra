@@ -20,6 +20,7 @@ import { closeRound, getRound, solvePreview, SolverError, OFFLINE_CAPTION } from
 import CountdownRing from '../components/CountdownRing'
 import CrossingChart from '../components/CrossingChart'
 import PriceReveal from '../components/PriceReveal'
+import QrJoin from '../components/QrJoin'
 
 type Props = OperatorViewState
 
@@ -145,6 +146,13 @@ export default function TheatreView({
         ) : (
           <SolvedStage phase={phase} preview={preview} />
         )}
+      </div>
+
+      {/* WOW-07 — Guest QR host, BELOW the dark stage (does NOT disturb the shipped
+          countdown/reveal beat). Encodes only the /join URL + roundId; the guest token is
+          delivered server-side, never in the QR. Carries the HARD OIDC honesty label. */}
+      <div style={{ marginTop: '30px' }}>
+        <QrJoin roundId={roundId} />
       </div>
     </main>
   )

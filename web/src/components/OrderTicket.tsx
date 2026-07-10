@@ -36,6 +36,14 @@ type Props = {
   deskKey: DeskKey
   // The desk's existing Order payload (or undefined) — an already-revealed order.
   order?: OrderPayload
+  // WOW-07 — the guest /join surface relabels the primary CTA to `SEAL GUEST ORDER`
+  // (the desk plane keeps the default `COMMIT & POST BOND`). Presentation only.
+  commitLabel?: string
+  // COMP-01 — when a live on-ledger commit is REJECTED (an HTTP status from the ledger,
+  // e.g. an ineligible party), the raw rejection text is surfaced VERBATIM to the caller
+  // and the lifecycle does NOT advance. The guest /join renders it on a 1px-ink evidence
+  // surface — never a render-time guard. Undefined on the desk plane (unchanged behavior).
+  onCommitRejected?: (msg: string) => void
 }
 
 // The desk's commit lifecycle phase (CRYP-01/02). Draft is the shipped ticket; the
@@ -231,7 +239,13 @@ function fmtCountdown(ms: number): string {
   return `${mm}:${ss}`
 }
 
-export default function OrderTicket({ ctx, deskKey, order }: Props) {
+export default function OrderTicket({
+  ctx,
+  deskKey,
+  order,
+  commitLabel = 'COMMIT & POST BOND',
+  onCommitRejected,
+}: Props) {
   const ledger = ctx.useLedger()
   // 11-05: the bond migrated Asset → cash Holding (token-agnostic InstrumentId +
   // operator-custody lock). The desk observes its own Holdings; the CommitOrder bond
@@ -369,6 +383,8 @@ export default function OrderTicket({ ctx, deskKey, order }: Props) {
     const built = buildOrder()
     if (!built) return
     setBusy('committing')
+    // COMP-01 — clear any prior rejection at the start of a fresh attempt.
+    onCommitRejected?.('')
     try {
       const salt = randomSalt()
       const payload = serializeOrder(built)
@@ -382,6 +398,9 @@ export default function OrderTicket({ ctx, deskKey, order }: Props) {
       // advances regardless so the states are demonstrable; the live on-ledger
       // commit → reveal → clear is an end-of-phase human-verify (no operator token).
       let posted: number | null = bondLive
+      // COMP-01 — a genuine on-ledger REJECTION (HTTP status) is surfaced verbatim and
+      // aborts the lifecycle; a bare network failure stays the deferred-to-live path.
+      let rejection: string | null = null
       try {
         const venues = await ledger.query(Venue)
         const venueCid = venues[0]?.contractId
@@ -402,9 +421,21 @@ export default function OrderTicket({ ctx, deskKey, order }: Props) {
           })
           posted = Number(bondAsset.payload.amount)
         }
-      } catch {
-        // Live ledger unreachable (build-gate / offline) — the commit is deferred to
-        // the live stack; the committed evidence still renders from the local hash.
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        // Only a real ledger rejection (carries an HTTP status) becomes COMP-01 — and
+        // only when the caller opted into surfacing it (the guest /join plane). Any
+        // other failure (live ledger unreachable at the build-gate / offline) is
+        // deferred to the live stack; the committed evidence still renders locally.
+        if (onCommitRejected && /HTTP\s+\d/.test(msg)) {
+          rejection = msg
+        }
+      }
+      // COMP-01 verbatim reject — surface the raw ledger text and do NOT advance the
+      // lifecycle (the ticket stays in draft; the guest can correct + retry).
+      if (rejection !== null) {
+        onCommitRejected?.(rejection)
+        return
       }
       setBondAmount(posted)
       setPhase('committed')
@@ -788,7 +819,7 @@ export default function OrderTicket({ ctx, deskKey, order }: Props) {
             className="font-mono text-13 font-bold bg-ink text-paper w-full disabled:opacity-60"
             style={{ padding: '15px 28px', letterSpacing: '.14em' }}
           >
-            {busy === 'committing' ? 'COMMITTING…' : 'COMMIT & POST BOND'}
+            {busy === 'committing' ? 'COMMITTING…' : commitLabel}
           </button>
 
           {/* load demo order — ghost mono affordance (pre-fills §4 values) */}

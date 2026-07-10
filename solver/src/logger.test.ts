@@ -61,6 +61,40 @@ describe('redact', () => {
     expect(JSON.stringify(out)).toContain('"keep":1')
   })
 
+  it('LO-03: does NOT over-redact benign keys that merely contain a secret substring', () => {
+    const out = redact({
+      tokenCount: 1234, // "token" is a PREFIX, not the final component → keep
+      monkey: 'ook',
+      turnkey: true,
+      keyframes: [1, 2, 3],
+      environment: 'prod',
+      eventId: 'e-1',
+      // …while genuine secret keys in various casings STILL redact
+      apiKey: SECRET,
+      operatorToken: SECRET,
+      ANTHROPIC_API_KEY: SECRET,
+      'x-api-key': SECRET,
+      authorization: SECRET,
+      env: { deep: SECRET },
+    }) as Record<string, unknown>
+
+    // benign survive with their real values
+    expect(out.tokenCount).toBe(1234)
+    expect(out.monkey).toBe('ook')
+    expect(out.turnkey).toBe(true)
+    expect(out.keyframes).toEqual([1, 2, 3])
+    expect(out.environment).toBe('prod')
+    expect(out.eventId).toBe('e-1')
+    // secrets redacted
+    expect(out.apiKey).toBe('[REDACTED]')
+    expect(out.operatorToken).toBe('[REDACTED]')
+    expect(out.ANTHROPIC_API_KEY).toBe('[REDACTED]')
+    expect(out['x-api-key']).toBe('[REDACTED]')
+    expect(out.authorization).toBe('[REDACTED]')
+    expect(out.env).toBe('[REDACTED]')
+    expect(JSON.stringify(out)).not.toContain(SECRET)
+  })
+
   it('passes primitives through unchanged', () => {
     expect(redact('plain')).toBe('plain')
     expect(redact(42)).toBe(42)

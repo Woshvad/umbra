@@ -2,8 +2,10 @@
 //
 // Every line is a single JSON object with `ts` (ISO-8601), `level`, `msg`, and the
 // caller's fields — recursively REDACTED so a value under a secret-shaped key
-// (anything containing "token"/"key", or exactly authorization/cookie/secret/password/
-// env) is replaced with '[REDACTED]' before it can reach stdout. When a span is active
+// (whose FINAL word-component is token/key, or which is exactly authorization/cookie/
+// secret/password/env) is replaced with '[REDACTED]' before it can reach stdout. Benign
+// keys that merely contain a secret substring (tokenCount, keyframes, environment) are NOT
+// over-redacted (LO-03). When a span is active
 // the current `trace.id` is attached for log↔trace correlation.
 //
 // This mirrors — and hardens — the existing secret-free discipline in agent.ts/
@@ -14,10 +16,33 @@
 
 import { trace } from '@opentelemetry/api'
 
-// A key is secret-shaped if it contains "token" or "key" anywhere, or is exactly one of
-// authorization/cookie/secret/password/env (case-insensitive). Matches keys like
-// `apiKey`, `operatorToken`, `ANTHROPIC_API_KEY`, `Authorization`, `env`.
-const SECRET_KEY = /(?:token|key|authorization|cookie|secret|password|env)/i
+// LO-03: match secret-shaped keys by WORD COMPONENT, not raw substring, so benign keys
+// that merely CONTAIN a secret word are not over-redacted (`tokenCount`, `monkey`,
+// `turnkey`, `keyframes`, `environment`, `event`) while real secret keys in any common
+// casing still redact. Two tiers:
+//   • EXACT_SECRET — redacts only when it is the WHOLE key (authorization/cookie/secret/
+//     password/env) so `environment`/`eventId` pass through.
+//   • SUFFIX_SECRET — redacts when it is the FINAL word-component (camelCase / _-/ split),
+//     so `apiKey`/`operatorToken`/`ANTHROPIC_API_KEY`/`sessionKey`/`bearerToken` redact but
+//     `tokenCount` (token is a PREFIX) does not.
+const EXACT_SECRET = new Set(['authorization', 'cookie', 'secret', 'password', 'env'])
+const SUFFIX_SECRET = new Set(['key', 'token'])
+
+// Split a key into lowercase word components on camelCase boundaries + non-alphanumeric
+// separators: `ANTHROPIC_API_KEY` → [anthropic, api, key]; `operatorToken` → [operator, token].
+const keyComponents = (key: string): string[] =>
+  key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .split(/[^A-Za-z0-9]+/)
+    .map((w) => w.toLowerCase())
+    .filter(Boolean)
+
+const isSecretKey = (key: string): boolean => {
+  if (EXACT_SECRET.has(key.toLowerCase())) return true
+  const comps = keyComponents(key)
+  const last = comps[comps.length - 1]
+  return last !== undefined && SUFFIX_SECRET.has(last)
+}
 
 // Recursively redact secret-shaped keys. Arrays are walked element-wise; primitives pass
 // through unchanged. Cycles are guarded so a self-referential object can't loop forever.
@@ -31,7 +56,7 @@ export const redact = (value: unknown, seen: WeakSet<object> = new WeakSet()): u
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>).map(([k, v]) => [
       k,
-      SECRET_KEY.test(k) ? '[REDACTED]' : redact(v, seen),
+      isSecretKey(k) ? '[REDACTED]' : redact(v, seen),
     ]),
   )
 }

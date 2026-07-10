@@ -5,6 +5,8 @@ function __export(m) {
     for (var p in m) if (!exports.hasOwnProperty(p)) exports[p] = m[p];
 }
 Object.defineProperty(exports, "__esModule", { value: true });
+var Approval = require('./Approval');
+exports.Approval = Approval;
 var Asset = require('./Asset');
 exports.Asset = Asset;
 var Auction = require('./Auction');

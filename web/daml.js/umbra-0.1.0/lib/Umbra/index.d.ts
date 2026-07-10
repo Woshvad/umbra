@@ -1,3 +1,5 @@
+import * as Approval from './Approval';
+export { Approval } ;
 import * as Asset from './Asset';
 export { Asset } ;
 import * as Auction from './Auction';

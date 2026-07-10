@@ -36,7 +36,7 @@ exports.RunSettle = {
 exports.SettleHarness = damlTypes.assembleTemplate(
 {
   templateId: '#umbra:Umbra.Tests:SettleHarness',
-  templateIdWithPackageId: '76118676638da246f5c358566ac0e8959c836263d01011224c7aefed35d84ee9:Umbra.Tests:SettleHarness',
+  templateIdWithPackageId: 'cae1713ace52d4be1278cb42c55e94e61b1141f5ef7c98bdd2eb9834ee894076:Umbra.Tests:SettleHarness',
   keyDecoder: damlTypes.lazyMemo(function () { return jtv.constant(undefined); }),
   keyEncode: function () { throw 'EncodeError'; },
   decoder: damlTypes.lazyMemo(function () { return jtv.object({operator: damlTypes.Party.decoder, }); }),
@@ -67,7 +67,7 @@ exports.SettleHarness = damlTypes.assembleTemplate(
 );
 
 
-damlTypes.registerTemplate(exports.SettleHarness, ['76118676638da246f5c358566ac0e8959c836263d01011224c7aefed35d84ee9', '#umbra']);
+damlTypes.registerTemplate(exports.SettleHarness, ['cae1713ace52d4be1278cb42c55e94e61b1141f5ef7c98bdd2eb9834ee894076', '#umbra']);
 
 
 

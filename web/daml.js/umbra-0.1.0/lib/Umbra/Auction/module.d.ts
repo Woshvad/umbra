@@ -8,6 +8,7 @@ import * as damlTypes from '@daml/types';
 import * as pkg5aee9b21b8e9a4c4975b5f4c4198e6e6e8469df49e2010820e792f393db870f4 from '@daml.js/daml-prim-DA-Types-1.0.0';
 import * as pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69 from '@daml.js/ghc-stdlib-DA-Internal-Template-1.0.0';
 
+import * as Umbra_Approval from '../../Umbra/Approval/module';
 import * as Umbra_Clearing from '../../Umbra/Clearing/module';
 import * as Umbra_Holding from '../../Umbra/Holding/module';
 import * as Umbra_Instrument from '../../Umbra/Instrument/module';
@@ -21,6 +22,7 @@ export declare type Clear = {
   cashInstrument: Umbra_Instrument.InstrumentId;
   bondInstrument: Umbra_Instrument.InstrumentId;
   referencePrice: damlTypes.Numeric;
+  approvalCid: damlTypes.ContractId<Umbra_Approval.ClearingApproval>;
 };
 
 export declare const Clear:

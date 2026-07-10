@@ -146,10 +146,10 @@ ONLY — never lime or red modules (scannability + palette fidelity).
 | Guest own-fill card | `YOUR FILL` + `Visible only to you` (reuse `FillCard` grammar) |
 | Guest empty (no fill yet) | `Seal your bid, then watch 03 Theatre run. Your fill — quantity, price and cash — appears here only after the batch clears, and only you can see it.` |
 | Guest empty (window closed) | `This round's window is closed. Nothing to submit — but you can still watch it clear and settle.` |
-| Settlement legs sub-label (delta) | `Delivery vs Payment · Daml Finance Batch · {N} instructions` |
+| Settlement legs sub-label (delta) | `Delivery vs Payment · Batch/Instruction · {N} instructions` |
 | Settlement finality micro-grammar | `ALLOCATED → APPROVED → SETTLED` (settlement-finality = the Batch settle commit) |
 | Netting toggle (default ON) | `NETTED` ⇄ `GROSS LEGS` (mono tag toggle; netted = one net instruction per party·instrument) |
-| Daml-Finance provenance tag | `DAML FINANCE` when the real library settles · `DAML-FINANCE-PATTERN (IN-REPO)` when the faithful fallback layer is used (HARD honesty label) |
+| Settlement provenance tag | `CN TOKEN STANDARD (CIP-0056)` when real interface conformance settles · `DAML-FINANCE-PATTERN (IN-REPO)` when the faithful fallback layer is used (HARD honesty label) — never the literal "Daml Finance" (library unsatisfiable on this stack) |
 | Cash-symbol note (token-agnostic) | cash leg reads the instrument symbol from data: `← {cash} {CASH_SYMBOL}` (defaults `USDCx`; never a hardcoded literal in copy) |
 | Error state — solver offline | reuse `OFFLINE_CAPTION` (existing verbatim caption) |
 | Error state — ineligible party (COMP-01) | render the on-ledger reject **verbatim** on a 1px-ink evidence surface (never summarized): heading `SUBMISSION REJECTED — NOT ELIGIBLE` + the raw `assertMsg`/`fetchByKey` failure text; sub: `This desk has no active eligibility credential (accreditation / jurisdiction / sanctions). Onboarding is operator/Compliance-issued (stub — real KYC vendor is Track B).` |
@@ -230,12 +230,13 @@ ONLY — never lime or red modules (scannability + palette fidelity).
 
 - **Daml-Finance legs:** keep the shipped simultaneous-settle beat (single `rAF`
   `settleProgress` 0→1 driving ALL legs + balances together — atomicity = simultaneity;
-  never sequence legs). Delta: relabel the sub-label to `Delivery vs Payment · Daml Finance
-  Batch · {N} instructions` and add the finality micro-grammar `ALLOCATED → APPROVED →
+  never sequence legs). Delta: relabel the sub-label to `Delivery vs Payment · Batch/Instruction
+  · {N} instructions` and add the finality micro-grammar `ALLOCATED → APPROVED →
   SETTLED` (mono-9, opacity .6) — the Batch settle commit IS the finality signal.
-- **Provenance tag (HARD honesty):** a mono-9 ink-border tag reading `DAML FINANCE` (real
-  library) or `DAML-FINANCE-PATTERN (IN-REPO)` (faithful fallback layer), driven by data —
-  never claim the library when the fallback ran.
+- **Provenance tag (HARD honesty):** a mono-9 ink-border tag reading `CN TOKEN STANDARD (CIP-0056)`
+  (real interface conformance) or `DAML-FINANCE-PATTERN (IN-REPO)` (faithful fallback layer), driven
+  by data — never render the literal "Daml Finance" (the library is unsatisfiable on this LF-2.1 /
+  SDK-3.4.11 stack per the RESEARCH RECONCILIATION; lines 149/233 superseded accordingly).
 - **Netting (default ON):** a `NETTED ⇄ GROSS LEGS` mono tag toggle. NETTED renders one net
   instruction per (party, instrument); GROSS derives the per-leg legs (still available for
   the topology viz / receipts). Netting must visibly conserve cash + assets (balances

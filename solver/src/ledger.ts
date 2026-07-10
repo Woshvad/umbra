@@ -139,24 +139,67 @@ const oidcBearer = async (): Promise<string> => {
 const bearerToken = async (): Promise<string> => (OIDC_MODE ? oidcBearer() : _devOperatorToken)
 
 // ── IDEN-03 four-eyes Compliance credential (module-private) ──────────────────────
-// The approve step needs a DISTINCT compliance authority. An optional dedicated
-// compliance credential (scripts/.compliance-token) enables the REAL authority
-// separation on the dev path; when absent, the dev fast-loop falls back to
-// operator-held compliance so headless runs proceed. The distinct-signatory SEPARATION
-// — the actual tested control — is proven by `daml test` (12-01) with a dedicated
-// compliance party, and live human four-eyes is UAT. The compliance token, like the
-// operator token, is NEVER exported/returned/logged.
-const resolveCompliance = (): { token: string; party: string } => {
+// The approve step needs a DISTINCT compliance authority. The on-ledger four-eyes gate
+// (12-01) now ABORTS `Round.Clear` when compliance == operator, so an operator-held
+// approval is no longer a silent bypass — it fails loudly at settle. To make that
+// failure legible (and to refuse settling with a self-signed approval at all), the
+// compliance identity is resolved from a DISTINCT source:
+//   • scripts/.compliance-token (a dedicated dev/UAT compliance credential), OR
+//   • COMPLIANCE_PARTY + COMPLIANCE_TOKEN env (the OIDC/DevNet path).
+// A configured identity that COLLAPSES onto the operator is a hard misconfiguration
+// (throws). When NO distinct identity is configured the resolver reports `distinct:
+// false`; `gatherApprovalCid` then HARD-FAILS before minting any approval UNLESS the
+// operator-held fallback is EXPLICITLY opted in (UMBRA_ALLOW_OPERATOR_COMPLIANCE=1),
+// reserved for the local dev fast-loop against a permissive stub. This is auto-approval
+// by a distinct compliance token, NOT a human gate — a live, MFA'd human Compliance
+// approver remains the UAT step. The compliance token, like the operator token, is
+// NEVER exported/returned/logged.
+//
+// Set to '1' ONLY for the local dev fast-loop: allow the operator to also hold the
+// compliance authority (the on-ledger gate still rejects it unless a distinct party is
+// used, so this never enables a real four-eyes bypass — it only unblocks stub runs).
+const ALLOW_OPERATOR_COMPLIANCE = process.env.UMBRA_ALLOW_OPERATOR_COMPLIANCE === '1'
+
+const resolveCompliance = (): { token: string; party: string; distinct: boolean } => {
+  // 1. A dedicated compliance credential file → the REAL distinct authority.
+  let fileRaw: string | null = null
   try {
-    const raw = readFileSync(new URL('../../scripts/.compliance-token', import.meta.url), 'utf8')
-    const { token, party } = JSON.parse(raw) as { token: string; party: string }
-    if (token && party) return { token, party }
+    fileRaw = readFileSync(new URL('../../scripts/.compliance-token', import.meta.url), 'utf8')
   } catch {
-    // fall through — dev fast-loop / OIDC path uses operator-held compliance
+    // no dedicated compliance credential on disk — try env, then fall back below.
   }
-  return { token: _devOperatorToken, party: _operatorParty }
+  if (fileRaw) {
+    const { token, party } = JSON.parse(fileRaw) as { token: string; party: string }
+    if (token && party) {
+      if (party === _operatorParty) {
+        throw new Error(
+          'scripts/.compliance-token names the SAME party as the operator — four-eyes ' +
+            'requires a DISTINCT compliance authority (the on-ledger gate aborts on ' +
+            'operator self-approval).',
+        )
+      }
+      return { token, party, distinct: true }
+    }
+  }
+  // 2. OIDC/DevNet path: an explicit COMPLIANCE_PARTY + COMPLIANCE_TOKEN pair.
+  const envParty = process.env.COMPLIANCE_PARTY
+  const envToken = process.env.COMPLIANCE_TOKEN
+  if (envParty && envToken) {
+    if (envParty === _operatorParty) {
+      throw new Error(
+        'COMPLIANCE_PARTY equals the operator party — four-eyes requires a DISTINCT ' +
+          'compliance authority (the on-ledger gate aborts on operator self-approval).',
+      )
+    }
+    return { token: envToken, party: envParty, distinct: true }
+  }
+  // 3. No distinct compliance identity configured → operator-held (dev fast-loop only).
+  //    Flagged `distinct: false`; gatherApprovalCid refuses to proceed unless the
+  //    fallback is explicitly opted in (and the on-ledger gate would abort anyway).
+  return { token: _devOperatorToken, party: _operatorParty, distinct: false }
 }
-const { token: _complianceToken, party: _complianceParty } = resolveCompliance()
+const { token: _complianceToken, party: _complianceParty, distinct: _complianceDistinct } =
+  resolveCompliance()
 
 // Default desks for a body-less POST /round (the §4 banks), read fresh from the
 // deploy's party map. openRound uses the caller's desks when provided.
@@ -423,13 +466,31 @@ export const closeRound = async (roundId: string): Promise<RoundStatus> => {
 // ── IDEN-03 four-eyes: request → compliance-approve → collect the approval cid ─────
 // The on-ledger `Round.Clear` REQUIRES a matching compliance-signed `ClearingApproval`
 // (12-01). This mirrors how settle() gathers `orderCids`: the operator PROPOSES a
-// `ClearingApprovalRequest` at the deterministically-recomputed §8 price; the (distinct,
-// when configured) Compliance party exercises `ApproveClearing` → the operator+compliance
-// -signed `ClearingApproval` is born; the operator collects its ContractId to thread into
-// `Round.Clear`. In the dev fast-loop with no dedicated compliance credential this runs
-// operator-held (documented); the REAL distinct-authority separation is proven by
-// `daml test` (12-01) and is live UAT. The compliance token stays module-private.
+// `ClearingApprovalRequest` at the deterministically-recomputed §8 price; a DISTINCT
+// Compliance party (a dedicated compliance token — NOT the operator) exercises
+// `ApproveClearing` → the operator+compliance-signed `ClearingApproval` is born; the
+// operator collects its ContractId to thread into `Round.Clear`.
+//
+// RUNTIME SEPARATION (12-02 HIGH-02): this is auto-approval by a DISTINCT compliance
+// TOKEN, so the on-ledger DISTINCT-AUTHORITY four-eyes invariant (12-01) is satisfied at
+// runtime — NOT a live human gate. A real, MFA'd human Compliance approver signing in the
+// UI is the honest live-UAT step. If no distinct compliance identity is configured we
+// REFUSE to mint an operator-held (self-signed) approval and fail loudly here, rather than
+// submitting a Clear the on-ledger gate would abort. The dev fast-loop may opt in
+// (UMBRA_ALLOW_OPERATOR_COMPLIANCE=1) against a permissive stub. The compliance token
+// stays module-private.
 const gatherApprovalCid = async (roundId: string, clearingPrice: number): Promise<string> => {
+  // 0. HARD-FAIL on a non-distinct (operator-held) compliance identity unless the dev
+  //    fast-loop explicitly opts in. Never settle with a self-signed approval.
+  if (!_complianceDistinct && !ALLOW_OPERATOR_COMPLIANCE) {
+    throw new Error(
+      'Four-eyes settlement requires a DISTINCT compliance authority: configure ' +
+        'scripts/.compliance-token or COMPLIANCE_PARTY + COMPLIANCE_TOKEN (a party ' +
+        'distinct from the operator). The on-ledger gate aborts on operator ' +
+        'self-approval; set UMBRA_ALLOW_OPERATOR_COMPLIANCE=1 ONLY for the local dev ' +
+        'fast-loop against a permissive stub.',
+    )
+  }
   // 1. Operator PROPOSES the recomputed clearing to Compliance.
   await createContract('Umbra.Approval:ClearingApprovalRequest', {
     operator: operatorParty,

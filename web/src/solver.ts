@@ -225,13 +225,18 @@ export const tamperClear = (id: string, mode: TamperMode): Promise<TamperClearRe
 // ── IDEN-03 four-eyes Compliance decision (12-01 gate / 12-02 solver wiring) ──────
 // The on-ledger four-eyes ClearingApproval (signatory operator+compliance) is REQUIRED by
 // Round.Clear and is requested + collected server-side INSIDE settle() (12-02 gatherApprovalCid);
-// the operator alone cannot forge it (12-01 `daml test`). There is deliberately NO standalone
-// approve/reject HTTP endpoint — the credential is threaded atomically at settle time. These two
-// methods are therefore the COMPLIANCE-DECISION surface the operator-plane control drives: a
+// the operator alone cannot forge it — the ledger now ENFORCES operator /= compliance at runtime
+// and aborts on operator self-approval (12-01 `daml test` + assertClearingApproved). There is
+// deliberately NO standalone approve/reject HTTP endpoint — the credential is threaded atomically
+// at settle time, auto-approved by a DISTINCT compliance TOKEN the operator does not control.
+// These two methods are therefore an operator-plane CONTROL-SURFACE, not the enforcement point: a
 // decode-safe, offline-guarded reachability probe to the SAME solver (a down :4100 throws
-// SolverError 'OFFLINE' exactly like the shipped five) that records the four-eyes verdict, which
-// the UI uses to gate the settle CTA. In dev a dedicated compliance party stands in; a LIVE human
-// Compliance operator (distinct MFA'd identity) approving against a booted stack is UAT.
+// SolverError 'OFFLINE' exactly like the shipped five) that records a LOCAL four-eyes verdict the
+// UI uses to gate the settle CTA. This local verdict is NOT the on-ledger gate (a direct settle
+// bypasses it; the ledger's distinct-authority ClearingApproval is the real backstop). What ships
+// today is auto-approval by a distinct compliance token — a LIVE human Compliance operator
+// (distinct MFA'd identity) approving against a booted stack is the honest UAT step, not claimed
+// as working here.
 export type ComplianceDecision = { roundId: string; decision: 'approved' | 'rejected' }
 
 // Probe the operator-plane solver so the control is genuinely offline-guarded (a network reject

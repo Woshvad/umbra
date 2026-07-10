@@ -42,7 +42,18 @@ const repoRoot = resolve(__dirname, '..', '..')
 
 // DevNet DAR uses the SAME namespaced hint format the LocalNet boot already sets
 // (PARTY_HINT=umbra-operator-1) — DevNet enforces <org>-<function>-<enumerator> (Pitfall 7).
-export const PARTY_HINTS = ['umbra-operator-1', 'umbra-bankA-1', 'umbra-bankB-1', 'umbra-bankC-1']
+// IDEN-03 (12-02 HIGH-02): a DISTINCT `umbra-compliance-1` party is allocated (and
+// granted rights below) alongside the operator so the on-ledger four-eyes gate (12-01)
+// can be satisfied at runtime by a compliance authority the operator does NOT control.
+// The solver auto-approves with a distinct compliance token; a live, MFA'd human
+// Compliance approver is the honest live-UAT step (not claimed here).
+export const PARTY_HINTS = [
+  'umbra-operator-1',
+  'umbra-compliance-1',
+  'umbra-bankA-1',
+  'umbra-bankB-1',
+  'umbra-bankC-1',
+]
 export const DESK_USERS = {
   'umbra-bankA-1': 'umbra-bankA',
   'umbra-bankB-1': 'umbra-bankB',

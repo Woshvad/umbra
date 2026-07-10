@@ -13,6 +13,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 const SENTINEL_TOKEN = 'SENTINEL_OPERATOR_TOKEN_DO_NOT_LEAK'
+// IDEN-03 (12-02): a DISTINCT compliance token so the four-eyes settle path runs its
+// real distinct-authority branch in the stubbed ledger (never the operator token).
+const SENTINEL_COMPLIANCE_TOKEN = 'SENTINEL_COMPLIANCE_TOKEN_DO_NOT_LEAK'
 
 // ── In-memory ACS the fake participant reads/writes ──────────────────────────────
 interface Created {
@@ -132,6 +135,12 @@ vi.mock('node:fs', async (importOriginal) => {
     ...actual,
     readFileSync: (path: unknown, ...rest: unknown[]) => {
       const p = String(path)
+      if (p.includes('.compliance-token')) {
+        // IDEN-03 (12-02 HIGH-02): a DISTINCT compliance identity (party != operator)
+        // so gatherApprovalCid exercises the REAL distinct-authority four-eyes path
+        // (not the operator-held fallback, which now hard-fails without an opt-in).
+        return JSON.stringify({ token: SENTINEL_COMPLIANCE_TOKEN, party: 'compliance::test' })
+      }
       if (p.includes('.operator-token')) {
         return JSON.stringify({ token: SENTINEL_TOKEN, party: 'operator::test' })
       }

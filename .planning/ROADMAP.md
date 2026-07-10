@@ -443,6 +443,43 @@ Plans:
 
   *External dependencies scheduled here: a cryptographer's review (gates Phase 10 for real value), a KYC/AML vendor (backs COMP-01), and a SOC 2 engagement.*
 
+**Plans**: 14 plans (6 waves)
+Plans:
+
+**Wave 1** *(pure standalone modules + RFQ Daml — parallel)*
+
+- [ ] 13-01-PLAN.md — OPS-01 observability modules: OTel install (dep-legitimacy checkpoint) + telemetry.ts + secret-redacting logger.ts + alerts/umbra-rules.yml [OPS-01]
+- [ ] 13-02-PLAN.md — OPS-02 secrets.ts (SecretsProvider env|vault) + status.ts (S1 token-free /status + /status.html) + dev Vault compose + rotate script + runbook [OPS-02]
+- [ ] 13-03-PLAN.md — OPS-03 idempotency.ts middleware + fsm.ts round-lifecycle guard (Sealed display alias) [OPS-03]
+- [ ] 13-04-PLAN.md — OPS-04 webhooks.ts (HMAC sign/retry/log) + sandbox.ts (§4 fixture asserts $100.00) [OPS-04]
+- [ ] 13-05-PLAN.md — OPS-05 fix.ts hand-rolled FIX 4.4 subset (framing/parse/build/session, known-good vector) [OPS-05]
+- [ ] 13-06-PLAN.md — ADJ-02 Rfq.daml keyless RfqRequest+firm Quote+AcceptQuote (settleBatch) + Tests.daml RFQ scenarios [ADJ-02]
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 13-07-PLAN.md — OPS-01/02/03 API integration: telemetry-first boot + SIGTERM + spans/metrics + /health + /status + SecretsProvider wiring + idempotency mw + FSM guard [OPS-01, OPS-02, OPS-03]
+- [ ] 13-08-PLAN.md — ADJ-03 Issuance.daml keyless uniform-price mint (reuse §8) + Coupon/Redeem + Tests.daml + regenerate/commit web/daml.js [ADJ-03]
+
+**Wave 3** *(blocked on 13-07)*
+
+- [ ] 13-09-PLAN.md — OPS-04/05 integration surfaces: lifecycle webhook emits + register endpoints + POST /sandbox/round + POST /fix [OPS-04, OPS-05]
+- [ ] 13-10-PLAN.md — ADJ-01 agent.ts proposeCompeting (referee = deterministic §8; additive, off settlement path) [ADJ-01]
+
+**Wave 4** *(blocked on 13-08, 13-09, 13-10)*
+
+- [ ] 13-11-PLAN.md — ADJ orchestration + endpoints: ledger.ts RFQ+issuance wrappers + POST /competing + /rfq* + /issuance* [ADJ-01, ADJ-02, ADJ-03]
+
+**Wave 5** *(blocked on 13-11)*
+
+- [ ] 13-12-PLAN.md — web solver.ts client seam (competing/RFQ/issuance, credential-free) + S2 SolverLeaderboard on Agent view [ADJ-01]
+
+**Wave 6** *(blocked on 13-12)*
+
+- [ ] 13-13-PLAN.md — ADJ-02 S3 RfqPanel on Desk view (reuse DvpLegs + AtomicStamp) [ADJ-02]
+- [ ] 13-14-PLAN.md — ADJ-03 S4 IssuancePanel on Theatre view (OPTIONAL — reuse CrossingChart + PriceReveal; droppable) [ADJ-03]
+
+**UI hint**: yes
+
 ## v2.0 Progress
 
 **Execution Order:**
@@ -455,4 +492,4 @@ Build waves run in numeric order 8 → 9 → 10 → 11. Track A (Phase 12) runs 
 | 10. Cryptographic Privacy | 10/10 | Built · live UAT pending | 2026-07-10 |
 | 11. Settlement & Institutional Grade | 11/11 | Built · live UAT pending | 2026-07-10 |
 | 12. Real On-Chain (Canton DevNet) | 5/5 | Built · live UAT + external SV gate pending | 2026-07-10 |
-| 13. Platform Baseline & Adjacent | 0/— | Not started (ongoing) | — |
+| 13. Platform Baseline & Adjacent | 0/14 | Planned (6 waves) | — |

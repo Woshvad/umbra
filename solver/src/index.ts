@@ -21,6 +21,10 @@ import { createApp, type AppDeps, type RoundView } from './api.js'
 import type { Clock, RoundStatus } from './clock.js'
 import type { Health } from './status.js'
 import type { Webhooks } from './webhooks.js'
+// PAY-01: the x402 metered-access gate type (x402.ts). Type-only at the top so importing this
+// module for the boot-wiring unit test never evaluates x402/facilitator; main() dynamically
+// imports the createFacilitator + createX402Gate constructors after dotenv (like ledger/agent).
+import type { PaymentGate } from './x402.js'
 
 // Default window / port (overridable via env). ROUND_SECONDS drives the auto-close
 // timer; SOLVER_PORT is the :4100 bind.
@@ -119,6 +123,11 @@ export interface BuildDepsArgs {
   // register/unregister endpoints + fire the settle-seam events. main() also wires round.sealed
   // off the clock close seam via createClock's onClosed into this same instance.
   webhooks?: Webhooks
+  // PAY-01: the x402 metered-access gate (x402.ts). Optional so the boot-wiring unit test
+  // (index.test.ts) need not inject it; buildDeps threads it through unchanged onto AppDeps so
+  // createApp's disabled default (`?? createX402Gate({ enabled: false })`) holds when boot
+  // metering is off. main() constructs the enabled, facilitator-backed gate from the X402_* config.
+  x402?: PaymentGate
 }
 
 // Assemble the AppDeps so the API routes are wired to the ledger + clock.
@@ -224,6 +233,9 @@ export const buildDeps = (args: BuildDepsArgs): AppDeps => {
     // OPS-04: thread the SAME webhook emitter into createApp for the register/unregister
     // endpoints + the settle-seam emits (round.cleared/round.settled/fill.posted).
     webhooks: args.webhooks,
+    // PAY-01: thread the x402 gate through unchanged; undefined ⇒ createApp installs the
+    // disabled no-op default (default-OFF byte-unchanged). main() supplies the real gate.
+    x402: args.x402,
     computeClearing: math.computeClearing,
     matchedAt: math.matchedAt,
     demandAt: math.demandAt,
@@ -331,6 +343,52 @@ const main = async (): Promise<void> => {
     client: agentClient,
     computeClearing: auction.computeClearing,
     matchedAt: auction.matchedAt,
+  })
+
+  // ── PAY-01 x402 metered-access config (default-OFF — the primary invariant) ───────────
+  // Read the X402_* config with safe defaults. With X402_ENABLED unset/false the gate is a
+  // byte-identical no-op, so the §4 money-shot demo is untouched. network/asset/URL are
+  // ENV-DRIVEN placeholders (NO hard-coded Canton CAIP-2 id / facilitator hostname — confirmed
+  // at UAT via GET /supported). X402_PAY_TO defaults to the venue = the operator party.
+  const x402Enabled = process.env.X402_ENABLED === 'true'
+  const x402Backend = (process.env.X402_FACILITATOR ?? 'self') as 'self' | 'canton-cc'
+  const x402Network = process.env.X402_NETWORK ?? 'canton:devnet'
+  const x402Asset = process.env.X402_ASSET ?? 'CantonCoin'
+  const x402Price = process.env.X402_PRICE ?? '1.00'
+  const x402PayTo = process.env.X402_PAY_TO ?? ledger.operatorParty
+  const x402FacilitatorUrl = process.env.X402_FACILITATOR_URL ?? ''
+
+  // Resolve the canton-cc facilitator key through the SAME SecretsProvider seam as the Anthropic
+  // key: server-side ONLY, held module-private in this closure, NEVER logged/returned/echoed. The
+  // env backend throws `${name} is unset` when absent → degrade to undefined (the `self` backend
+  // needs no key; only `canton-cc` uses it, on the Authorization header inside facilitator.ts).
+  let x402FacilitatorKey: string | undefined
+  try {
+    const k = (await secrets.get('X402_FACILITATOR_KEY')).trim()
+    x402FacilitatorKey = k || undefined
+  } catch {
+    x402FacilitatorKey = undefined
+  }
+
+  // Construct the FacilitatorClient behind the Plan 01 interface, then the gate. `self` settles
+  // on Umbra's own ledger in operator-custody USDCx via the INJECTED listHoldings/moveFee port;
+  // `canton-cc` speaks the FTP /verify+/settle contract for real $CC (live = UAT). The disabled
+  // default means an absent/false X402_ENABLED yields a pure no-op (createApp keeps it off too).
+  const { createFacilitator } = await import('./facilitator.js')
+  const { createX402Gate } = await import('./x402.js')
+  const facilitator = createFacilitator({
+    backend: x402Backend,
+    ledger: { listHoldings: ledger.listHoldings, moveFee: ledger.moveFee },
+    facilitatorUrl: x402FacilitatorUrl,
+    facilitatorKey: x402FacilitatorKey,
+  })
+  const x402 = createX402Gate({
+    facilitator,
+    enabled: x402Enabled,
+    network: x402Network,
+    asset: x402Asset,
+    price: x402Price,
+    payTo: x402PayTo,
   })
 
   // OPS-02: the aggregate-only source for the token-free /status surface. Reports venue
@@ -674,6 +732,9 @@ const main = async (): Promise<void> => {
     statusSource,
     // OPS-04: the lifecycle webhook emitter (round.opened off the open seam; register/settle in createApp).
     webhooks,
+    // PAY-01: the x402 metered-access gate (default-OFF unless X402_ENABLED=true) — created above
+    // from the X402_* config with the facilitator key resolved via the SecretsProvider.
+    x402,
   })
 
   const app = createApp(deps)

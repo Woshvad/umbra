@@ -29,6 +29,8 @@ import {
 import type { CompetingResult } from './agent.js'
 import { createApp, type AppDeps, type SealedOrder, type RoundView, type SettleResult } from './api.js'
 import { createX402Gate, type FacilitatorClient, type PaymentGate } from './x402.js'
+import { buildDeps, type BuildDepsArgs, type LedgerPort, type MathPort } from './index.js'
+import type { Clock } from './clock.js'
 
 // The §4 canonical fixture ($100.00 / matchedVolume 10) so the metered routes return the real
 // deterministic clearing when the gate is a no-op.
@@ -196,5 +198,38 @@ describe('x402 whole-app wiring (createApp)', () => {
     const text = await r.text()
     expect(text).not.toContain(SENTINEL)
     expect(r.headers.get('x-payment-response') ?? '').not.toContain(SENTINEL)
+  })
+})
+
+// ── Boot threading (Task 2) ─────────────────────────────────────────────────
+// buildDeps must thread an injected PaymentGate onto AppDeps.x402 and leave it undefined when
+// none is passed (so createApp's `?? createX402Gate({ enabled: false })` default holds).
+describe('buildDeps x402 threading', () => {
+  // A minimal BuildDepsArgs — only the fields buildDeps reads to assemble AppDeps. The ledger /
+  // math ports are inert stubs; this asserts ONLY the x402 threading, not the ledger wiring.
+  const minimalArgs = (over?: Partial<BuildDepsArgs>): BuildDepsArgs =>
+    ({
+      ledger: {} as LedgerPort,
+      math: { computeClearing, matchedAt, demandAt, supplyAt, candidatePrices, choosePStar } as MathPort,
+      clock: { forceClose: async () => undefined, getState: () => undefined } as unknown as Clock,
+      openRoundClock: () => undefined,
+      roundSeconds: 60,
+      proposeClearing: (async () => ({})) as unknown as BuildDepsArgs['proposeClearing'],
+      parseOrder: (async () => null) as unknown as BuildDepsArgs['parseOrder'],
+      proposeCompeting: (async () => ({})) as unknown as BuildDepsArgs['proposeCompeting'],
+      streamRationale: (async () => undefined) as unknown as BuildDepsArgs['streamRationale'],
+      composeBrief: (() => ({})) as unknown as BuildDepsArgs['composeBrief'],
+      ...over,
+    }) as BuildDepsArgs
+
+  it('threads an injected PaymentGate onto AppDeps.x402', () => {
+    const gate = createX402Gate({ enabled: false })
+    const deps = buildDeps(minimalArgs({ x402: gate }))
+    expect(deps.x402).toBe(gate)
+  })
+
+  it('leaves AppDeps.x402 undefined when none is injected (default-OFF holds)', () => {
+    const deps = buildDeps(minimalArgs())
+    expect(deps.x402).toBeUndefined()
   })
 })

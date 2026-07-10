@@ -57,10 +57,13 @@ export const ledgerEventCaption = (offset: number): string => `LEDGER EVENT @ ${
 // party (owner, rival, OR the operator) can see order contents — everyone is redacted.
 export const isVenueBlindStage = (stage: Stage): boolean => stage === 'committed'
 
-// "bankA::<fp>" → 'bankA' (or undefined if it is not one of the three desks).
+// "bankA::<fp>" → 'bankA' (or undefined if it is not one of the three primary desks).
+// The Time Machine replays the three primary desks only; the guest (bankD) joins via
+// the mobile /join route and is not part of this 3-up replay (cast the list to DeskKey[]
+// so the widened union still narrows against the primary-desk allow-list).
 export const deskKeyOfParty = (party: string): DeskKey | undefined => {
   const key = party.split('::')[0]
-  return (['bankA', 'bankB', 'bankC'] as const).includes(key as DeskKey)
+  return (['bankA', 'bankB', 'bankC'] as DeskKey[]).includes(key as DeskKey)
     ? (key as DeskKey)
     : undefined
 }

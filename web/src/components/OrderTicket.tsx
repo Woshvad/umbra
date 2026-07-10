@@ -61,6 +61,10 @@ const DEMO: Record<DeskKey, { side: Side; qty: number; limit: number }> = {
   bankA: { side: Side.Buy, qty: 10, limit: 101 },
   bankB: { side: Side.Sell, qty: 8, limit: 99 },
   bankC: { side: Side.Sell, qty: 5, limit: 100 },
+  // WOW-07 guest 4th desk — the multi-buyer golden's Desk D (Buy 4@100, 11-06). Only
+  // used when the guest /join surface reuses this ticket; the 3-desk switcher never
+  // seeds bankD.
+  bankD: { side: Side.Buy, qty: 4, limit: 100 },
 }
 
 // AUCT-01 — the four sealed order types. UI segment labels map to the on-ledger

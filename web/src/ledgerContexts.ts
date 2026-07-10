@@ -21,13 +21,21 @@ const make = (name: string): Ctx => createLedgerContext(name)
 export const ctxA = make('bankA')
 export const ctxB = make('bankB')
 export const ctxC = make('bankC')
+// WOW-07 guest 4th desk (bankD). Its OWN isolated per-party context, identical in
+// shape to A/B/C — structural per-party privacy applies to the guest exactly as it
+// does to the primary desks. It is NOT part of the desktop 3-desk switcher (the guest
+// joins only via the mobile /join route, UI-SPEC); mounted on demand there.
+export const ctxD = make('bankD')
 
-export type DeskKey = 'bankA' | 'bankB' | 'bankC'
+export type DeskKey = 'bankA' | 'bankB' | 'bankC' | 'bankD'
 
 // Stable mapping desk -> its own context, used by the 3-up Privacy view so each
-// column is wired to exactly one party's connection.
+// column is wired to exactly one party's connection. bankD is included so the guest
+// /join surface can resolve its own context via the same map; the desktop switcher
+// iterates DESKS (A/B/C only) and never touches bankD.
 export const ctxFor: Record<DeskKey, Ctx> = {
   bankA: ctxA,
   bankB: ctxB,
   bankC: ctxC,
+  bankD: ctxD,
 }

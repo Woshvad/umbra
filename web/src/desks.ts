@@ -19,6 +19,13 @@ export const DESKS: DeskMeta[] = [
   { key: 'bankC', code: 'HALWARD', role: 'Seller' },
 ]
 
+// WOW-07 guest 4th desk (bankD). Deliberately a SEPARATE export — NOT a member of
+// `DESKS` — so the desktop PartySwitcher/Header keep iterating exactly the three
+// primary desks (guest is mobile-/join-only per UI-SPEC; the topology GUEST card
+// appears only once a guest has actually joined). Consumers that need the guest
+// (the /join route, TopologyView) reference this directly.
+export const GUEST: DeskMeta = { key: 'bankD', code: 'GUEST', role: 'Guest' }
+
 // Resolve a live desk PARTY id ("bankA::<fingerprint>") to its comp display CODE
 // (BLUEROCK/MERIDIAN/HALWARD). The solver returns allocations keyed by the full party
 // id; the comp + the BEFORE balances are keyed by code, and the party-id prefix before

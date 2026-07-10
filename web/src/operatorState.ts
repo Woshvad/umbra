@@ -30,4 +30,8 @@ export type OperatorViewState = {
   setPreview: (p: SolvePreviewResponse | null) => void
   offline: boolean
   setOffline: (v: boolean) => void
+  // IDEN-03 four-eyes: the Compliance verdict the Theatre control (03) sets and the
+  // Settlement settle CTA (05) gates on. 'approved' unblocks settle; otherwise it stays blocked.
+  approval: ClearingApprovalDecision
+  setApproval: (d: ClearingApprovalDecision) => void
 }

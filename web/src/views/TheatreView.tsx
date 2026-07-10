@@ -16,10 +16,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { OperatorViewState } from '../operatorState'
 import type { IndicativeMeta } from '../solver'
-import { closeRound, getRound, solvePreview, SolverError, OFFLINE_CAPTION } from '../solver'
+import {
+  approveClearing,
+  closeRound,
+  getRound,
+  rejectClearing,
+  solvePreview,
+  SolverError,
+  OFFLINE_CAPTION,
+} from '../solver'
 import CountdownRing from '../components/CountdownRing'
 import CrossingChart from '../components/CrossingChart'
 import PriceReveal from '../components/PriceReveal'
+import ComplianceApproval from '../components/ComplianceApproval'
 import QrJoin from '../components/QrJoin'
 
 type Props = OperatorViewState
@@ -34,9 +43,13 @@ export default function TheatreView({
   setPreview,
   offline,
   setOffline,
+  approval,
+  setApproval,
 }: Props) {
   const [seconds, setSeconds] = useState(WINDOW_SECONDS)
   const [sealedOrderCount, setSealedOrderCount] = useState(0)
+  // IDEN-03 four-eyes: guards the Compliance approve/reject round-trip (offline-guarded).
+  const [approving, setApproving] = useState(false)
   // AUCT-03: the aggregate indicative scalars (scalars only — never an order). Present
   // only while the window is open with ≥1 sealed order; small-N guarded server-side.
   const [indicative, setIndicative] = useState<IndicativeMeta | undefined>()
@@ -62,6 +75,25 @@ export default function TheatreView({
       }
     }
   }, [roundId, setPhase, setPreview, setOffline])
+
+  // ── IDEN-03 four-eyes Compliance decision (offline-guarded) ──────────────────────
+  // APPROVE → approveClearing (unblocks the settle CTA in 05); REJECT → rejectClearing
+  // (settlement stays blocked). Both probe the operator-plane solver, so a down :4100
+  // surfaces the shipped OFFLINE caption without silently flipping the verdict.
+  const decideApproval = useCallback(
+    async (decision: 'approved' | 'rejected') => {
+      setApproving(true)
+      try {
+        await (decision === 'approved' ? approveClearing(roundId) : rejectClearing(roundId))
+        setApproval(decision)
+      } catch (e) {
+        if (e instanceof SolverError && e.code === 'OFFLINE') setOffline(true)
+      } finally {
+        setApproving(false)
+      }
+    },
+    [roundId, setApproval, setOffline],
+  )
 
   // ── Start the 60s window (RESEARCH Pattern 4) ────────────────────────────────────
   // 1s setInterval decrementing 60→0; at 0 it clears the interval and auto-fires
@@ -144,7 +176,31 @@ export default function TheatreView({
             onClose={() => void closeAndSolve()}
           />
         ) : (
-          <SolvedStage phase={phase} preview={preview} />
+          <>
+            <SolvedStage phase={phase} preview={preview} />
+            {/* IDEN-03 four-eyes control — gated to the pending state: once the recomputed
+                clearing price is revealed (preview present), BEFORE settle. APPROVE unblocks
+                the settle CTA in 05 Settlement; REJECT withholds it. Additive below the
+                money-shot reveal — the shipped chart/reveal beat is untouched. */}
+            {preview && (
+              <div
+                style={{
+                  marginTop: '40px',
+                  borderTop: '1px solid rgba(244,241,234,0.16)',
+                  paddingTop: '32px',
+                }}
+              >
+                <ComplianceApproval
+                  roundId={roundId}
+                  clearingPrice={preview.clearingPrice}
+                  decision={approval}
+                  busy={approving}
+                  onApprove={() => void decideApproval('approved')}
+                  onReject={() => void decideApproval('rejected')}
+                />
+              </div>
+            )}
+          </>
         )}
       </div>
 

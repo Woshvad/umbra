@@ -14,7 +14,7 @@
 // BLUEROCK 10/4000 · MERIDIAN 12/1800 · HALWARD 13/1200. A :4100 reject → SolverError
 // 'OFFLINE' → graceful caption; Privacy still renders.
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { OperatorViewState } from '../operatorState'
+import type { OperatorViewState, ClearingApprovalDecision } from '../operatorState'
 import type { SolvePreviewResponse, SettlementProvenance } from '../solver'
 import { settle, SolverError, OFFLINE_CAPTION } from '../solver'
 import { codeForParty, GUEST } from '../desks'
@@ -171,6 +171,7 @@ export default function SettlementView({
   setPhase,
   offline,
   setOffline,
+  approval,
 }: Props) {
   const [settleProgress, setSettleProgress] = useState(phase === 'settled' ? 1 : 0)
   const [stampIn, setStampIn] = useState(phase === 'settled')
@@ -320,6 +321,11 @@ export default function SettlementView({
                   />
                   SETTLED — both legs, one tx
                 </div>
+              ) : approval !== 'approved' ? (
+                // IDEN-03 four-eyes gate — the settle CTA is BLOCKED until a distinct Compliance
+                // sign-off (03 Auction Theatre). Round.Clear itself requires a compliance-signed
+                // ClearingApproval on-ledger (12-01), so settlement is withheld either way.
+                <FourEyesGate decision={approval} />
               ) : (
                 <button
                   type="button"
@@ -382,6 +388,53 @@ export default function SettlementView({
         </p>
       )}
     </main>
+  )
+}
+
+// IDEN-03 four-eyes gate — the blocked settle affordance shown until Compliance signs off
+// (03 Auction Theatre). Reuses the shipped red-square verbatim-reject grammar (ink evidence
+// surface); when Compliance has REJECTED, it surfaces the on-ledger four-eyes consequence
+// verbatim (Round.Clear aborts without a compliance-signed ClearingApproval). Comp tokens only.
+function FourEyesGate({ decision }: { decision: ClearingApprovalDecision }) {
+  const rejected = decision === 'rejected'
+  return (
+    <div style={{ maxWidth: '520px' }}>
+      <div className="flex items-center" style={{ gap: '8px' }}>
+        <span
+          style={{ display: 'inline-block', width: '8px', height: '8px', background: '#E2231A' }}
+        />
+        <span
+          className="font-mono text-13 font-semibold uppercase"
+          style={{ letterSpacing: '.1em', color: '#E2231A' }}
+        >
+          {rejected ? 'REJECTED BY COMPLIANCE — SETTLEMENT WITHHELD' : 'PENDING COMPLIANCE FOUR-EYES SIGN-OFF'}
+        </span>
+      </div>
+      {/* The verbatim on-ledger consequence (ink evidence surface — same treatment as the
+          shipped tamper/reject surfaces). Render it, never summarize it. */}
+      <div
+        className="font-mono text-11"
+        style={{
+          background: '#0A0A0A',
+          color: '#F4F1EA',
+          padding: '18px 20px',
+          marginTop: '12px',
+          lineHeight: 1.6,
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+        }}
+      >
+        {rejected
+          ? 'Round.Clear rejected — assertClearingApproved: no valid compliance-signed ClearingApproval for this round (IDEN-03 four-eyes). Nothing settled on-ledger.'
+          : 'Settlement is blocked pending a second, independent Compliance sign-off. Approve the recomputed clearing price in 03 Auction Theatre to unblock the atomic DvP.'}
+      </div>
+      <p
+        className="font-mono uppercase"
+        style={{ fontSize: '9px', letterSpacing: '.14em', opacity: 0.55, marginTop: '10px' }}
+      >
+        DEV COMPLIANCE PARTY — LIVE HUMAN FOUR-EYES AT UAT
+      </p>
+    </div>
   )
 }
 

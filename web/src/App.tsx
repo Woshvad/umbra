@@ -18,7 +18,7 @@ import SettlementView from './views/SettlementView'
 import TimeMachineView from './views/TimeMachineView'
 import TopologyView from './views/TopologyView'
 import type { SolvePreviewResponse } from './solver'
-import type { OperatorViewState, TheatrePhase } from './operatorState'
+import type { OperatorViewState, TheatrePhase, ClearingApprovalDecision } from './operatorState'
 
 // The seeded screenshot-ready round (RESEARCH Open Question 2). Theatre drives R1;
 // VITE_ROUND_ID may override for ad-hoc rounds.
@@ -65,6 +65,9 @@ export default function App() {
   const [phase, setPhase] = useState<TheatrePhase>('open')
   const [preview, setPreview] = useState<SolvePreviewResponse | null>(null)
   const [offline, setOffline] = useState<boolean>(false)
+  // IDEN-03 four-eyes Compliance verdict — set by the Theatre control (03), gates the
+  // Settlement settle CTA (05). Defaults 'idle' (awaiting sign-off → settle blocked).
+  const [approval, setApproval] = useState<ClearingApprovalDecision>('idle')
 
   const operatorState: OperatorViewState = {
     roundId,
@@ -74,6 +77,8 @@ export default function App() {
     setPreview,
     offline,
     setOffline,
+    approval,
+    setApproval,
   }
 
   const onReset = () => {

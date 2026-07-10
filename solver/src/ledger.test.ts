@@ -154,17 +154,21 @@ const seedStats = (roundId: string, count: number): void => {
 }
 
 // Seed the canonical §4 world for a settleable (Closed) round: 3 sealed orders, the
-// buyer's USDCx + each seller's BONDX holding, and the Round contract. tamperClear
-// gathers exactly these (mirroring settle) before submitting a TAMPERED Clear.
+// buyer's USDCx + each seller's BONDX operator-custody Holding (v2 wire: instrument is
+// the InstrumentId {issuer, id} record, amount a string, lock null), and the Round
+// contract. tamperClear gathers exactly these (mirroring settle) before submitting a
+// TAMPERED Clear. DFIN-01/03: settle()/tamperClear() now read `Holding`, NOT `Asset`.
 const seedSection4World = (roundId: string): void => {
   // A Buy 10 @101, B Sell 8 @99, C Sell 5 @100 → clears 100, A=10 / B=8 / C=2.
+  const usdc = { issuer: 'operator::test', id: 'USDCx' }
+  const bond = { issuer: 'operator::test', id: 'BONDX' }
   acs.push(
     umbra('#umbra:Umbra.Auction:Order', { operator: 'operator::test', desk: 'bankA::test', roundId, side: 'Buy', quantity: '10', limit: '101.0', status: 'Sealed' }, 'order-A'),
     umbra('#umbra:Umbra.Auction:Order', { operator: 'operator::test', desk: 'bankB::test', roundId, side: 'Sell', quantity: '8', limit: '99.0', status: 'Sealed' }, 'order-B'),
     umbra('#umbra:Umbra.Auction:Order', { operator: 'operator::test', desk: 'bankC::test', roundId, side: 'Sell', quantity: '5', limit: '100.0', status: 'Sealed' }, 'order-C'),
-    umbra('#umbra:Umbra.Auction:Asset', { operator: 'operator::test', owner: 'bankA::test', symbol: 'USDCx', quantity: '5000.0' }, 'asset-A-usdc'),
-    umbra('#umbra:Umbra.Auction:Asset', { operator: 'operator::test', owner: 'bankB::test', symbol: 'BONDX', quantity: '20.0' }, 'asset-B-bond'),
-    umbra('#umbra:Umbra.Auction:Asset', { operator: 'operator::test', owner: 'bankC::test', symbol: 'BONDX', quantity: '15.0' }, 'asset-C-bond'),
+    umbra('#umbra:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'bankA::test', instrument: usdc, amount: '5000.0', lock: null }, 'holding-A-usdc'),
+    umbra('#umbra:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'bankB::test', instrument: bond, amount: '20.0', lock: null }, 'holding-B-bond'),
+    umbra('#umbra:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'bankC::test', instrument: bond, amount: '15.0', lock: null }, 'holding-C-bond'),
     umbra('#umbra:Umbra.Auction:Round', { operator: 'operator::test', roundId, symbol: 'BONDX', desks: ['bankA::test', 'bankB::test', 'bankC::test'], openedAt: '2026-07-09T00:00:00Z', windowSeconds: '60', status: 'Closed' }, 'round-0'),
   )
 }

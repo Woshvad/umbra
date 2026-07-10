@@ -321,14 +321,24 @@ export const closeRound = async (roundId: string): Promise<RoundStatus> => {
   return closed?.payload.status ?? 'Closed'
 }
 
-// ── The Option-B Round.Clear settle sequence ─────────────────────────────────────
+// ── The token-agnostic, N-buyer Round.Clear settle sequence (DFIN-02/03) ──────────
 // `Round.Clear` cannot query the ACS, so the solver gathers every ContractId the
-// choice needs and passes them as additive args. The deterministic §8 output is
-// submitted and re-verified on-ledger (verify-don't-trust) — NO skip path.
+// choice needs and passes them as additive Option-B args. The deterministic §8 output
+// is submitted and re-verified on-ledger (verify-don't-trust) — NO skip path.
 //
-// ASSET-SELECTION SCOPE (documented MVP limitation): assumes a single (owner,symbol)
-// holding with sufficient quantity (true for the §4 fixture). Throws a clean,
-// secret-free `insufficient or missing <symbol> holding for <party>` otherwise.
+// DFIN-01/02/03 (11-05 wiring): the settlement legs now ride on `Holding` cids (the
+// operator-custody successor to the retired `Asset`), the single-funded-buyer
+// assumption is GONE (each buyer on the verified allocation funds its OWN cash leg,
+// so N buyers × M sellers settle), and the instruments are token-agnostic
+// `InstrumentId {issuer, id}` records (no hardcoded "USDCx"/"BONDX" on the wire —
+// DFIN-03). The on-ledger `settleBatch` builds the gross DvP legs from the verified
+// allocation and asserts per-instrument conservation.
+//
+// HOLDING-SELECTION SCOPE (documented MVP limitation): assumes one sufficient
+// (owner, instrument) Holding per party (true for the §4 fixture + the 2×2 golden);
+// a per-cid `used` set prevents double-assigning one Holding across legs. Throws a
+// clean, secret-free `insufficient or missing <instrument> holding for <party>`
+// otherwise (auto-merge of split holdings is stretch §19).
 export const settle = async (
   roundId: string,
 ): Promise<{ result: { roundId: string; clearingPrice: number; totalMatched: number }; status: RoundStatus }> => {
@@ -341,61 +351,97 @@ export const settle = async (
   const { clearingPrice, allocations } = computeClearing(views)
   const matchedVolume = matchedAt(views, clearingPrice)
 
-  // 3. The buyer is the single desk on the Buy side of the verified allocation.
-  const buyAlloc = allocations.find((a) => a.side === 'Buy')
-  if (!buyAlloc) throw new Error(`round ${roundId} has no Buy-side allocation (no cross)`)
-  const buyer = buyAlloc.desk
+  // 3. Token-agnostic instruments (DFIN-03): the operator issues both §4 instruments,
+  //    encoded as the InstrumentId {issuer, id} record shape (Pitfall 4).
+  const cashInstrument = { issuer: operatorParty, id: CASH_SYMBOL }
+  const bondInstrument = { issuer: operatorParty, id: BOND_SYMBOL }
 
-  // 4. Holdings: the buyer's USDCx (≥ matchedVolume×price) + each seller's BONDX.
-  const assets = await queryByEntity('Asset')
-  const cashNeeded = matchedVolume * clearingPrice
-  const buyerUsdc = assets.find(
-    (c) =>
-      c.createArgument.owner === buyer &&
-      c.createArgument.symbol === CASH_SYMBOL &&
-      Number(c.createArgument.quantity) >= cashNeeded,
-  )
-  if (!buyerUsdc) {
-    throw new Error(`insufficient or missing ${CASH_SYMBOL} holding for ${buyer} (need ${cashNeeded})`)
-  }
-  const buyerUsdcCid = buyerUsdc.contractId
-
-  // 5. Each seller's BONDX holding sufficient for its filledQty (tuple → { _1, _2 }).
-  const sellerBondCids: { _1: string; _2: string }[] = []
-  for (const a of allocations) {
-    if (a.side !== 'Sell' || a.filledQty <= 0) continue
-    const bond = assets.find(
-      (c) =>
-        c.createArgument.owner === a.desk &&
-        c.createArgument.symbol === BOND_SYMBOL &&
-        Number(c.createArgument.quantity) >= a.filledQty,
-    )
-    if (!bond) {
-      throw new Error(`insufficient or missing ${BOND_SYMBOL} holding for ${a.desk} (need ${a.filledQty})`)
-    }
-    sellerBondCids.push({ _1: a.desk, _2: bond.contractId })
+  // 4. Gather live Holding cids (the retired Asset gather is gone). Each BUYER funds
+  //    its OWN cash leg (filledQty × p*); each SELLER delivers its bond leg (filledQty).
+  //    Tuples encode as { _1, _2 }; amounts arrive as strings → Number() (Pitfall 4).
+  const holdings = await queryByEntity('Holding')
+  const { buyerCashCids, sellerBondCids } = gatherHoldingCids(holdings, allocations, clearingPrice)
+  if (buyerCashCids.length === 0) {
+    throw new Error(`round ${roundId} has no Buy-side allocation (no cross)`)
   }
 
-  // 6. Re-query the CURRENT Round cid, then exercise Clear. The on-ledger guard
-  //    (status == Closed || Cleared) rejects a non-settleable round.
+  // 5. Re-query the CURRENT Round cid, then exercise the token-agnostic Clear. The
+  //    on-ledger guard (status == Closed || Cleared) rejects a non-settleable round.
   const round = await queryRound(roundId)
   if (!round) throw new Error(`round ${roundId} not found`)
   await exerciseChoice('Umbra.Auction:Round', round.contractId, 'Clear', {
     clearingPrice,
     allocations: allocations.map((a) => ({ desk: a.desk, side: a.side, filledQty: a.filledQty })),
     orderCids,
-    buyerUsdcCid,
+    buyerCashCids,
     sellerBondCids,
+    cashInstrument,
+    bondInstrument,
     referencePrice: REFERENCE_PRICE_STUB, // AUCT-04 labeled benchmark stub (drives only the SIGNED vs-reference bp)
   })
 
-  // 7. The Round was recreated as Settled. The verified result is reconstructed
+  // 6. The Round was recreated as Settled. The verified result is reconstructed
   //    locally — the on-ledger Clear re-verified §8, so local == on-ledger.
   const settled = await queryRound(roundId)
   return {
     result: { roundId, clearingPrice, totalMatched: matchedVolume },
     status: settled?.payload.status ?? 'Settled',
   }
+}
+
+// ── Holding cid gather (Pitfall 4/5): N-buyer × M-seller, token-agnostic ──────────
+// From the VERIFIED §8 allocation, locate one sufficient operator-custody `Holding`
+// per participating desk: every BUYER's cash Holding (≥ filledQty × p*) and every
+// SELLER's bond Holding (≥ filledQty). Match by (owner, instrument.id) + sufficient
+// `amount` (v2 wire: amount is a zero-padded STRING → Number()). A `used` set stops
+// one Holding being assigned to two legs. Tuples are the v2 { _1, _2 } shape. Throws
+// a secret-free `insufficient or missing <instrument> holding for <party>` on a miss.
+// This is the ONLY place both settle() and tamperClear() derive their cids from, but
+// each calls it independently so settle() stays the canonical, un-perturbed path.
+const gatherHoldingCids = (
+  holdings: CreatedEvent[],
+  allocations: { desk: string; side: Side; filledQty: number }[],
+  clearingPrice: number,
+): { buyerCashCids: { _1: string; _2: string }[]; sellerBondCids: { _1: string; _2: string }[] } => {
+  const used = new Set<string>()
+  const instrId = (c: CreatedEvent): string | undefined => c.createArgument.instrument?.id
+
+  const buyerCashCids: { _1: string; _2: string }[] = []
+  for (const a of allocations) {
+    if (a.side !== 'Buy' || a.filledQty <= 0) continue
+    const cashNeeded = a.filledQty * clearingPrice
+    const cash = holdings.find(
+      (c) =>
+        !used.has(c.contractId) &&
+        c.createArgument.owner === a.desk &&
+        instrId(c) === CASH_SYMBOL &&
+        Number(c.createArgument.amount) >= cashNeeded,
+    )
+    if (!cash) {
+      throw new Error(`insufficient or missing ${CASH_SYMBOL} holding for ${a.desk} (need ${cashNeeded})`)
+    }
+    used.add(cash.contractId)
+    buyerCashCids.push({ _1: a.desk, _2: cash.contractId })
+  }
+
+  const sellerBondCids: { _1: string; _2: string }[] = []
+  for (const a of allocations) {
+    if (a.side !== 'Sell' || a.filledQty <= 0) continue
+    const bond = holdings.find(
+      (c) =>
+        !used.has(c.contractId) &&
+        c.createArgument.owner === a.desk &&
+        instrId(c) === BOND_SYMBOL &&
+        Number(c.createArgument.amount) >= a.filledQty,
+    )
+    if (!bond) {
+      throw new Error(`insufficient or missing ${BOND_SYMBOL} holding for ${a.desk} (need ${a.filledQty})`)
+    }
+    used.add(bond.contractId)
+    sellerBondCids.push({ _1: a.desk, _2: bond.contractId })
+  }
+
+  return { buyerCashCids, sellerBondCids }
 }
 
 // ── WOW-02: tamperClear — the DEDICATED "break the AI" demo seam ──────────────────
@@ -417,46 +463,23 @@ export const tamperClear = async (
   roundId: string,
   mode: 'wrong-price' | 'overfill',
 ): Promise<{ rejected: true; error: string }> => {
-  // Gather EXACTLY as settle() does (steps 1-6) — copied, not refactored, so settle()
-  // stays byte-unchanged. The holdings are located from the CORRECT §8 allocation; only
-  // the values SUBMITTED to Clear are perturbed below.
+  // Gather the CORRECT §8 cids exactly as settle() does (Holdings, N-buyer,
+  // token-agnostic instruments). The holdings are located from the CORRECT allocation;
+  // ONLY the values SUBMITTED to Clear are perturbed below — settle() stays the
+  // canonical settling path (this function never settles, it only ATTEMPTS a bad Clear).
   const sealed = await readSealedOrders(roundId)
   const orderCids = sealed.map((o) => o.contractId)
   const views: OrderView[] = sealed.map((o) => o.view)
 
   const { clearingPrice, allocations } = computeClearing(views)
-  const matchedVolume = matchedAt(views, clearingPrice)
 
-  const buyAlloc = allocations.find((a) => a.side === 'Buy')
-  if (!buyAlloc) throw new Error(`round ${roundId} has no Buy-side allocation (no cross)`)
-  const buyer = buyAlloc.desk
+  const cashInstrument = { issuer: operatorParty, id: CASH_SYMBOL }
+  const bondInstrument = { issuer: operatorParty, id: BOND_SYMBOL }
 
-  const assets = await queryByEntity('Asset')
-  const cashNeeded = matchedVolume * clearingPrice
-  const buyerUsdc = assets.find(
-    (c) =>
-      c.createArgument.owner === buyer &&
-      c.createArgument.symbol === CASH_SYMBOL &&
-      Number(c.createArgument.quantity) >= cashNeeded,
-  )
-  if (!buyerUsdc) {
-    throw new Error(`insufficient or missing ${CASH_SYMBOL} holding for ${buyer} (need ${cashNeeded})`)
-  }
-  const buyerUsdcCid = buyerUsdc.contractId
-
-  const sellerBondCids: { _1: string; _2: string }[] = []
-  for (const a of allocations) {
-    if (a.side !== 'Sell' || a.filledQty <= 0) continue
-    const bond = assets.find(
-      (c) =>
-        c.createArgument.owner === a.desk &&
-        c.createArgument.symbol === BOND_SYMBOL &&
-        Number(c.createArgument.quantity) >= a.filledQty,
-    )
-    if (!bond) {
-      throw new Error(`insufficient or missing ${BOND_SYMBOL} holding for ${a.desk} (need ${a.filledQty})`)
-    }
-    sellerBondCids.push({ _1: a.desk, _2: bond.contractId })
+  const holdings = await queryByEntity('Holding')
+  const { buyerCashCids, sellerBondCids } = gatherHoldingCids(holdings, allocations, clearingPrice)
+  if (buyerCashCids.length === 0) {
+    throw new Error(`round ${roundId} has no Buy-side allocation (no cross)`)
   }
 
   const round = await queryRound(roundId)
@@ -476,8 +499,10 @@ export const tamperClear = async (
       clearingPrice: badPrice,
       allocations: badAllocs.map((a) => ({ desk: a.desk, side: a.side, filledQty: a.filledQty })),
       orderCids,
-      buyerUsdcCid,
+      buyerCashCids,
       sellerBondCids,
+      cashInstrument,
+      bondInstrument,
       referencePrice: REFERENCE_PRICE_STUB, // additive arg; the tampered numeric values are still what the backstop rejects
     })
   } catch (e) {

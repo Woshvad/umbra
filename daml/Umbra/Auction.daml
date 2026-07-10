@@ -31,6 +31,12 @@ import DA.Crypto.Text (sha256, toHex)
 import Umbra.Instrument (InstrumentId)
 import Umbra.Holding (Holding, Reassign(..))
 import Umbra.Settlement (buildGrossInstructions, netLegs, conservationOk, settleBatch)
+-- IDEN-03 (12-01): the FOUR-EYES clearing-approval gate. `ClearingApproval` is
+-- signed by operator+compliance and threaded into `Round.Clear` by explicit
+-- ContractId (no keys — D7 Option-B); `assertClearingApproved` re-checks it
+-- against this operator/round + the recomputed price. `Approval` imports nothing
+-- from Auction, so no module cycle is introduced.
+import Umbra.Approval (ClearingApproval, assertClearingApproved)
 import Umbra.Clearing (Side(..), Allocation(..), OrderType(..), OrderView(..), computeClearing)
 
 -- §7.3 — order status (verbatim). `Side` is defined in Umbra.Clearing and
@@ -330,6 +336,7 @@ template Round
         cashInstrument : InstrumentId                     -- DFIN-03: pluggable cash instrument (no hardcoded "USDCx")
         bondInstrument : InstrumentId                     -- DFIN-03: the tokenized bond instrument
         referencePrice : Decimal                          -- AUCT-04: labeled benchmark STUB (config, passed in — a choice body cannot read config)
+        approvalCid    : ContractId ClearingApproval      -- IDEN-03 four-eyes credential (compliance-signed; fetched + asserted below)
       controller operator
       do
         -- 0. Lifecycle guard (RESEARCH Pitfall 7 / T-02-07, double-settle): only a
@@ -376,6 +383,16 @@ template Round
         --    allocation, and per-instrument conservation (fail-loud) REPLACES the
         --    single-buyer shortcut.
         let priceDec = roundBankers 2 clearingPrice
+        -- 1b. FOUR-EYES GATE (IDEN-03) — the additive authority precondition on the
+        --     settle path. Fetch the compliance-signed `ClearingApproval` (passed by
+        --     ContractId, D7 Option-B) and assert it authorizes THIS operator/round at
+        --     EXACTLY the recomputed price `priceDec`. A missing / wrong-price /
+        --     wrong-round / operator-self-made approval aborts here, ON-LEDGER, before
+        --     any Batch DvP leg is built. This is purely ADDITIVE: the §8
+        --     recompute-and-assert above and the Batch settlement below are byte-
+        --     unchanged; a distinct `compliance` signatory must have approved.
+        appr <- fetch approvalCid
+        assertClearingApproved operator roundId priceDec appr
         -- Build the gross DvP Instructions (sellers deliver bond to buyers; buyers
         -- pay `filledQty * p*` cash to sellers) from the verified allocation.
         let legs = buildGrossInstructions priceDec allocations bondInstrument cashInstrument

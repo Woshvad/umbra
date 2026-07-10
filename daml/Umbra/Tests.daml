@@ -23,6 +23,13 @@ import Umbra.Auction
 import Umbra.Roles (Venue(..), SubmitOrder(..), CommitOrder(..), IssueHolding(..), AnchorProof(..))
 import Umbra.Clearing
 import Umbra.Compliance (DeskEligibility(..), isEligible)
+-- IDEN-03 (12-01): the four-eyes clearing-approval templates + gate. The tests
+-- allocate a DEDICATED `compliance` dev party (distinct from operator) so the
+-- signatory SEPARATION is real while `daml test` runs headless.
+import Umbra.Approval
+  ( ClearingApproval(..), ClearingApprovalRequest(..)
+  , ApproveClearing(..), RejectClearing(..)
+  )
 import Umbra.Instrument (InstrumentId(..))
 import Umbra.Holding (Holding(..), Split(..), Merge(..), Reassign(..))
 import Umbra.Settlement
@@ -436,6 +443,31 @@ canonicalAllocs bankA bankB bankC =
   , Allocation with desk = bankC; side = Sell; filledQty = 2
   ]
 
+-- IDEN-03 (12-01) — the FOUR-EYES approval helper. The operator PROPOSES a
+-- clearing (creates a `ClearingApprovalRequest` at the recomputed price) and a
+-- DISTINCT `compliance` party APPROVES it (`ApproveClearing`), bringing the
+-- operator+compliance-signed `ClearingApproval` into being. `Round.Clear` requires
+-- the returned ContractId. operator ≠ compliance is the tested SEPARATION: the
+-- operator cannot forge a `ClearingApproval` alone (compliance authority co-flows
+-- only through this exercise on a request the operator proposed). Every §4 Clear
+-- call site threads one via `withCanonicalApproval`.
+approveClearing : Party -> Party -> Text -> Decimal -> Script (ContractId ClearingApproval)
+approveClearing operator compliance roundId price = do
+  reqCid <- submit operator do
+    createCmd ClearingApprovalRequest with
+      operator; compliance; roundId; clearingPrice = price
+  submit compliance do
+    exerciseCmd reqCid ApproveClearing
+
+-- Allocate a dedicated dev compliance party and return a valid §4 `ClearingApproval`
+-- (roundId "R1" @ $100.00) — the exact four-eyes credential the §4 `Round.Clear`
+-- call sites require. Kept tiny so every pre-existing settle test threads the gate
+-- with a single line while staying green.
+withCanonicalApproval : Party -> Script (ContractId ClearingApproval)
+withCanonicalApproval operator = do
+  compliance <- allocatePartyByHint (PartyIdHint "compliance")
+  approveClearing operator compliance "R1" 100.0
+
 -- SETL-01/SETL-02 — after a successful Round.Clear on the §4 fixture the ledger
 -- shows the EXACT spec §4 post-balances (A:10/4000, B:12/1800, C:13/1200) and
 -- both BONDX and USDCx are conserved end-to-end (totals unchanged vs the seed:
@@ -447,6 +479,8 @@ test_settled_balances = do
   let Parties{..} = parties
   -- Settle: drive the REAL Clear with the verified §4 allocation @100.0 and the
   -- Option-B ContractIds. operator authority alone (operator-custody DvP).
+  -- IDEN-03: thread the compliance-signed four-eyes approval @100.0.
+  approvalCid <- withCanonicalApproval operator
   _ <- submit operator do
     exerciseCmd roundCid Clear with
       clearingPrice  = 100.0
@@ -457,6 +491,7 @@ test_settled_balances = do
       cashInstrument = cashInstrumentOf operator
       bondInstrument = bondInstrumentOf operator
       referencePrice = 100.0
+      approvalCid
   -- Sum each owner's Holdings per instrument from the operator's view of the ACS.
   holdings <- query @Holding operator
   let bal owner sym = sum [ h.amount | (_, h) <- holdings, h.owner == owner, h.instrument.id == sym ]
@@ -496,6 +531,7 @@ test_surplus_nonneg = do
   SeedResult{..} <- seedCanonicalAndClose
   let Parties{..} = parties
   -- Drive the REAL Clear with the verified §4 allocation @100.0 + the reference stub.
+  approvalCid <- withCanonicalApproval operator
   _ <- submit operator do
     exerciseCmd roundCid Clear with
       clearingPrice  = 100.0
@@ -506,6 +542,7 @@ test_surplus_nonneg = do
       cashInstrument = cashInstrumentOf operator
       bondInstrument = bondInstrumentOf operator
       referencePrice = 100.0
+      approvalCid
   confs <- query @TradeConfirmation operator
   assertMsg "expected a TradeConfirmation per desk" (length confs == 3)
   -- The proof: NO receipt has a negative surplus-vs-limit (asserted on-ledger).
@@ -527,6 +564,9 @@ test_atomicity = do
   -- Snapshot every Holding (owner, instrument, amount) BEFORE the failing Clear.
   before <- query @Holding operator
   let snap xs = sort [ (show h.owner, h.instrument.id, h.amount) | (_, h) <- xs ]
+  -- A VALID four-eyes approval (so the ONLY reason this Clear fails is the missing
+  -- asset — the atomicity property — not a missing/invalid approval).
+  approvalCid <- withCanonicalApproval operator
   -- B holds only 5.0 BONDX but must deliver 8 → the Split throws → rollback.
   submitMustFail operator do
     exerciseCmd roundCid Clear with
@@ -538,6 +578,7 @@ test_atomicity = do
       cashInstrument = cashInstrumentOf operator
       bondInstrument = bondInstrumentOf operator
       referencePrice = 100.0
+      approvalCid
   -- All-or-nothing: the post-failure ACS is IDENTICAL to the pre-Clear snapshot.
   after <- query @Holding operator
   snap after === snap before
@@ -557,6 +598,9 @@ test_clear_rejects_bad_allocation = do
         , Allocation with desk = bankB; side = Sell; filledQty = 8
         , Allocation with desk = bankC; side = Sell; filledQty = 4
         ]
+  -- A VALID four-eyes approval @100.0: rejection here is by the §8 recompute
+  -- (which runs BEFORE the four-eyes gate), not by a missing approval.
+  approvalCid <- withCanonicalApproval operator
   submitMustFail operator do
     exerciseCmd roundCid Clear with
       clearingPrice  = 100.0
@@ -567,6 +611,7 @@ test_clear_rejects_bad_allocation = do
       cashInstrument = cashInstrumentOf operator
       bondInstrument = bondInstrumentOf operator
       referencePrice = 100.0
+      approvalCid
   -- Wrong price: correct §4 fills but clearingPrice = 99.0 (not the recomputed
   -- p* = 100.0). REJECTED by the price half of the recompute-and-assert.
   submitMustFail operator do
@@ -579,6 +624,7 @@ test_clear_rejects_bad_allocation = do
       cashInstrument = cashInstrumentOf operator
       bondInstrument = bondInstrumentOf operator
       referencePrice = 100.0
+      approvalCid
 
 -- ===========================================================================
 -- §16 privacy proofs (PRIV-01..04). Privacy is already STRUCTURAL from the
@@ -667,6 +713,7 @@ test_privacy_confirmations = do
   SeedResult{..} <- seedCanonicalAndClose
   let Parties{..} = parties
   -- settle with the verified §4 allocation @100.0 (operator authority)
+  approvalCid <- withCanonicalApproval operator
   _ <- submit operator do
     exerciseCmd roundCid Clear with
       clearingPrice  = 100.0
@@ -677,6 +724,7 @@ test_privacy_confirmations = do
       cashInstrument = cashInstrumentOf operator
       bondInstrument = bondInstrumentOf operator
       referencePrice = 100.0
+      approvalCid
 
   -- each desk sees exactly its own confirmation; operator sees all three
   aConfs <- query @TradeConfirmation bankA
@@ -854,6 +902,7 @@ test_commit_reveal_clears_at_100 = do
   let Parties{..} = parties
   -- Settle via the SAME real Round.Clear (operator-custody DvP), driven by the
   -- verified §4 allocation @100.0 and the Option-B ContractIds.
+  approvalCid <- withCanonicalApproval operator
   result <- submit operator do
     exerciseCmd roundCid Clear with
       clearingPrice  = 100.0
@@ -864,6 +913,7 @@ test_commit_reveal_clears_at_100 = do
       cashInstrument = cashInstrumentOf operator
       bondInstrument = bondInstrumentOf operator
       referencePrice = 100.0
+      approvalCid
   -- The money-shot number, now flowing through commit → reveal → clear.
   result.clearingPrice === 100.0
   result.totalMatched === 10
@@ -1084,6 +1134,7 @@ test_multibuyer_golden = do
   totalOf before cashInstrument === 1000.0 -- 600 (A) + 400 (D)
 
   -- Drive the REAL, generalized Round.Clear (recompute-§8-and-assert + Batch DvP).
+  approvalCid <- withCanonicalApproval operator
   result <- submit operator do
     exerciseCmd roundCid Clear with
       clearingPrice  = 100.0
@@ -1094,6 +1145,7 @@ test_multibuyer_golden = do
       cashInstrument
       bondInstrument
       referencePrice = 100.0
+      approvalCid
 
   -- (a) A SINGLE uniform clearing price the ledger re-derived + accepted.
   result.clearingPrice === 100.0
@@ -1138,6 +1190,7 @@ test_cash_instrument_agnostic = do
   -- The cash leg really is the swapped-in instrument (not USDCx).
   cashInstrument.id === "EURt"
 
+  approvalCid <- withCanonicalApproval operator
   result <- submit operator do
     exerciseCmd roundCid Clear with
       clearingPrice  = 100.0
@@ -1148,6 +1201,7 @@ test_cash_instrument_agnostic = do
       cashInstrument
       bondInstrument
       referencePrice = 100.0
+      approvalCid
 
   -- Identical clearing behavior: p*=100, matched 10.
   result.clearingPrice === 100.0
@@ -1276,6 +1330,7 @@ test_privacy_guest_fill = do
   length ops === 4
 
   -- Settle the 2×2 batch via the real Round.Clear.
+  approvalCid <- withCanonicalApproval operator
   _ <- submit operator do
     exerciseCmd roundCid Clear with
       clearingPrice  = 100.0
@@ -1286,6 +1341,7 @@ test_privacy_guest_fill = do
       cashInstrument
       bondInstrument
       referencePrice = 100.0
+      approvalCid
 
   -- POST-CLEAR fill privacy: each desk sees ONLY its own TradeConfirmation.
   dConfs <- query @TradeConfirmation bankD
@@ -1299,3 +1355,137 @@ test_privacy_guest_fill = do
   -- operator sees all four confirmations.
   allConfs <- query @TradeConfirmation operator
   length allConfs === 4
+
+-- ===========================================================================
+-- IDEN-03 (12-01) — FOUR-EYES compliance-approval gate on the settle path.
+-- A DISTINCT `compliance` party must approve the clearing price before
+-- `Round.Clear` commits. The §4 canary STILL clears $100.00 / A=10·B=8·C=2 WITH
+-- the approval threaded; a settle with no / wrong / operator-self-made approval is
+-- rejected ON-LEDGER. operator ≠ compliance is the real, tested SEPARATION.
+-- ===========================================================================
+
+-- THE §4 CANARY WITH FOUR-EYES (CLAUDE.md rule 3, HARD). Seed §4 → a DISTINCT
+-- compliance party approves @100.0 → Round.Clear settles → the money shot still
+-- lands exactly $100.00 with fills A=10 / B=8 / C=2 and the §4 post-balances.
+test_four_eyes_clears_at_100 : Script ()
+test_four_eyes_clears_at_100 = do
+  SeedResult{..} <- seedCanonicalAndClose
+  let Parties{..} = parties
+  -- A DISTINCT compliance party (operator ≠ compliance — the real separation).
+  compliance <- allocatePartyByHint (PartyIdHint "compliance")
+  assertMsg "four-eyes separation: operator must differ from compliance"
+    (operator /= compliance)
+  approvalCid <- approveClearing operator compliance "R1" 100.0
+  result <- submit operator do
+    exerciseCmd roundCid Clear with
+      clearingPrice  = 100.0
+      allocations    = canonicalAllocs bankA bankB bankC
+      orderCids
+      buyerCashCids
+      sellerBondCids
+      cashInstrument = cashInstrumentOf operator
+      bondInstrument = bondInstrumentOf operator
+      referencePrice = 100.0
+      approvalCid
+  -- The money-shot number, now gated by a distinct compliance approval.
+  result.clearingPrice === 100.0
+  result.totalMatched  === 10
+  -- The EXACT §4 post-settlement balances (unchanged by the four-eyes insertion).
+  holdings <- query @Holding operator
+  let bal owner sym = sum [ h.amount | (_, h) <- holdings, h.owner == owner, h.instrument.id == sym ]
+  bal bankA "BONDX" === 10.0
+  bal bankA "USDCx" === 4000.0
+  bal bankB "BONDX" === 12.0
+  bal bankB "USDCx" === 1800.0
+  bal bankC "BONDX" === 13.0
+  bal bankC "USDCx" === 1200.0
+  -- Per-desk fills A=10 / B=8 / C=2 via the private TradeConfirmations.
+  confs <- query @TradeConfirmation operator
+  let fillOf d = sum [ t.filledQty | (_, t) <- confs, t.desk == d ]
+  fillOf bankA === 10
+  fillOf bankB === 8
+  fillOf bankC === 2
+
+-- A settle with NO valid approval is rejected ON-LEDGER. We create a real
+-- approval, then ARCHIVE it (both signatories) so the ContractId dangles: the
+-- `fetch approvalCid` inside Round.Clear finds nothing → the whole Clear aborts.
+-- The §8 recompute (which runs BEFORE the gate) PASSES on the §4-valid allocation,
+-- so the four-eyes gate is the SOLE reason for rejection.
+test_settle_without_approval_rejected : Script ()
+test_settle_without_approval_rejected = do
+  SeedResult{..} <- seedCanonicalAndClose
+  let Parties{..} = parties
+  compliance <- allocatePartyByHint (PartyIdHint "compliance")
+  approvalCid <- approveClearing operator compliance "R1" 100.0
+  -- Archive the approval (requires BOTH signatories) → the cid no longer resolves.
+  submitMulti [operator, compliance] [] do archiveCmd approvalCid
+  submitMustFail operator do
+    exerciseCmd roundCid Clear with
+      clearingPrice  = 100.0
+      allocations    = canonicalAllocs bankA bankB bankC
+      orderCids
+      buyerCashCids
+      sellerBondCids
+      cashInstrument = cashInstrumentOf operator
+      bondInstrument = bondInstrumentOf operator
+      referencePrice = 100.0
+      approvalCid
+
+-- A settle with a WRONG approval is rejected ON-LEDGER. The four-eyes gate runs
+-- AFTER the §8 recompute, so at the real §4 price 100.0 the §8 asserts PASS and the
+-- gate itself aborts: (a) an approval at the WRONG price (99.0), and (b) an approval
+-- for the WRONG round — both fail `assertClearingApproved`.
+test_settle_wrong_approval_rejected : Script ()
+test_settle_wrong_approval_rejected = do
+  SeedResult{..} <- seedCanonicalAndClose
+  let Parties{..} = parties
+  compliance <- allocatePartyByHint (PartyIdHint "compliance")
+  -- (a) WRONG PRICE: compliance approved 99.0, but §4 clears at 100.0.
+  wrongPriceCid <- approveClearing operator compliance "R1" 99.0
+  submitMustFail operator do
+    exerciseCmd roundCid Clear with
+      clearingPrice  = 100.0
+      allocations    = canonicalAllocs bankA bankB bankC
+      orderCids
+      buyerCashCids
+      sellerBondCids
+      cashInstrument = cashInstrumentOf operator
+      bondInstrument = bondInstrumentOf operator
+      referencePrice = 100.0
+      approvalCid = wrongPriceCid
+  -- (b) WRONG ROUND: correct price 100.0 but the approval is scoped to another round.
+  wrongRoundCid <- approveClearing operator compliance "R-OTHER" 100.0
+  submitMustFail operator do
+    exerciseCmd roundCid Clear with
+      clearingPrice  = 100.0
+      allocations    = canonicalAllocs bankA bankB bankC
+      orderCids
+      buyerCashCids
+      sellerBondCids
+      cashInstrument = cashInstrumentOf operator
+      bondInstrument = bondInstrumentOf operator
+      referencePrice = 100.0
+      approvalCid = wrongRoundCid
+
+-- The operator ALONE cannot bring a `ClearingApproval` into being — the whole
+-- point of the four-eyes SEPARATION. Proven two ways: (a) operator cannot directly
+-- `create` the operator+compliance-signed `ClearingApproval` (missing compliance
+-- authority), and (b) operator cannot exercise `ApproveClearing` (controller
+-- compliance) on a request it proposed.
+test_operator_cannot_self_approve : Script ()
+test_operator_cannot_self_approve = do
+  operator   <- allocatePartyByHint (PartyIdHint "operator")
+  compliance <- allocatePartyByHint (PartyIdHint "compliance")
+  assertMsg "four-eyes separation: operator must differ from compliance"
+    (operator /= compliance)
+  -- (a) Operator alone cannot create the two-party-signed approval.
+  submitMustFail operator do
+    createCmd ClearingApproval with
+      operator; compliance; roundId = "R1"; clearingPrice = 100.0
+  -- (b) Operator proposes a request (signatory operator), but cannot APPROVE it
+  --     itself — `ApproveClearing` is `controller compliance`.
+  reqCid <- submit operator do
+    createCmd ClearingApprovalRequest with
+      operator; compliance; roundId = "R1"; clearingPrice = 100.0
+  submitMustFail operator do
+    exerciseCmd reqCid ApproveClearing

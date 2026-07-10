@@ -29,6 +29,9 @@ import Anthropic from '@anthropic-ai/sdk'
 import { jsonSchemaOutputFormat } from '@anthropic-ai/sdk/helpers/json-schema'
 import { z } from 'zod'
 import type { Allocation, ClearingResult, OrderView, Side } from './auction.js'
+// ADJ-01: the top-level `proposeCompeting` export binds to the REAL §8 core (the
+// referee) + the module-private client. Value import (additive) alongside the type import.
+import { computeClearing as _computeClearing, matchedAt as _matchedAt } from './auction.js'
 
 // ── The proposal schema (verify-side, zod 3) ─────────────────────────────────────
 // Drives `proposalSchema.safeParse(message.parsed_output)` — the belt-and-suspenders
@@ -207,6 +210,75 @@ export interface AgentResult {
   source: 'claude' | 'deterministic-fallback'
 }
 
+// ── ADJ-01: competing AI solvers — types + pure helpers (ADDITIVE) ────────────────
+// `proposeCompeting(views, configs)` races N solver configs (varying model/temperature/
+// prompt); the deterministic §8 recompute is the REFEREE — a proposal is `verified`
+// ONLY when it equals the deterministic result (priceEqual && allocationsEqual). The
+// leaderboard ranks the verified set by (matchedVolume desc, surplus desc); the winner
+// is NARRATIVE only. The deterministic clear STILL settles unconditionally — this whole
+// surface is advisory and NEVER on the settlement path (no settle code calls it).
+
+// One solver entrant: an honest tag (model + temperature) + an optional prompt override.
+export interface SolverConfig {
+  id: string
+  model: string
+  temperature: number
+  systemPrompt?: string
+}
+
+// A single ranked competitor. The `config` tag is honest (model + temperature). For a
+// `verified` entry the numbers are the DETERMINISTIC ones (referee-authoritative) and
+// `rationale` is the model's; an unverified entry (diverged / malformed / failed /
+// timed-out) is excluded from the leaderboard (it never competes for the winner).
+export interface RankedProposal {
+  config: { id: string; model: string; temperature: number }
+  verified: boolean
+  clearingPrice: number
+  matchedVolume: number
+  surplus: number
+  rationale: string
+}
+
+// The competing-solver result. `leaderboard` is the VERIFIED set only, ranked; `winner`
+// is leaderboard[0] (or null when none verified); `entries` lists EVERY config's honest
+// outcome (incl. referee-rejected ones) for the narrative panel; `deterministic` always
+// carries the authoritative §8 numbers that actually settle.
+export interface CompetingResult {
+  winner: RankedProposal | null
+  leaderboard: RankedProposal[]
+  entries: RankedProposal[]
+  deterministic: {
+    clearingPrice: number
+    allocations: Allocation[]
+    matchedVolume: number
+    surplus: number
+  }
+}
+
+// Total gains-from-trade at the (uniform) clearing price: Σ buys fill·(limit − p) +
+// Σ sells fill·(p − limit), joining each allocation back to its order limit by desk|side.
+// Pure; drives the (matchedVolume, surplus) ranking tiebreak. On the §4 fixture at
+// $100.00 this is A (101−100)·10 + B (100−99)·8 + C (100−100)·2 = 18.
+export const computeSurplus = (
+  views: OrderView[],
+  allocations: Allocation[],
+  price: number,
+): number => {
+  const limitByKey = new Map(views.map((v) => [`${v.desk}|${v.side}`, v.limit]))
+  return allocations.reduce((sum, a) => {
+    const lim = limitByKey.get(`${a.desk}|${a.side}`) ?? price
+    const gain = a.side === 'Buy' ? lim - price : price - lim
+    return sum + gain * a.filledQty
+  }, 0)
+}
+
+// Rank the VERIFIED proposals by (matchedVolume desc, then surplus desc). Unverified
+// entries are excluded entirely (they never compete). Pure (filter → new array → sort).
+export const rankProposals = (proposals: RankedProposal[]): RankedProposal[] =>
+  proposals
+    .filter((p) => p.verified)
+    .sort((a, b) => b.matchedVolume - a.matchedVolume || b.surplus - a.surplus)
+
 // ── Module-private credential (mirror ledger.ts L82-95) ──────────────────────────
 // Read ONCE at module scope; NEVER exported, returned, or logged. Empty/absent → no
 // client (keyless degradation). The optional `client` injected into createAgent (the
@@ -246,6 +318,112 @@ const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> => {
     timer = setTimeout(() => reject(new AgentTimeoutError()), ms)
   })
   return Promise.race([p, deadline]).finally(() => clearTimeout(timer))
+}
+
+// ── ADJ-01: run ONE competing config against the referee (ADDITIVE, reuses the gate) ─
+// Mirrors proposeClearing's per-call internals but parameterized by the config's model/
+// temperature/prompt. NEVER throws: keyless / malformed / diverged / SDK-error / timeout
+// all resolve to a `verified:false` entry (excluded from the leaderboard). A verified
+// entry carries the DETERMINISTIC numbers (referee-authoritative) + the model's rationale.
+const runCompetingConfig = async (
+  client: AgentClient | null,
+  matchedAt: (orders: OrderView[], p: number) => number,
+  views: OrderView[],
+  det: ClearingResult,
+  detMatched: number,
+  cfg: SolverConfig,
+  timeoutMs: number,
+): Promise<RankedProposal> => {
+  const tag = { id: cfg.id, model: cfg.model, temperature: cfg.temperature }
+  const unverified = (clearingPrice: number, matchedVolume: number, rationale: string): RankedProposal => ({
+    config: tag,
+    verified: false,
+    clearingPrice,
+    matchedVolume,
+    surplus: 0,
+    rationale,
+  })
+
+  // Keyless — no client, no network call; referee-excluded.
+  if (!client) return unverified(0, 0, `${cfg.model} unavailable — no API key (referee-excluded).`)
+
+  try {
+    // Same structured-output call as proposeClearing, per-config model/temperature/prompt,
+    // raced against the deadline (a timeout rejects → the catch → verified:false).
+    const message = await withTimeout(
+      client.messages.parse({
+        model: cfg.model,
+        max_tokens: 1024,
+        temperature: cfg.temperature,
+        system: cfg.systemPrompt ?? SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: buildBatchMessage(views) }],
+        output_config: { format: jsonSchemaOutputFormat(proposalJsonSchema) },
+      }),
+      timeoutMs,
+    )
+
+    // Belt-and-suspenders zod re-validation of the untrusted model output.
+    const parsed = proposalSchema.safeParse(message.parsed_output)
+    if (!parsed.success) return unverified(0, 0, `${cfg.model} returned a malformed proposal (referee-excluded).`)
+
+    const c = parsed.data
+    // The REFEREE gate: verified ONLY on an exact match vs the deterministic §8 result.
+    const verified =
+      priceEqual(c.clearingPrice, det.clearingPrice) &&
+      allocationsEqual(c.allocations as Allocation[], det.allocations)
+
+    if (!verified) return unverified(c.clearingPrice, matchedAt(views, c.clearingPrice), c.rationale)
+
+    // Agreement: the deterministic numbers (referee-authoritative), the model's rationale.
+    return {
+      config: tag,
+      verified: true,
+      clearingPrice: det.clearingPrice,
+      matchedVolume: detMatched,
+      surplus: computeSurplus(views, det.allocations, det.clearingPrice),
+      rationale: c.rationale,
+    }
+  } catch (err) {
+    // SDK error / timeout / network — NEVER throw; log ONLY a fixed secret-free string.
+    console.error(
+      '[agent] competing config unavailable — referee-excluded',
+      err instanceof Error ? err.name : 'unknown',
+    )
+    return unverified(0, 0, `${cfg.model} unavailable (referee-excluded).`)
+  }
+}
+
+// ── ADJ-01: proposeCompeting core (ADDITIVE) — race N configs, referee = deterministic §8 ─
+// Computes the deterministic result ONCE (the referee + the numbers that actually settle),
+// runs every config concurrently via Promise.all (each degrades to verified:false, never
+// throws), ranks the verified set, and returns { winner, leaderboard, entries, deterministic }.
+// The winner is NARRATIVE — no settlement path consults it; the deterministic clear settles
+// unconditionally (AI strictly off the settlement path).
+const proposeCompetingWith = async (
+  client: AgentClient | null,
+  computeClearing: (orders: OrderView[]) => ClearingResult,
+  matchedAt: (orders: OrderView[], p: number) => number,
+  views: OrderView[],
+  configs: SolverConfig[],
+  timeoutMs: number,
+): Promise<CompetingResult> => {
+  const det = computeClearing(views) // the REFEREE (and the numbers that settle)
+  const detMatched = matchedAt(views, det.clearingPrice)
+  const entries = await Promise.all(
+    configs.map((cfg) => runCompetingConfig(client, matchedAt, views, det, detMatched, cfg, timeoutMs)),
+  )
+  const leaderboard = rankProposals(entries)
+  return {
+    winner: leaderboard[0] ?? null,
+    leaderboard,
+    entries,
+    deterministic: {
+      clearingPrice: det.clearingPrice,
+      allocations: det.allocations,
+      matchedVolume: detMatched,
+      surplus: computeSurplus(views, det.allocations, det.clearingPrice),
+    },
+  }
 }
 
 // ── WOW-04: streaming surface ─────────────────────────────────────────────────────
@@ -292,6 +470,7 @@ export const createAgent = (
   deps: AgentDeps,
 ): {
   proposeClearing: (views: OrderView[]) => Promise<AgentResult>
+  proposeCompeting: (views: OrderView[], configs: SolverConfig[]) => Promise<CompetingResult>
   parseOrder: (text: string) => Promise<ParsedOrder | null>
   streamRationale: (views: OrderView[], handlers: StreamHandlers) => Promise<void>
 } => {
@@ -380,6 +559,12 @@ export const createAgent = (
     }
   }
 
+  // ADJ-01: competing solvers. Reuses the SAME injected/module-private client + deadline
+  // + the referee (deps.computeClearing) as proposeClearing. Additive — proposeClearing is
+  // untouched; this is advisory (narrative leaderboard), never on the settlement path.
+  const proposeCompeting = (views: OrderView[], configs: SolverConfig[]): Promise<CompetingResult> =>
+    proposeCompetingWith(client, computeClearing, matchedAt, views, configs, timeoutMs)
+
   // WOW-03: server-side NL → validated {side,qty,limit}. Uses the SAME injected/module-
   // private client + deadline as proposeClearing; keyless/malformed/thrown → null.
   const parseOrder = (text: string): Promise<ParsedOrder | null> => parseOrderWith(client, text, timeoutMs)
@@ -419,7 +604,7 @@ export const createAgent = (
     }
   }
 
-  return { proposeClearing, parseOrder, streamRationale }
+  return { proposeClearing, proposeCompeting, parseOrder, streamRationale }
 }
 
 // ── Top-level parseOrder — bound to the module-private client for a direct import ──
@@ -428,3 +613,18 @@ export const createAgent = (
 // (keyless → null). The key is NEVER a param, a return value, or a log line.
 export const parseOrder = (text: string): Promise<ParsedOrder | null> =>
   parseOrderWith(_client as AgentClient | null, text, resolveTimeoutMs())
+
+// ── ADJ-01: top-level proposeCompeting — bound to the module-private client + real §8 ──
+// Mirrors the standalone parseOrder: any server-side caller can race competing configs
+// with the module-private ANTHROPIC_API_KEY (keyless → all entries verified:false, winner
+// null). The referee is the REAL §8 core (computeClearing/matchedAt). Advisory only — the
+// deterministic clear settles unconditionally; the key is NEVER a param/return/log line.
+export const proposeCompeting = (views: OrderView[], configs: SolverConfig[]): Promise<CompetingResult> =>
+  proposeCompetingWith(
+    _client as AgentClient | null,
+    _computeClearing,
+    _matchedAt,
+    views,
+    configs,
+    resolveTimeoutMs(),
+  )

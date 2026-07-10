@@ -33,6 +33,9 @@ export const LIMITATION_CAPTION =
   'True 3-validator topology needs three institutions each running a validator — a recorded limitation.'
 export const LOADING_CAPTION = 'READING NODE TOPOLOGY…'
 export const EMPTY_HEADLINE = 'No round to map yet.'
+// Verbatim Copywriting Contract body (UI-SPEC:137) — restored from an earlier rewrite.
+export const EMPTY_BODY =
+  "Open and run a round in 03 Theatre — each desk's order, its host node, and the atomic settlement spanning them all draw here."
 
 function prefersReducedMotion(): boolean {
   return (
@@ -200,9 +203,7 @@ export default function TopologyView({ roundId, phase, offline, setOffline }: Pr
             {EMPTY_HEADLINE}
           </div>
           <p className="font-body text-13 opacity-70" style={{ lineHeight: 1.6 }}>
-            Open and run a round — commit, reveal, clear, settle — and each participant node
-            resolves here, hosting its desk&rsquo;s sealed order and lighting red when the batch
-            settles atomically across every node.
+            {EMPTY_BODY}
           </p>
         </div>
       ) : (

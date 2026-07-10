@@ -10,9 +10,24 @@ import { Order, TradeConfirmation } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction
 type Props = {
   ctx: Ctx
   deskKey: DeskKey
+  // WOW-07 — the guest /join surface renders the guest empty copy (UI-SPEC:147) rather
+  // than the desk variant, and switches to the "window closed" line (UI-SPEC:148) when the
+  // submission window has closed. Presentation only; the desk plane keeps its own copy.
+  guest?: boolean
+  // Guest-only: true once the observed Round has left `Open` (Closed / Cleared / Settled).
+  windowClosed?: boolean
 }
 
-export default function FillCard({ ctx }: Props) {
+// Empty-state copy — verbatim from the Copywriting Contract. Desk keeps its shipped line;
+// the guest /join surface renders UI-SPEC:147, or UI-SPEC:148 once the window has closed.
+const EMPTY_DESK =
+  'Seal your order, then run the auction in 03 Theatre. Your fill — quantity, price and cash — appears here only after the batch clears, and only you can see it.'
+const EMPTY_GUEST =
+  'Seal your bid, then watch 03 Theatre run. Your fill — quantity, price and cash — appears here only after the batch clears, and only you can see it.'
+const EMPTY_GUEST_CLOSED =
+  "This round's window is closed. Nothing to submit — but you can still watch it clear and settle."
+
+export default function FillCard({ ctx, guest = false, windowClosed = false }: Props) {
   // deskKey is part of the contract (DeskView passes the active desk) though the read
   // plane is fully scoped by the surrounding provider — kept for signature parity.
   const confirms = ctx.useStreamQueries(TradeConfirmation)
@@ -22,11 +37,11 @@ export default function FillCard({ ctx }: Props) {
   const hasFill = !!tc
 
   if (!hasFill) {
+    const emptyCopy = guest ? (windowClosed ? EMPTY_GUEST_CLOSED : EMPTY_GUEST) : EMPTY_DESK
     return (
       <div style={{ marginTop: '30px' }}>
         <p className="font-body text-13 opacity-65" style={{ lineHeight: 1.6, maxWidth: '420px' }}>
-          Seal your order, then run the auction in 03 Theatre. Your fill — quantity, price and cash —
-          appears here only after the batch clears, and only you can see it.
+          {emptyCopy}
         </p>
       </div>
     )

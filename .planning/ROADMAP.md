@@ -454,5 +454,5 @@ Build waves run in numeric order 8 → 9 → 10 → 11. Track A (Phase 12) runs 
 | 9. Auction Depth & Live Viz | 7/7 | Built · live UAT pending | 2026-07-09 |
 | 10. Cryptographic Privacy | 10/10 | Built · live UAT pending | 2026-07-10 |
 | 11. Settlement & Institutional Grade | 11/11 | Built · live UAT pending | 2026-07-10 |
-| 12. Real On-Chain (Canton DevNet) | 0/— | Not started (external gate) | — |
+| 12. Real On-Chain (Canton DevNet) | 0/5 | Planned (external SV gate) | — |
 | 13. Platform Baseline & Adjacent | 0/— | Not started (ongoing) | — |

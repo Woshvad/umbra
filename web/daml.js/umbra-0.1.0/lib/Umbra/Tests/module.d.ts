@@ -11,8 +11,24 @@ import * as pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69 
 import * as Umbra_Auction from '../../Umbra/Auction/module';
 import * as Umbra_Holding from '../../Umbra/Holding/module';
 import * as Umbra_Instrument from '../../Umbra/Instrument/module';
+import * as Umbra_Issuance from '../../Umbra/Issuance/module';
 import * as Umbra_Settlement from '../../Umbra/Settlement/module';
 import * as Umbra_Setup from '../../Umbra/Setup/module';
+
+export declare type IssuanceSeed = {
+  parties: Umbra_Setup.Parties;
+  bond2: Umbra_Instrument.InstrumentId;
+  cash: Umbra_Instrument.InstrumentId;
+  clearedRound: damlTypes.ContractId<Umbra_Issuance.IssuanceRound>;
+  aBond2: damlTypes.ContractId<Umbra_Holding.Holding>;
+  bBond2: damlTypes.ContractId<Umbra_Holding.Holding>;
+};
+
+export declare const IssuanceSeed:
+  damlTypes.Serializable<IssuanceSeed> & {
+  }
+;
+
 
 export declare type RunSettle = {
   instructions: Umbra_Settlement.Instruction[];

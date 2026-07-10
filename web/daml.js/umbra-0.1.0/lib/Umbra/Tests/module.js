@@ -16,8 +16,26 @@ var pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69 = requir
 var Umbra_Auction = require('../../Umbra/Auction/module');
 var Umbra_Holding = require('../../Umbra/Holding/module');
 var Umbra_Instrument = require('../../Umbra/Instrument/module');
+var Umbra_Issuance = require('../../Umbra/Issuance/module');
 var Umbra_Settlement = require('../../Umbra/Settlement/module');
 var Umbra_Setup = require('../../Umbra/Setup/module');
+
+
+exports.IssuanceSeed = {
+  decoder: damlTypes.lazyMemo(function () { return jtv.object({parties: Umbra_Setup.Parties.decoder, bond2: Umbra_Instrument.InstrumentId.decoder, cash: Umbra_Instrument.InstrumentId.decoder, clearedRound: damlTypes.ContractId(Umbra_Issuance.IssuanceRound).decoder, aBond2: damlTypes.ContractId(Umbra_Holding.Holding).decoder, bBond2: damlTypes.ContractId(Umbra_Holding.Holding).decoder, }); }),
+  encode: function (__typed__) {
+  return {
+    parties: Umbra_Setup.Parties.encode(__typed__.parties),
+    bond2: Umbra_Instrument.InstrumentId.encode(__typed__.bond2),
+    cash: Umbra_Instrument.InstrumentId.encode(__typed__.cash),
+    clearedRound: damlTypes.ContractId(Umbra_Issuance.IssuanceRound).encode(__typed__.clearedRound),
+    aBond2: damlTypes.ContractId(Umbra_Holding.Holding).encode(__typed__.aBond2),
+    bBond2: damlTypes.ContractId(Umbra_Holding.Holding).encode(__typed__.bBond2),
+  };
+}
+,
+};
+
 
 
 exports.RunSettle = {
@@ -36,7 +54,7 @@ exports.RunSettle = {
 exports.SettleHarness = damlTypes.assembleTemplate(
 {
   templateId: '#umbra:Umbra.Tests:SettleHarness',
-  templateIdWithPackageId: 'cae1713ace52d4be1278cb42c55e94e61b1141f5ef7c98bdd2eb9834ee894076:Umbra.Tests:SettleHarness',
+  templateIdWithPackageId: '804a90940ae8f9a1d9ab3b223113285c57535c6095d62f23101534e837e18689:Umbra.Tests:SettleHarness',
   keyDecoder: damlTypes.lazyMemo(function () { return jtv.constant(undefined); }),
   keyEncode: function () { throw 'EncodeError'; },
   decoder: damlTypes.lazyMemo(function () { return jtv.object({operator: damlTypes.Party.decoder, }); }),
@@ -67,7 +85,7 @@ exports.SettleHarness = damlTypes.assembleTemplate(
 );
 
 
-damlTypes.registerTemplate(exports.SettleHarness, ['cae1713ace52d4be1278cb42c55e94e61b1141f5ef7c98bdd2eb9834ee894076', '#umbra']);
+damlTypes.registerTemplate(exports.SettleHarness, ['804a90940ae8f9a1d9ab3b223113285c57535c6095d62f23101534e837e18689', '#umbra']);
 
 
 

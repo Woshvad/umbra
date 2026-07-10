@@ -16,7 +16,7 @@ var pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69 = requir
 exports.ClearingApproval = damlTypes.assembleTemplate(
 {
   templateId: '#umbra:Umbra.Approval:ClearingApproval',
-  templateIdWithPackageId: 'cae1713ace52d4be1278cb42c55e94e61b1141f5ef7c98bdd2eb9834ee894076:Umbra.Approval:ClearingApproval',
+  templateIdWithPackageId: '804a90940ae8f9a1d9ab3b223113285c57535c6095d62f23101534e837e18689:Umbra.Approval:ClearingApproval',
   keyDecoder: damlTypes.lazyMemo(function () { return jtv.constant(undefined); }),
   keyEncode: function () { throw 'EncodeError'; },
   decoder: damlTypes.lazyMemo(function () { return jtv.object({operator: damlTypes.Party.decoder, compliance: damlTypes.Party.decoder, roundId: damlTypes.Text.decoder, clearingPrice: damlTypes.Numeric(10).decoder, }); }),
@@ -42,7 +42,7 @@ exports.ClearingApproval = damlTypes.assembleTemplate(
 );
 
 
-damlTypes.registerTemplate(exports.ClearingApproval, ['cae1713ace52d4be1278cb42c55e94e61b1141f5ef7c98bdd2eb9834ee894076', '#umbra']);
+damlTypes.registerTemplate(exports.ClearingApproval, ['804a90940ae8f9a1d9ab3b223113285c57535c6095d62f23101534e837e18689', '#umbra']);
 
 
 
@@ -71,7 +71,7 @@ exports.ApproveClearing = {
 exports.ClearingApprovalRequest = damlTypes.assembleTemplate(
 {
   templateId: '#umbra:Umbra.Approval:ClearingApprovalRequest',
-  templateIdWithPackageId: 'cae1713ace52d4be1278cb42c55e94e61b1141f5ef7c98bdd2eb9834ee894076:Umbra.Approval:ClearingApprovalRequest',
+  templateIdWithPackageId: '804a90940ae8f9a1d9ab3b223113285c57535c6095d62f23101534e837e18689:Umbra.Approval:ClearingApprovalRequest',
   keyDecoder: damlTypes.lazyMemo(function () { return jtv.constant(undefined); }),
   keyEncode: function () { throw 'EncodeError'; },
   decoder: damlTypes.lazyMemo(function () { return jtv.object({operator: damlTypes.Party.decoder, compliance: damlTypes.Party.decoder, roundId: damlTypes.Text.decoder, clearingPrice: damlTypes.Numeric(10).decoder, }); }),
@@ -84,6 +84,14 @@ exports.ClearingApprovalRequest = damlTypes.assembleTemplate(
   };
 }
 ,
+  ApproveClearing: {
+    template: function () { return exports.ClearingApprovalRequest; },
+    choiceName: 'ApproveClearing',
+    argumentDecoder: damlTypes.lazyMemo(function () { return exports.ApproveClearing.decoder; }),
+    argumentEncode: function (__typed__) { return exports.ApproveClearing.encode(__typed__); },
+    resultDecoder: damlTypes.lazyMemo(function () { return damlTypes.ContractId(exports.ClearingApproval).decoder; }),
+    resultEncode: function (__typed__) { return damlTypes.ContractId(exports.ClearingApproval).encode(__typed__); },
+  },
   Archive: {
     template: function () { return exports.ClearingApprovalRequest; },
     choiceName: 'Archive',
@@ -100,18 +108,10 @@ exports.ClearingApprovalRequest = damlTypes.assembleTemplate(
     resultDecoder: damlTypes.lazyMemo(function () { return damlTypes.Unit.decoder; }),
     resultEncode: function (__typed__) { return damlTypes.Unit.encode(__typed__); },
   },
-  ApproveClearing: {
-    template: function () { return exports.ClearingApprovalRequest; },
-    choiceName: 'ApproveClearing',
-    argumentDecoder: damlTypes.lazyMemo(function () { return exports.ApproveClearing.decoder; }),
-    argumentEncode: function (__typed__) { return exports.ApproveClearing.encode(__typed__); },
-    resultDecoder: damlTypes.lazyMemo(function () { return damlTypes.ContractId(exports.ClearingApproval).decoder; }),
-    resultEncode: function (__typed__) { return damlTypes.ContractId(exports.ClearingApproval).encode(__typed__); },
-  },
 }
 
 );
 
 
-damlTypes.registerTemplate(exports.ClearingApprovalRequest, ['cae1713ace52d4be1278cb42c55e94e61b1141f5ef7c98bdd2eb9834ee894076', '#umbra']);
+damlTypes.registerTemplate(exports.ClearingApprovalRequest, ['804a90940ae8f9a1d9ab3b223113285c57535c6095d62f23101534e837e18689', '#umbra']);
 

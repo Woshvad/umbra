@@ -5,6 +5,4 @@ function __export(m) {
     for (var p in m) if (!exports.hasOwnProperty(p)) exports[p] = m[p];
 }
 Object.defineProperty(exports, "__esModule", { value: true });
-var Umbra = require('./Umbra');
-exports.Umbra = Umbra;
-exports.packageId = '804a90940ae8f9a1d9ab3b223113285c57535c6095d62f23101534e837e18689';
+__export(require('./module'));

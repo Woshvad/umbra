@@ -53,9 +53,9 @@ export declare type ClearingApprovalRequest = {
 };
 
 export declare interface ClearingApprovalRequestInterface {
+  ApproveClearing: damlTypes.Choice<ClearingApprovalRequest, ApproveClearing, damlTypes.ContractId<ClearingApproval>, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<ClearingApprovalRequest, undefined>>;
   Archive: damlTypes.Choice<ClearingApprovalRequest, pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69.DA.Internal.Template.Archive, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<ClearingApprovalRequest, undefined>>;
   RejectClearing: damlTypes.Choice<ClearingApprovalRequest, RejectClearing, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<ClearingApprovalRequest, undefined>>;
-  ApproveClearing: damlTypes.Choice<ClearingApprovalRequest, ApproveClearing, damlTypes.ContractId<ClearingApproval>, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<ClearingApprovalRequest, undefined>>;
 }
 export declare const ClearingApprovalRequest:
   damlTypes.Template<ClearingApprovalRequest, undefined, '#umbra:Umbra.Approval:ClearingApprovalRequest'> &

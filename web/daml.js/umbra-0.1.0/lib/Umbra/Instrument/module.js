@@ -16,7 +16,7 @@ var pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69 = requir
 exports.Instrument = damlTypes.assembleTemplate(
 {
   templateId: '#umbra:Umbra.Instrument:Instrument',
-  templateIdWithPackageId: 'cae1713ace52d4be1278cb42c55e94e61b1141f5ef7c98bdd2eb9834ee894076:Umbra.Instrument:Instrument',
+  templateIdWithPackageId: '804a90940ae8f9a1d9ab3b223113285c57535c6095d62f23101534e837e18689:Umbra.Instrument:Instrument',
   keyDecoder: damlTypes.lazyMemo(function () { return jtv.constant(undefined); }),
   keyEncode: function () { throw 'EncodeError'; },
   decoder: damlTypes.lazyMemo(function () { return jtv.object({issuer: damlTypes.Party.decoder, operator: damlTypes.Party.decoder, id: damlTypes.Text.decoder, description: damlTypes.Text.decoder, }); }),
@@ -42,7 +42,7 @@ exports.Instrument = damlTypes.assembleTemplate(
 );
 
 
-damlTypes.registerTemplate(exports.Instrument, ['cae1713ace52d4be1278cb42c55e94e61b1141f5ef7c98bdd2eb9834ee894076', '#umbra']);
+damlTypes.registerTemplate(exports.Instrument, ['804a90940ae8f9a1d9ab3b223113285c57535c6095d62f23101534e837e18689', '#umbra']);
 
 
 

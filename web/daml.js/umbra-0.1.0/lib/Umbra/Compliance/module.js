@@ -27,7 +27,7 @@ exports.Revoke = {
 exports.DeskEligibility = damlTypes.assembleTemplate(
 {
   templateId: '#umbra:Umbra.Compliance:DeskEligibility',
-  templateIdWithPackageId: 'cae1713ace52d4be1278cb42c55e94e61b1141f5ef7c98bdd2eb9834ee894076:Umbra.Compliance:DeskEligibility',
+  templateIdWithPackageId: '804a90940ae8f9a1d9ab3b223113285c57535c6095d62f23101534e837e18689:Umbra.Compliance:DeskEligibility',
   keyDecoder: damlTypes.lazyMemo(function () { return jtv.constant(undefined); }),
   keyEncode: function () { throw 'EncodeError'; },
   decoder: damlTypes.lazyMemo(function () { return jtv.object({operator: damlTypes.Party.decoder, compliance: damlTypes.Party.decoder, desk: damlTypes.Party.decoder, accredited: damlTypes.Bool.decoder, jurisdiction: damlTypes.Text.decoder, sanctionsClear: damlTypes.Bool.decoder, }); }),
@@ -63,5 +63,5 @@ exports.DeskEligibility = damlTypes.assembleTemplate(
 );
 
 
-damlTypes.registerTemplate(exports.DeskEligibility, ['cae1713ace52d4be1278cb42c55e94e61b1141f5ef7c98bdd2eb9834ee894076', '#umbra']);
+damlTypes.registerTemplate(exports.DeskEligibility, ['804a90940ae8f9a1d9ab3b223113285c57535c6095d62f23101534e837e18689', '#umbra']);
 

@@ -1,0 +1,42 @@
+-- Umbra — token-agnostic instrument reference + named tokenized instrument.
+--
+-- DFIN-03: the settlement/cash leg references a PLUGGABLE instrument, never a
+-- hardcoded "USDCx" (or "BONDX") string. `InstrumentId` is that token-agnostic
+-- reference — an (issuer, id) pair — so a different stablecoin / tokenized deposit
+-- / wholesale-CBDC cash instrument can be swapped in WITHOUT changing Round.Clear.
+--
+-- These are additive custody primitives introduced by Phase 11 (DFIN-01/03) that
+-- retire operator-custody `Asset` from the settlement path. `Asset.daml` stays
+-- byte-untouched; these modules are not yet wired into settlement (that lands in
+-- later Phase-11 plans). Settlement-standard provenance is recorded in DECISIONS.md
+-- D13 (CN TOKEN STANDARD (CIP-0056) vs the in-repo faithful layer) — NEVER labeled
+-- "Daml Finance the library" (unbuildable on this LF-2.1 / SDK-3.4.11 line).
+module Umbra.Instrument where
+
+-- The token-agnostic instrument reference (DFIN-03). `issuer` disambiguates the
+-- same textual `id` across registries; `id` is the human symbol ("BONDX" /
+-- "USDCx"). Ord/Eq let it key maps + drive per-instrument conservation folds in
+-- the (later) settlement batch.
+data InstrumentId = InstrumentId
+  with
+    issuer : Party
+    id     : Text
+  deriving (Eq, Show, Ord)
+
+-- A named tokenized instrument (cash or bond). The issuer mints it and the
+-- operator (custodian) co-signs, mirroring the operator-custody topology of the
+-- MVP. §4 uses `InstrumentId operator "BONDX"` (the tokenized bond) and
+-- `InstrumentId operator "USDCx"` (a USDCx-labeled tokenized-deposit cash
+-- instrument) — where the operator is also the issuer.
+template Instrument
+  with
+    issuer      : Party        -- mints the instrument
+    operator    : Party        -- custodian / registry co-signer
+    id          : Text         -- human symbol, e.g. "BONDX" | "USDCx"
+    description : Text          -- free-text label
+  where
+    signatory issuer, operator
+
+-- Project an Instrument down to its token-agnostic reference.
+instrumentIdOf : Instrument -> InstrumentId
+instrumentIdOf inst = InstrumentId with issuer = inst.issuer, id = inst.id

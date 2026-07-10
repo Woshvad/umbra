@@ -1,0 +1,85 @@
+-- Umbra — per-desk custody Holding (DFIN-01/03), the production-grade successor to
+-- operator-custody `Asset` on the settlement path.
+--
+-- Mirrors `Asset.daml` (operator = sole signatory/custodian, owner = observer,
+-- operator-authority-alone conserving Split/Merge/Reassign) with two Phase-11
+-- changes:
+--   * `symbol : Text`  →  `instrument : InstrumentId`  (token-agnostic, DFIN-03)
+--   * NEW `lock : Optional Text`  — the operator-custody lock marker. `Some reason`
+--     = locked (the Phase-10 bond lock migrates onto this field in 11-05, replacing
+--     the "the operator can't be forced to move it" implicit Asset lock); `None`
+--     = free. Every mutating choice REJECTS a locked holding on-ledger, preserving
+--     the commit/forfeit bond guarantee across the Asset→Holding migration.
+--
+-- Deliberately has NO contract key (D7 anti-pattern): Split creates multiple
+-- same-(owner,instrument) holdings, which would collide on a contract key
+-- (DuplicateKey). Callers pass ContractIds explicitly (D7 Option-B), exactly as
+-- Round.Clear does today for `Asset`.
+--
+-- Additive + not-yet-wired: settlement still runs on `Asset` until a later Phase-11
+-- plan swaps the legs; `daml build` + every existing `daml test` stay green.
+module Umbra.Holding where
+
+import Umbra.Instrument (InstrumentId)
+
+template Holding
+  with
+    operator   : Party            -- sole signatory & custodian (MVP simplification)
+    owner      : Party            -- beneficial owner
+    instrument : InstrumentId     -- token-agnostic reference (replaces symbol : Text)
+    amount     : Decimal          -- >= 0
+    lock       : Optional Text    -- Some reason = operator-custody LOCK; None = free
+  where
+    signatory operator
+    observer owner
+    ensure amount >= 0.0
+
+    -- All choices are Operator-authority alone (operator-custody model), and each
+    -- REFUSES a locked holding — a `lock == Some _` marker means the holding is
+    -- posted as a bond / pending settlement and MUST NOT move (Pitfall 2). Split /
+    -- Merge preserve total amount (conservation); Reassign changes the owner.
+
+    choice Split : (ContractId Holding, ContractId Holding)
+      with
+        splitQty : Decimal
+      controller operator
+      do
+        assertMsg "holding is locked" (lock == None)
+        assertMsg "splitQty out of range" (splitQty > 0.0 && splitQty < amount)
+        a <- create this with amount = splitQty
+        b <- create this with amount = amount - splitQty
+        pure (a, b)
+
+    choice Merge : ContractId Holding
+      with
+        otherCid : ContractId Holding
+      controller operator
+      do
+        other <- fetch otherCid
+        assertMsg "holding is locked" (lock == None && other.lock == None)
+        assertMsg "instrument mismatch" (other.instrument == instrument)
+        assertMsg "owner mismatch" (other.owner == owner)
+        archive otherCid
+        create this with amount = amount + other.amount
+
+    choice Reassign : ContractId Holding
+      with
+        newOwner : Party
+      controller operator
+      do
+        assertMsg "holding is locked" (lock == None)
+        create this with owner = newOwner
+
+-- Move EXACTLY `qty` of a holding to `newOwner`, mirroring `Auction.moveExact`:
+-- a full-amount move is a Reassign; a partial move Splits first (strict `<`) then
+-- Reassigns the slice. Both underlying choices enforce the lock guard, so a locked
+-- holding cannot be moved through this helper either. The remainder stays with the
+-- original owner. Used by the (later) settlement batch to deliver bond/cash legs.
+moveExactHolding : ContractId Holding -> Decimal -> Party -> Update (ContractId Holding)
+moveExactHolding cid qty newOwner = do
+  holding <- fetch cid
+  if qty == holding.amount
+    then exercise cid Reassign with newOwner
+    else do
+      (slice, _remainder) <- exercise cid Split with splitQty = qty
+      exercise slice Reassign with newOwner

@@ -17,9 +17,11 @@
 //     in SettlementView, `CN TOKEN STANDARD (CIP-0056)` / `DAML-FINANCE-PATTERN (IN-REPO)`).
 //   • the cash arrow reads the token-agnostic instrument `symbol` from data (`← {cash}
 //     {symbol}`, defaults `USDCx`) — never a hardcoded literal (DFIN-03).
-//   • `netted` labels the current netting mode (net-per-party vs gross legs); the legs
-//     themselves are already computed for the mode by SettlementView and just rendered here
-//     off the SAME shared `settleProgress` clock (both modes stay simultaneous, conserving).
+//   • `netted` labels the current netting mode (net-per-counterparty-pair vs gross legs) — a
+//     DISPLAY projection, NOT the on-ledger per-party CCP netting (`netLegs`, one net leg per
+//     party·instrument through a custodian); the legs themselves are already computed for the
+//     mode by SettlementView and just rendered here off the SAME shared `settleProgress` clock
+//     (both modes stay simultaneous, conserving).
 //
 // DISPLAY only — no operator token, no @daml/react context (threat T-06-01).
 

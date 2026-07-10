@@ -65,10 +65,13 @@ function codeAllocations(preview: SolvePreviewResponse) {
   return preview.allocations.map((a) => ({ ...a, desk: codeOf(a.desk) }))
 }
 
-// NETTED legs (default mode) — collapse the gross seller→buyer legs into one NET leg per
-// counterparty pair (DFIN-02: one net instruction per party·instrument). Totals are the sum
-// of the gross qty + cash, so the balance table stays CONSERVED across the toggle. On the §4
-// single-buyer fixture each seller already has exactly one leg → netted === gross (canary safe).
+// NETTED legs (default mode) — collapse the gross legs into one leg per COUNTERPARTY PAIR
+// (bilateral seller→buyer netting). This is a display projection, NOT the on-ledger per-party
+// CCP netting (`netLegs` in Settlement.daml, which emits one net leg per (party, instrument)
+// through a custodian): for a multi-buyer batch a party can still appear in several pair-legs
+// here. Totals are the sum of the gross qty + cash, so the balance table stays CONSERVED across
+// the toggle. On the §4 single-buyer fixture each seller already has exactly one leg → netted
+// === gross (canary safe).
 function toNettedLegs(gross: DvpLeg[]): DvpLeg[] {
   const byPair = new Map<string, DvpLeg>()
   for (const leg of gross) {
@@ -84,20 +87,45 @@ function toNettedLegs(gross: DvpLeg[]): DvpLeg[] {
   return [...byPair.values()]
 }
 
-// Derive the DvP legs from the allocations: every Sell desk delivers filledQty BONDX to
-// the (single) Buy desk and is paid filledQty·clearingPrice USDCx. §4 → 2 legs.
-// Labels resolve to the comp desk codes (BLUEROCK/MERIDIAN/HALWARD), not raw party ids.
+// Derive the GROSS DvP legs from the verified allocation — mirroring the on-ledger
+// `buildGrossInstructions` (daml/Umbra/Settlement.daml) EXACTLY so the visualization can never
+// contradict the settled batch. We expand each side into per-unit party slots ordered by the
+// raw party id (the same `sortOn (show desk)` the Daml builder uses — NOT the display code), zip
+// the buy-slots ↔ sell-slots position-by-position (uniform price ⇒ any pairing conserves), then
+// aggregate each distinct (buyer, seller) pair into one bond+cash leg. This attributes every
+// seller's delivery/payment to the ACTUAL buyer it paired with — fixing the multi-buyer /
+// guest-4th-buyer mis-attribution where all sellers were collapsed onto the first buyer. Because
+// the pairing sorts on the party id (bankA < bankB < bankC < …), the §4 single-buyer fixture
+// reduces to the identical two legs (MERIDIAN→BLUEROCK 8/800, HALWARD→BLUEROCK 2/200) — canary
+// byte-identical. Labels resolve to the comp desk codes (incl. GUEST) only at the end, via codeOf.
 function legsFromPreview(preview: SolvePreviewResponse): DvpLeg[] {
-  const coded = codeAllocations(preview)
-  const buyer = coded.find((a) => a.side === 'Buy' && a.filledQty > 0)?.desk ?? '—'
-  return coded
-    .filter((a) => a.side === 'Sell' && a.filledQty > 0)
-    .map((a) => ({
-      seller: a.desk,
-      buyer,
-      qty: a.filledQty,
-      cash: a.filledQty * preview.clearingPrice,
-    }))
+  const filled = preview.allocations.filter((a) => a.filledQty > 0)
+  // Per-unit party slots for one side, sorted by raw party id (matches the Daml builder).
+  const unitsFor = (side: 'Buy' | 'Sell'): string[] =>
+    filled
+      .filter((a) => a.side === side)
+      .sort((x, y) => (x.desk < y.desk ? -1 : x.desk > y.desk ? 1 : 0))
+      .flatMap((a) => Array<string>(a.filledQty).fill(a.desk))
+  const buys = unitsFor('Buy')
+  const sells = unitsFor('Sell')
+  // Zip position-by-position (truncates to the shorter list; on a verified allocation
+  // Σbuy === Σsell so no unit is lost), aggregating per (seller, buyer) pair in first-seen order.
+  const byPair = new Map<string, { seller: string; buyer: string; qty: number }>()
+  const n = Math.min(buys.length, sells.length)
+  for (let i = 0; i < n; i++) {
+    const buyer = buys[i]!
+    const seller = sells[i]!
+    const key = `${seller}→${buyer}`
+    const cur = byPair.get(key)
+    if (cur) cur.qty += 1
+    else byPair.set(key, { seller, buyer, qty: 1 })
+  }
+  return [...byPair.values()].map(({ seller, buyer, qty }) => ({
+    seller: codeOf(seller),
+    buyer: codeOf(buyer),
+    qty,
+    cash: qty * preview.clearingPrice,
+  }))
 }
 
 // Client-side fallback brief — a secret-free NL summary composed from the SETTLED preview

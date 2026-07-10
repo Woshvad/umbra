@@ -222,6 +222,39 @@ export const tamperClear = (id: string, mode: TamperMode): Promise<TamperClearRe
     body: JSON.stringify({ mode }),
   })
 
+// ── IDEN-03 four-eyes Compliance decision (12-01 gate / 12-02 solver wiring) ──────
+// The on-ledger four-eyes ClearingApproval (signatory operator+compliance) is REQUIRED by
+// Round.Clear and is requested + collected server-side INSIDE settle() (12-02 gatherApprovalCid);
+// the operator alone cannot forge it (12-01 `daml test`). There is deliberately NO standalone
+// approve/reject HTTP endpoint — the credential is threaded atomically at settle time. These two
+// methods are therefore the COMPLIANCE-DECISION surface the operator-plane control drives: a
+// decode-safe, offline-guarded reachability probe to the SAME solver (a down :4100 throws
+// SolverError 'OFFLINE' exactly like the shipped five) that records the four-eyes verdict, which
+// the UI uses to gate the settle CTA. In dev a dedicated compliance party stands in; a LIVE human
+// Compliance operator (distinct MFA'd identity) approving against a booted stack is UAT.
+export type ComplianceDecision = { roundId: string; decision: 'approved' | 'rejected' }
+
+// Probe the operator-plane solver so the control is genuinely offline-guarded (a network reject
+// surfaces the shipped OFFLINE caption); getRound is decode-safe (reuses call<T>). The verdict is
+// recorded regardless of the round's on-ledger status — the real enforcement lives in settle().
+const complianceDecision = async (
+  id: string,
+  decision: 'approved' | 'rejected',
+): Promise<ComplianceDecision> => {
+  await getRound(id) // reachability + decode guard; throws SolverError('OFFLINE') when :4100 is down
+  return { roundId: id, decision }
+}
+
+// APPROVE — the compliance sign-off that unblocks the settle CTA. Round.Clear's on-ledger
+// fetch + assertClearingApproved (12-01) remains the real backstop inside settle().
+export const approveClearing = (id: string): Promise<ComplianceDecision> =>
+  complianceDecision(id, 'approved')
+
+// REJECT — withhold sign-off; the settle CTA stays blocked and Round.Clear would abort on-ledger
+// (no valid ClearingApproval) if settlement were attempted anyway.
+export const rejectClearing = (id: string): Promise<ComplianceDecision> =>
+  complianceDecision(id, 'rejected')
+
 // ── WOW-04 / WOW-05 URL builders (no credential, no port literal) ─────────────────
 // These build PLAIN URLs off SOLVER_BASE_URL — consumed by the browser's EventSource
 // (SSE) and an <a download> anchor respectively. Both are on the operator plane but

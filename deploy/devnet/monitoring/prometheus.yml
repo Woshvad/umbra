@@ -1,0 +1,55 @@
+# ============================================================================
+# Umbra — Prometheus scrape config for the DevNet validator node (CHAIN-03).
+#
+# Scrapes the Canton participant + Splice validator app metrics/health. The
+# participant exposes the documented liveness/readiness probes:
+#   • /livez  — process is alive
+#   • /readyz — participant has connected to the synchronizer + is serving the
+#               JSON Ledger API v2 (the same probe scripts/localnet/up.mjs polls
+#               at :3975/readyz before deploying)
+# These are the health signals the RUNBOOK's boot step waits on; a validator that
+# never reaches /readyz has not connected (the CHAIN-01 external-gate failure mode).
+#
+# Validated OFFLINE (YAML parse). Running Prometheus + a live target = UAT.
+# Prometheus itself is exposed on :9095 on the ops box (off the LocalNet swagger :9090).
+# ============================================================================
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    network: canton-devnet
+    app: umbra
+
+scrape_configs:
+  # ── Canton participant (metrics + health) ──
+  - job_name: umbra-participant
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["participant:7575"]
+        labels:
+          component: participant
+
+  # Participant health probes (blackbox-style HTTP 200 checks on /livez + /readyz).
+  - job_name: umbra-participant-health
+    metrics_path: /readyz
+    static_configs:
+      - targets: ["participant:7575"]
+        labels:
+          component: participant
+          probe: readyz
+
+  # ── Splice validator app (onboarding state + Canton-Coin traffic top-up metrics) ──
+  - job_name: umbra-validator-app
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["validator-app:5003"]
+        labels:
+          component: validator-app
+
+  - job_name: umbra-validator-health
+    metrics_path: /livez
+    static_configs:
+      - targets: ["validator-app:5003"]
+        labels:
+          component: validator-app
+          probe: livez

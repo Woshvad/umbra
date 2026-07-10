@@ -1,0 +1,40 @@
+# ============================================================================
+# Umbra — isolated per-network Postgres for the DevNet participant/validator store
+# (CHAIN-03). One dedicated instance + volume PER NETWORK, on a host port off the
+# LocalNet (:55432) and Keycloak (:55433) stacks — so this box can run all three
+# without collision (mirrors the repo's per-network Postgres isolation precedent,
+# scripts/localnet/up.mjs).
+#
+# This standalone compose is for running the store independently (e.g. to attach a
+# backup sidecar or run maintenance); the validator compose also carries an inline
+# devnet-postgres service for the self-contained ./start.sh path. Point both at the
+# SAME volume name (umbra-devnet-participant-data) if you consolidate.
+#
+# Validated OFFLINE (docker compose config). A live store on a real node = UAT.
+# ============================================================================
+name: umbra-devnet-postgres
+
+services:
+  devnet-postgres:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-umbra_devnet_participant}"
+      POSTGRES_USER: "${POSTGRES_USER:-umbra_devnet}"
+      # Placeholder ONLY — real password lives in a gitignored .env at UAT.
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-REPLACE_WITH_STRONG_DB_PASSWORD_AT_UAT}"
+    ports:
+      # Host :55434 — off LocalNet :55432 and the Keycloak stack :55433.
+      - "${POSTGRES_HOST_PORT:-55434}:5432"
+    volumes:
+      - devnet-participant-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-umbra_devnet} -d ${POSTGRES_DB:-umbra_devnet_participant}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  devnet-participant-data:
+    name: umbra-devnet-participant-data

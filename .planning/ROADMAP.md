@@ -466,7 +466,7 @@ Plans:
 
 **Wave 4** *(blocked on 13-08, 13-09, 13-10)*
 
-- [ ] 13-11-PLAN.md — ADJ orchestration + endpoints: ledger.ts RFQ+issuance wrappers + POST /competing + /rfq* + /issuance* [ADJ-01, ADJ-02, ADJ-03]
+- [x] 13-11-PLAN.md — ADJ orchestration + endpoints: ledger.ts RFQ+issuance wrappers + POST /competing + /rfq* + /issuance* [ADJ-01, ADJ-02, ADJ-03]
 
 **Wave 5** *(blocked on 13-11)*
 
@@ -491,4 +491,4 @@ Build waves run in numeric order 8 → 9 → 10 → 11. Track A (Phase 12) runs 
 | 10. Cryptographic Privacy | 10/10 | Built · live UAT pending | 2026-07-10 |
 | 11. Settlement & Institutional Grade | 11/11 | Built · live UAT pending | 2026-07-10 |
 | 12. Real On-Chain (Canton DevNet) | 5/5 | Built · live UAT + external SV gate pending | 2026-07-10 |
-| 13. Platform Baseline & Adjacent | 10/14 | In Progress|  |
+| 13. Platform Baseline & Adjacent | 11/14 | In Progress|  |

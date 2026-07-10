@@ -949,8 +949,21 @@ export const listQuotes = async (rfqCid: string): Promise<QuoteView[]> => {
   if (!rfq) throw new Error(`RfqRequest ${rfqCid} not found`)
   const requester = rfq.createArgument.requester
   const instrId = rfq.createArgument.instrument?.id
+  // ME-02: `Quote` carries no back-reference to its `RfqRequest`, so a bare
+  // requester+instrument filter would surface quotes from a DIFFERENT open RFQ of the same
+  // requester for the same instrument (e.g. BUY 5 vs BUY 8). RfqPanel's bestQuoteIndex then
+  // ranks across the mixed set and may highlight a quote whose quantity does not match the
+  // RFQ being accepted (the on-ledger AcceptQuote asserts q.quantity == quantity, so the
+  // accept fails cleanly — but the desk sees a wrong "BEST" and an avoidable rejection).
+  // Scope quotes to THIS RFQ's terms by matching quantity as well.
+  const rfqQuantity = Number(rfq.createArgument.quantity)
   return (await queryByEntity('Quote'))
-    .filter((c) => c.createArgument.requester === requester && c.createArgument.instrument?.id === instrId)
+    .filter(
+      (c) =>
+        c.createArgument.requester === requester &&
+        c.createArgument.instrument?.id === instrId &&
+        Number(c.createArgument.quantity) === rfqQuantity,
+    )
     .map((c) => ({
       contractId: c.contractId,
       dealer: c.createArgument.dealer,

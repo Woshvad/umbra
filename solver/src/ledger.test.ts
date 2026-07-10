@@ -443,6 +443,30 @@ describe('ledger RFQ wrappers (ADJ-02 — post/quote/list/accept over JSON Ledge
     expect(quotes[0]).toMatchObject({ contractId: 'quote-1', dealer: 'bankB::test', price: 100, quantity: 10 })
   })
 
+  it('ME-02: listQuotes excludes quotes from a DIFFERENT RFQ (same requester+instrument, other qty)', async () => {
+    seedRfqAcceptWorld() // rfq-1: bankA BUY 10; quote-1: bankB @100 qty 10
+    // A SECOND open RFQ from the same requester for the same instrument at a different qty,
+    // with its own quote. Quote carries no rfq back-ref, so a requester+instrument-only
+    // filter would wrongly surface quote-2 for rfq-1.
+    acs.push(
+      umbra('#umbra:Umbra.Rfq:RfqRequest', {
+        operator: 'operator::test', requester: 'bankA::test', dealers: ['bankB::test'],
+        instrument: bond, side: 'Buy', quantity: '8',
+      }, 'rfq-2'),
+      umbra('#umbra:Umbra.Rfq:Quote', {
+        operator: 'operator::test', dealer: 'bankB::test', requester: 'bankA::test',
+        instrument: bond, price: '99.0', quantity: '8',
+      }, 'quote-2'),
+    )
+
+    const quotes = await ledgerMod.listQuotes('rfq-1')
+
+    // Only the qty-10 quote belonging to rfq-1 is returned; quote-2 (qty 8) is excluded.
+    expect(quotes).toHaveLength(1)
+    expect(quotes[0]).toMatchObject({ contractId: 'quote-1', quantity: 10 })
+    expect(quotes.some((q) => q.contractId === 'quote-2')).toBe(false)
+  })
+
   it('acceptQuote gathers the bond+cash source cids like settle() and exercises AcceptQuote', async () => {
     seedRfqAcceptWorld()
 

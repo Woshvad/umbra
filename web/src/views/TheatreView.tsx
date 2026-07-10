@@ -30,6 +30,7 @@ import CrossingChart from '../components/CrossingChart'
 import PriceReveal from '../components/PriceReveal'
 import ComplianceApproval from '../components/ComplianceApproval'
 import QrJoin from '../components/QrJoin'
+import IssuancePanel from '../components/IssuancePanel'
 
 type Props = OperatorViewState
 
@@ -215,6 +216,12 @@ export default function TheatreView({
       <div style={{ marginTop: '30px' }}>
         <QrJoin roundId={roundId} />
       </div>
+
+      {/* S4 — ADJ-03 issuance / coupon panel (OPTIONAL, 13-UI-SPEC lines 192-202). A compact
+          additive block: a primary-issuance uniform-price clear (reusing CrossingChart +
+          PriceReveal — the one allowed lime use) + a coupon/redemption lifecycle row. Purely
+          additive — the shipped countdown/reveal/theatre beat above is byte-unchanged. */}
+      <IssuancePanel />
     </main>
   )
 }

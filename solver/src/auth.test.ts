@@ -12,7 +12,11 @@
 //   • The OIDC_CLIENT_SECRET never appears in a thrown error or a log line (secret-sweep).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { SignJWT, exportJWK, generateKeyPair, type KeyLike } from 'jose'
+import { SignJWT, exportJWK, generateKeyPair } from 'jose'
+
+// jose v6 dropped the `KeyLike` alias — infer the key types from generateKeyPair's result.
+type KeyPair = Awaited<ReturnType<typeof generateKeyPair>>
+type PrivKey = KeyPair['privateKey']
 
 // ── Mocked issuer config (set BEFORE importing auth.ts; auth reads env lazily) ────
 const OIDC_ISSUER = 'https://keycloak.test/realms/umbra'
@@ -32,16 +36,16 @@ process.env.OIDC_CLIENT_SECRET = SENTINEL_CLIENT_SECRET
 const auth = await import('./auth.js')
 
 // ── The correct signing keypair + its published JWKS (the issuer's key) ───────────
-let correct: { publicKey: KeyLike; privateKey: KeyLike }
+let correct: KeyPair
 // A SECOND, unrelated keypair — its tokens are NOT in the JWKS (wrong-key rejection).
-let wrong: { publicKey: KeyLike; privateKey: KeyLike }
+let wrong: KeyPair
 let jwksBody: { keys: unknown[] }
 
 const captured: { tokenBodies: string[] } = { tokenBodies: [] }
 
 // Sign an RS256 token with a given private key + claims, using KID so the JWKS selects it.
 const signToken = (
-  key: KeyLike,
+  key: PrivKey,
   { aud = AUDIENCE, expired = false }: { aud?: string; expired?: boolean } = {},
 ): Promise<string> => {
   const jwt = new SignJWT({})

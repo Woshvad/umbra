@@ -1,0 +1,88 @@
+-- Umbra — on-ledger participation eligibility (COMP-01, ERC-3643 analog).
+--
+-- `DeskEligibility` is the on-ledger credential that gates who may participate:
+-- an operator/Compliance-signed, per-desk attestation carrying accreditation /
+-- jurisdiction / sanctions flags. It is the GATE PRIMITIVE — the actual enforcement
+-- (fetch the credential + `assertDeskEligible` inside `Venue.SubmitOrder` /
+-- `CommitOrder` and at Holding issuance) lands in 11-05, and the on-ledger
+-- REJECTION negative tests land in 11-06. This plan ships the credential template
+-- + its `isEligible` predicate + the `assertDeskEligible` gate helper + a positive
+-- lifecycle test.
+--
+-- ─────────────────────────────────────────────────────────────────────────────
+-- ENVIRONMENTAL DEVIATION (recorded, honest): CONTRACT KEYS ARE UNAVAILABLE.
+-- The plan (11-RESEARCH Pattern 3) specified a keyed template `key (operator, desk)`
+-- + `maintainer key._1` + a `fetchByKey @DeskEligibility (operator, desk)` gate. On
+-- this stack — Daml SDK 3.4.11 / Canton 3.4 / Daml-LF 2.1 — contract keys are NOT
+-- supported by the compiler ("Failure to process Daml program … Contract keys."):
+-- Canton 3.x removed unique contract keys, which is why NO template across the prior
+-- ten phases uses one (D7 already forbade a key on `Asset`/`Holding` for the split
+-- DuplicateKey risk; the deeper reason is the whole LF-2.1 line has no key support).
+-- The credential is therefore keyless, and the gate primitive is fetch-by-ContractId
+-- + `assertDeskEligible` (the exact D7 Option-B "pass the ContractId explicitly"
+-- discipline already used for every Asset/Holding leg in `Round.Clear`). This
+-- preserves EVERY security property (a desk still cannot self-issue) and the
+-- `isEligible` predicate verbatim — only the lookup mechanism changes from
+-- fetchByKey to fetch-by-cid. See 11-02-SUMMARY "Deviations" + "Notes for 11-05".
+-- ─────────────────────────────────────────────────────────────────────────────
+--
+-- HONEST STUB BOUNDARY (11-UI-SPEC honesty contract): this is a STUB ATTESTATION
+-- issued by the operator/Compliance role — the on-screen label reads
+--   STUB ATTESTATION — REAL KYC VENDOR IS TRACK B
+-- A real KYC/AML vendor (Refinitiv/Chainalysis-class) is Track B, NOT this phase.
+-- No claim is made that `accredited`/`sanctionsClear` reflect a real KYC check; the
+-- honest value is that PARTICIPATION IS GATED ON-LEDGER by an authority-signed
+-- credential (a desk cannot self-issue — spoofing is structurally impossible).
+--
+-- Standalone module (no Holding/Auction import) so it compiles independently —
+-- Wave-1 parallel-safe with 11-01.
+module Umbra.Compliance where
+
+-- The per-desk eligibility credential (ERC-3643 analog). Signed by the operator
+-- AND the Compliance role (`compliance` may == `operator` for the MVP stub — a
+-- single trust domain), observed by the desk it describes so the desk can see its
+-- own standing. A desk is NOT a signatory: it CANNOT forge or self-amend its own
+-- eligibility (threat T-11-02-FORGE — mitigated structurally). One stable credential
+-- per desk is maintained by the operator/Compliance issuance discipline (no contract
+-- key on this line — see the ENVIRONMENTAL DEVIATION note above).
+template DeskEligibility
+  with
+    operator       : Party   -- venue operator (issuer / logical key owner)
+    compliance     : Party   -- Compliance role co-signer (may == operator, MVP stub)
+    desk           : Party   -- the desk this credential describes (observer only)
+    accredited     : Bool    -- accredited/qualified investor attestation (STUB)
+    jurisdiction   : Text     -- recorded/observable, NOT a hard gate in the MVP (see isEligible)
+    sanctionsClear : Bool    -- sanctions-screening clear attestation (STUB)
+  where
+    signatory operator, compliance
+    observer desk
+
+    -- Withdraw a credential (operator/Compliance authority). Consuming: once revoked
+    -- the desk is no longer eligible and a fresh credential must be re-issued. Either
+    -- signatory can revoke.
+    choice Revoke : ()
+      controller operator, compliance
+      do pure ()
+
+-- The eligibility predicate (the gate test 11-05 will assert on-ledger).
+-- `jurisdiction` is RECORDED and observable but is NOT a hard gate in the MVP stub —
+-- the honest gate is accreditation AND sanctions-clear. A production KYC vendor
+-- (Track B) would fold jurisdiction/whitelist rules in here.
+isEligible : DeskEligibility -> Bool
+isEligible e = e.accredited && e.sanctionsClear
+
+-- The GATE PRIMITIVE for 11-05 (the keyless equivalent of the planned
+-- `fetchByKey @DeskEligibility (operator, desk)` + `assertMsg (isEligible …)`).
+-- 11-05 fetches the credential by ContractId (passed explicitly, D7 Option-B) inside
+-- `Venue.SubmitOrder` / `CommitOrder` / the Holding-issuance choice — where operator
+-- authority co-flows because `Venue` is `signatory operator` — then calls this:
+-- it asserts the credential actually describes THIS (operator, desk) pair (so a
+-- credential for another desk cannot be substituted) AND that the desk is eligible.
+-- An ineligible or mismatched desk is rejected ON-LEDGER (assertMsg failure), never
+-- in render logic.
+assertDeskEligible : Party -> Party -> DeskEligibility -> Update ()
+assertDeskEligible operator desk cred = do
+  assertMsg "eligibility credential does not match (operator, desk)"
+    (cred.operator == operator && cred.desk == desk)
+  assertMsg "desk not eligible (accreditation/jurisdiction/sanctions)"
+    (isEligible cred)

@@ -9,8 +9,9 @@
 //                    `PARTICIPANT · {id}` caption (or `SAME PARTICIPANT (LOCALNET)` when the
 //                    hosting map resolves every node to one participant — the HARD demo-real beat).
 //   • operator     → the inverted-surface grammar reused from Theatre (ink fill `#0A0A0A`, paper
-//                    text): `OPERATOR · SYNCHRONIZER`; it sees a COUNT of resident orders, never
-//                    contents (venue-blind, matching Privacy's venue spine).
+//                    text): `OPERATOR · SYNCHRONIZER`; it sees a COUNT of resident participant
+//                    NODES (the connected node cards), never contents (venue-blind, matching
+//                    Privacy's venue spine). Labeled `NODES RESIDENT` — the value is nodes.length.
 //
 // The pure core (`nodesFromHosting` / `edges` / `demoRealCaption` + `partyForDesk`) maps the
 // credential-free `TopologyMeta` hosting map (solver.ts getTopology, from 11-08/11-03) onto
@@ -163,7 +164,9 @@ function OperatorCard({ count }: { count: number }) {
           className="font-mono text-9 uppercase"
           style={{ marginTop: '6px', letterSpacing: '.16em', opacity: 0.6 }}
         >
-          {count === 1 ? 'ORDER' : 'ORDERS'} RESIDENT
+          {/* `count` is the number of participant NODES (nodes.length), not sealed orders —
+              label it honestly as NODES RESIDENT so the caption matches the value (LW-04). */}
+          {count === 1 ? 'NODE' : 'NODES'} RESIDENT
         </div>
       </div>
     </div>

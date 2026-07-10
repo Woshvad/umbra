@@ -18,7 +18,8 @@
 // test drives buildDeps directly with injected spies.
 
 import { createApp, type AppDeps, type RoundView } from './api.js'
-import type { Clock } from './clock.js'
+import type { Clock, RoundStatus } from './clock.js'
+import type { Health } from './status.js'
 
 // Default window / port (overridable via env). ROUND_SECONDS drives the auto-close
 // timer; SOLVER_PORT is the :4100 bind.
@@ -93,6 +94,10 @@ export interface BuildDepsArgs {
   // the guest bootstrap composed from the deploy party map.
   hostingMap?: AppDeps['hostingMap']
   onboardGuest?: AppDeps['onboardGuest']
+  // OPS-02: the aggregate-only status source for the token-free /status surface. Optional so
+  // the boot-wiring unit test (index.test.ts) need not inject it; buildDeps threads it through
+  // unchanged. main() supplies the real ledger-backed source.
+  statusSource?: AppDeps['statusSource']
 }
 
 // Assemble the AppDeps so the API routes are wired to the ledger + clock.
@@ -174,6 +179,8 @@ export const buildDeps = (args: BuildDepsArgs): AppDeps => {
     hostingMap,
     // WOW-07: the guest /join bootstrap (party + URL + roundId; never a token).
     onboardGuest,
+    // OPS-02: the aggregate-only status source for the token-free /status surface (optional).
+    statusSource: args.statusSource,
     computeClearing: math.computeClearing,
     matchedAt: math.matchedAt,
     demandAt: math.demandAt,
@@ -183,15 +190,50 @@ export const buildDeps = (args: BuildDepsArgs): AppDeps => {
   }
 }
 
+// ── OPS-01 telemetry-first boot (Pitfall 1) ───────────────────────────────────────
+// Initialise the OTel provider FIRST, then register graceful shutdown on SIGTERM/SIGINT.
+// Called at the top of main() (after dotenv, before the instrumented ledger/agent imports)
+// so every request-path span binds to a live provider and the SDK flushes on shutdown.
+// Injected callbacks keep the ordering unit-testable without booting the service.
+export interface TelemetryBoot {
+  initTelemetry: () => void
+  onSignal: (handler: () => void) => void
+  shutdownTelemetry: () => Promise<void>
+}
+
+export const bootTelemetry = (boot: TelemetryBoot): void => {
+  boot.initTelemetry() // FIRST — before any instrumented module runs
+  boot.onSignal(() => {
+    void boot.shutdownTelemetry()
+  })
+}
+
 // ── Live boot (only runs when executed as the entrypoint, never on import) ────────
 const main = async (): Promise<void> => {
   const dotenv = await import('dotenv')
   dotenv.config()
 
+  // OPS-01 Pitfall 1: telemetry initialises AFTER dotenv (so the OTLP endpoint from .env is
+  // read) but BEFORE the instrumented ledger/agent modules import — otherwise their
+  // request-path spans never attach to a registered provider. shutdownTelemetry flushes the
+  // SDK on SIGTERM/SIGINT. The redacting log() replaces the raw boot console output.
+  const { initTelemetry, shutdownTelemetry } = await import('./telemetry.js')
+  const { log } = await import('./logger.js')
+  const { createSecretsProvider } = await import('./secrets.js')
+  bootTelemetry({
+    initTelemetry,
+    onSignal: (handler) => {
+      process.once('SIGTERM', handler)
+      process.once('SIGINT', handler)
+    },
+    shutdownTelemetry,
+  })
+
   const roundSeconds = Number(process.env.ROUND_SECONDS ?? DEFAULT_ROUND_SECONDS) || DEFAULT_ROUND_SECONDS
   const solverPort = Number(process.env.SOLVER_PORT ?? DEFAULT_SOLVER_PORT) || DEFAULT_SOLVER_PORT
 
-  // Import the ledger client AFTER dotenv so it reads JSON_API_URL from .env.
+  // Import the ledger client AFTER dotenv + initTelemetry so it reads JSON_API_URL from .env
+  // and its request-path spans bind to the live provider (instrumented module — Pitfall 1).
   const ledger = await import('./ledger.js')
   const auction = await import('./auction.js')
   const { createClock } = await import('./clock.js')
@@ -217,13 +259,51 @@ const main = async (): Promise<void> => {
     readFileSync(fileURLToPath(new URL('./zk/vkey.json', import.meta.url)), 'utf8'),
   ) as Record<string, unknown>
 
-  // Construct the real AI Solver Agent ONCE at boot. No `client` is passed — agent.ts
-  // resolves its own module-private ANTHROPIC_API_KEY (or runs keyless: the §4 fixture
-  // still clears at 100.00 with a neutral rationale). index.ts NEVER reads the key.
+  // OPS-02: resolve the Anthropic API key through the SecretsProvider seam. The `env`
+  // backend returns exactly today's process.env.ANTHROPIC_API_KEY (byte-for-byte); the
+  // `vault` backend can swap in at UAT via SECRETS_PROVIDER=vault. When a key resolves,
+  // construct the Anthropic client HERE and INJECT it into createAgent; when it is absent
+  // (the env backend throws `${name} is unset`), the agent keyless-degrades (the §4 fixture
+  // still clears at 100.00). The key is resolved server-side only and NEVER logged/returned.
+  // The operator/party-token seam routes through the SAME provider — ledger.ts keeps its
+  // proven file-based token resolution unchanged; only the seam is added for the vault swap.
+  const secrets = createSecretsProvider()
+  let agentClient: import('./agent.js').AgentClient | null = null
+  try {
+    const apiKey = (await secrets.get('ANTHROPIC_API_KEY')).trim()
+    if (apiKey) {
+      const { default: Anthropic } = await import('@anthropic-ai/sdk')
+      agentClient = new Anthropic({ apiKey }) as unknown as import('./agent.js').AgentClient
+    }
+  } catch {
+    // env backend throws `${name} is unset` when the key is absent → keyless degradation.
+    agentClient = null
+  }
+
+  // Construct the real AI Solver Agent ONCE at boot, INJECTING the SecretsProvider-resolved
+  // client (createAgent prefers an injected client over its module-private one, and
+  // keyless-degrades when absent — so the §4 fixture still clears at 100.00 either way).
   const agent = createAgent({
+    client: agentClient,
     computeClearing: auction.computeClearing,
     matchedAt: auction.matchedAt,
   })
+
+  // OPS-02: the aggregate-only source for the token-free /status surface. Reports venue
+  // health (degraded when the ledger is unreachable) + the CURRENT round's status (never an
+  // order/desk/secret) + build/version. api.ts maps the status → display phase via the FSM
+  // sealedAlias and adds uptime + the last clear. Live-ledger-optional (degrades cleanly).
+  const statusSource = async (): Promise<{ health: Health; roundStatus: RoundStatus | null; build: string }> => {
+    const build = process.env.UMBRA_BUILD ?? 'phase-13'
+    try {
+      const live = await ledger.queryAllRounds()
+      const open = live.find((r) => r.status === 'Open')
+      const latest = open ?? live[live.length - 1]
+      return { health: 'operational', roundStatus: (latest?.status as RoundStatus) ?? null, build }
+    } catch {
+      return { health: 'degraded', roundStatus: null, build }
+    }
+  }
 
   // The clock force-closes ON-LEDGER via ledger.closeRound at the window / on demand.
   const clock = createClock({ closeRound: ledger.closeRound })
@@ -239,12 +319,13 @@ const main = async (): Promise<void> => {
         windowSeconds: r.windowSeconds,
       })),
     )
-    // eslint-disable-next-line no-console
-    console.log(`Rehydrated ${live.length} round(s) from the ledger`)
+    log('info', 'rehydrated rounds from the ledger', { count: live.length })
   } catch (err) {
-    // Boot must not crash if the sandbox is not yet reachable — log a secret-free note.
-    // eslint-disable-next-line no-console
-    console.warn('Rehydrate skipped — ledger not reachable yet (will recognize rounds on first request)')
+    // Boot must not crash if the sandbox is not yet reachable — log a secret-free note
+    // (err.name only, never err.message / the raw object) via the redacting logger.
+    log('warn', 'rehydrate skipped — ledger not reachable yet (rounds recognized on first request)', {
+      error: err instanceof Error ? err.name : 'unknown',
+    })
   }
 
   // Adapt the ledger.ts return shapes onto the API's RoundView / SettleResult
@@ -520,14 +601,18 @@ const main = async (): Promise<void> => {
     hostingMap,
     // WOW-07: the guest /join bootstrap (party + URL + roundId; never a token).
     onboardGuest,
+    // OPS-02: the ledger-backed aggregate status source for the token-free /status surface.
+    statusSource,
   })
 
   const app = createApp(deps)
   app.listen(solverPort, () => {
-    // SECRET-FREE boot log: only the bound port + the PUBLIC operator party id.
-    // NEVER the token, ANTHROPIC_API_KEY, or process.env (SOLV-04 / T-04-04).
-    // eslint-disable-next-line no-console
-    console.log(`Solver listening on :${solverPort} as ${ledger.operatorParty}`)
+    // SECRET-FREE boot log via the redacting JSON logger: only the bound port + the PUBLIC
+    // operator party id. NEVER the token, ANTHROPIC_API_KEY, or process.env (SOLV-04 / T-04-04).
+    log('info', `solver listening on :${solverPort} as ${ledger.operatorParty}`, {
+      port: solverPort,
+      operatorParty: ledger.operatorParty,
+    })
   })
 }
 

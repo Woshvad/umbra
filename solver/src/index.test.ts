@@ -21,8 +21,8 @@ import {
   choosePStar,
 } from './auction.js'
 import { createApp, type RoundView, type SealedOrder, type SettleResult } from './api.js'
-import { buildDeps, type LedgerPort, type MathPort } from './index.js'
-import type { AgentResult } from './agent.js'
+import { buildDeps, bootTelemetry, type LedgerPort, type MathPort } from './index.js'
+import { createAgent, type AgentClient, type AgentResult } from './agent.js'
 import type { Clock, RoundState } from './clock.js'
 
 const ROUND_SECONDS = 60
@@ -171,5 +171,68 @@ describe('solver boot wiring (buildDeps)', () => {
     const res = await fetch(`${started.base}/round/R2/close`, { method: 'POST' })
     expect(res.status).toBe(200)
     expect(clock.forceClose).toHaveBeenCalledWith('R2')
+  })
+
+  // ── OPS-01: telemetry-first boot ordering (Pitfall 1) ─────────────────────────────
+  it('bootTelemetry inits telemetry BEFORE registering shutdown, and shuts down on signal', () => {
+    const calls: string[] = []
+    let registered: (() => void) | undefined
+    bootTelemetry({
+      initTelemetry: () => calls.push('init'),
+      onSignal: (handler) => {
+        calls.push('onSignal')
+        registered = handler
+      },
+      shutdownTelemetry: async () => {
+        calls.push('shutdown')
+      },
+    })
+
+    // init runs FIRST (before instrumented modules / listen), THEN the signal registers.
+    expect(calls).toEqual(['init', 'onSignal'])
+    expect(typeof registered).toBe('function')
+    // Firing the registered SIGTERM/SIGINT handler triggers telemetry shutdown.
+    registered!()
+    expect(calls).toContain('shutdown')
+  })
+
+  // ── OPS-02: the SecretsProvider-injected agent client still fires the boot wiring ──
+  it('an injected-client agent (SecretsProvider seam) still fires openRound + openRoundClock', async () => {
+    const ledger = makeLedger()
+    const openRoundClock = vi.fn(
+      (roundId: string): RoundState => ({ roundId, status: 'Open', openedAt: 0, deadline: 0 }),
+    )
+    const clock = makeClock(openRoundClock)
+
+    // A fake Anthropic client (as index.ts injects the SecretsProvider-resolved client into
+    // createAgent). The §4 sealed views aren't exercised on POST /round, so a minimal
+    // parse stub suffices — the point is the injected-client agent wires through buildDeps.
+    const fakeClient: AgentClient = {
+      messages: { parse: vi.fn(async () => ({ parsed_output: {} })) },
+    }
+    const agent = createAgent({ client: fakeClient, computeClearing, matchedAt })
+
+    const deps = buildDeps({
+      ledger,
+      math,
+      clock,
+      openRoundClock,
+      roundSeconds: ROUND_SECONDS,
+      proposeClearing: agent.proposeClearing,
+      parseOrder: agent.parseOrder,
+      streamRationale: agent.streamRationale,
+      composeBrief,
+    })
+    const started = await listen(createApp(deps))
+    server = started.server
+
+    const res = await fetch(`${started.base}/round`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ roundId: 'R7', desks: ['BankA', 'BankB', 'BankC'] }),
+    })
+    expect(res.status).toBe(201)
+    expect(ledger.openRound).toHaveBeenCalledTimes(1)
+    expect(openRoundClock).toHaveBeenCalledWith('R7', ROUND_SECONDS)
   })
 })

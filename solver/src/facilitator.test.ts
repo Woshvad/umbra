@@ -169,9 +169,11 @@ describe('canton-cc backend — FTP facilitator /verify + /settle', () => {
       expect(url).toBe(`${FAC_URL}/verify`)
       expect((init?.headers as Record<string, string>).Authorization).toBe(`Bearer ${SENTINEL_KEY}`)
       const sent = JSON.parse(String(init?.body))
+      // The pinned wire body (§4): paymentPayload is the FULL PaymentPayload (holdingCid nests
+      // under .payload); paymentRequirements is the chosen accepts[] entry.
       expect(sent).toMatchObject({
         x402Version: 1,
-        paymentPayload: { holdingCid: CID },
+        paymentPayload: { payload: { holdingCid: CID } },
         paymentRequirements: { maxAmountRequired: '100' },
       })
       return okJson({ isValid: true, payer: PAYER })

@@ -1,7 +1,8 @@
-// Nav (UI-SPEC lines 239-245). 5 tabs (PRIVACY/DESK/THEATRE/AGENT/SETTLEMENT), each
-// num (mono 11px/600 opacity .6) + label (Inter 13px/600 .04em), border-top 3px
-// (active = red #E2231A, inactive transparent), active fg ink / inactive
-// rgba(10,10,10,.5). Phase-6: all five views are live and navigable.
+// Nav (UI-SPEC lines 239-245). 7 tabs (PRIVACY/DESK/THEATRE/AGENT/SETTLEMENT/TIME
+// MACHINE/TOPOLOGY), each num (mono 11px/600 opacity .6) + label (Inter 13px/600 .04em),
+// border-top 3px (active = red #E2231A, inactive transparent), active fg ink / inactive
+// rgba(10,10,10,.5). Phase-11: all seven views are live and navigable (/join is OUTSIDE
+// the nav — a standalone mobile route).
 export type Screen =
   | 'privacy'
   | 'desk'

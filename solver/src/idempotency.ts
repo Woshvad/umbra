@@ -83,6 +83,14 @@ export const idempotencyMiddleware = (
   const ttlMs = opts?.ttlMs ?? DEFAULT_TTL_MS
   const now = opts?.now ?? Date.now
 
+  // ME-01: an in-flight guard (per-middleware-instance) keyed the SAME as the store. A
+  // storeKey is reserved here the moment the first request passes into the handler and
+  // released when that request finalizes its response. Concurrent same-key requests that
+  // arrive while the first is still executing are refused with 409 rather than double-
+  // executing (the "no double-submit / no double-settle" guarantee the docblock advertises).
+  // Single-instance only — the documented Postgres swap is the multi-instance path.
+  const pending = new Set<string>()
+
   return (req: Request, res: Response, next: NextFunction): void => {
     // Opt-in: only mutating POSTs carrying an Idempotency-Key are deduped.
     if (req.method !== 'POST') return next()
@@ -119,7 +127,27 @@ export const idempotencyMiddleware = (
       return
     }
 
-    // First time for this key: capture the FIRST response, then run the handler once.
+    // ME-01: a concurrent same-key request is already in flight (reserved below, not yet
+    // finalized). Refuse rather than double-execute; the client retries once the first
+    // completes, at which point it either replays the stored success or (on a 5xx that did
+    // not consume the key) re-executes.
+    if (pending.has(storeKey)) {
+      res.status(409).json({
+        error: {
+          code: 'IDEMPOTENCY_REQUEST_IN_FLIGHT',
+          message: 'A request with this Idempotency-Key is already in flight; retry shortly',
+        },
+      })
+      return
+    }
+
+    // First time for this key: reserve it (in-flight guard), capture the FIRST response,
+    // then run the handler once. The reservation is released on response finalization.
+    pending.add(storeKey)
+    // Release the reservation whenever the response finishes, even if the handler ends the
+    // response without going through res.json (belt-and-suspenders around the override).
+    res.on('finish', () => pending.delete(storeKey))
+    res.on('close', () => pending.delete(storeKey))
     const originalJson = res.json.bind(res)
     res.json = (body: unknown): Response => {
       // res.statusCode is already set by the handler's res.status(...) call.
@@ -133,6 +161,9 @@ export const idempotencyMiddleware = (
       if (res.statusCode < 400) {
         store.set(storeKey, { bodyHash, status: res.statusCode, body, at: now() })
       }
+      // ME-01: release the in-flight reservation as the response finalizes (the 'finish'/
+      // 'close' listeners are the fallback for handlers that bypass res.json).
+      pending.delete(storeKey)
       return originalJson(body)
     }
     next()

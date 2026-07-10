@@ -162,6 +162,37 @@ describe('idempotency middleware', () => {
     expect(calls).toBe(2)
   })
 
+  it('ME-01: concurrent same-key POSTs — the second is refused 409 in-flight, handler runs once', async () => {
+    let calls = 0
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    const { middleware } = createIdempotency()
+    const base = await start((app) => {
+      app.use(middleware)
+      app.post('/settle', async (_req, res) => {
+        calls += 1
+        await gate // hold the first request in-flight until both have been dispatched
+        res.status(200).json({ settled: true })
+      })
+    })
+    const headers = { 'Content-Type': 'application/json', 'Idempotency-Key': 'k-inflight' }
+    const body = JSON.stringify({})
+
+    // Fire both before releasing the gate so the second arrives while the first is pending.
+    const p1 = fetch(`${base}/settle`, { method: 'POST', headers, body })
+    const p2 = fetch(`${base}/settle`, { method: 'POST', headers, body })
+    // Give the server a tick to register both requests, then release the held handler.
+    await new Promise((r) => setTimeout(r, 50))
+    release()
+    const [r1, r2] = await Promise.all([p1, p2])
+    const statuses = [r1.status, r2.status].sort()
+
+    expect(calls).toBe(1) // the handler executed EXACTLY once (no double-settle)
+    expect(statuses).toEqual([200, 409]) // one succeeded, the concurrent one was refused
+    const inflight = r1.status === 409 ? r1 : r2
+    expect((await inflight.json()).error.code).toBe('IDEMPOTENCY_REQUEST_IN_FLIGHT')
+  })
+
   it('HI-02: the same key on TWO endpoints does NOT cross-replay (namespaced by method+path)', async () => {
     let roundCalls = 0
     let settleCalls = 0

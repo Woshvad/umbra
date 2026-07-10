@@ -474,7 +474,7 @@ Plans:
 
 **Wave 6** *(blocked on 13-12)*
 
-- [ ] 13-13-PLAN.md — ADJ-02 S3 RfqPanel on Desk view (reuse DvpLegs + AtomicStamp) [ADJ-02]
+- [x] 13-13-PLAN.md — ADJ-02 S3 RfqPanel on Desk view (reuse DvpLegs + AtomicStamp) [ADJ-02]
 - [ ] 13-14-PLAN.md — ADJ-03 S4 IssuancePanel on Theatre view (OPTIONAL — reuse CrossingChart + PriceReveal; droppable) [ADJ-03]
 
 **UI hint**: yes
@@ -491,4 +491,4 @@ Build waves run in numeric order 8 → 9 → 10 → 11. Track A (Phase 12) runs 
 | 10. Cryptographic Privacy | 10/10 | Built · live UAT pending | 2026-07-10 |
 | 11. Settlement & Institutional Grade | 11/11 | Built · live UAT pending | 2026-07-10 |
 | 12. Real On-Chain (Canton DevNet) | 5/5 | Built · live UAT + external SV gate pending | 2026-07-10 |
-| 13. Platform Baseline & Adjacent | 12/14 | In Progress|  |
+| 13. Platform Baseline & Adjacent | 13/14 | In Progress|  |

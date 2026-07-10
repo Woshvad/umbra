@@ -24,6 +24,10 @@
 import { readFileSync } from 'node:fs'
 import type { OrderType, OrderView, Side } from './auction.js'
 import { computeClearing, matchedAt } from './auction.js'
+// IDEN-01 dual-mode: the OIDC (DevNet/prod) client-credentials token acquisition. Only
+// invoked when OIDC_ISSUER is set; the dev LocalNet path never touches it. The OIDC
+// client secret lives ONLY inside auth.ts (never in this module, never logged).
+import { acquireToken } from './auth.js'
 
 export type RoundStatus = 'Open' | 'Closed' | 'Cleared' | 'Settled'
 
@@ -47,8 +51,22 @@ const PARTICIPANT = (
   'http://localhost:3975'
 ).replace(/\/+$/, '')
 
-// ── Operator credential resolution (module-private) ──────────────────────────────
-const resolveOperator = (): { token: string; party: string } => {
+// ── Dual-mode Operator credential resolution (IDEN-01 — module-private) ────────────
+// The credential seam grows a mode switch, selected by env:
+//   • OIDC_ISSUER SET   ⇒ DevNet/prod OIDC path: the bearer is acquired via
+//     client-credentials (auth.ts acquireToken, RS256) and cached until near expiry; the
+//     operator PARTY comes from OIDC_OPERATOR_PARTY (or the deploy party map).
+//   • OIDC_ISSUER UNSET ⇒ dev LocalNet path (BYTE-UNCHANGED): the bearer + party are the
+//     HS256 dev token read from scripts/.operator-token (written by deploy.mjs).
+// Only the KEY SOURCE + SIGNING ALG differ across modes (HS256/`unsafe` → RS256/JWKS);
+// the audience (https://canton.network.global) and the participant user-rights model are
+// identical (Canton derives party rights from the user, not token claims — D9). The OIDC
+// client secret lives ONLY in auth.ts (never in this module, never returned, never logged).
+const OIDC_MODE = Boolean(process.env.OIDC_ISSUER)
+
+// The dev credential (HS256 token + party) — read synchronously ONLY on the dev path so
+// OIDC deployments need not ship scripts/.operator-token.
+const resolveDevOperator = (): { token: string; party: string } => {
   try {
     const raw = readFileSync(new URL('../../scripts/.operator-token', import.meta.url), 'utf8')
     const { token, party } = JSON.parse(raw) as { token: string; party: string }
@@ -62,11 +80,63 @@ const resolveOperator = (): { token: string; party: string } => {
   )
 }
 
-const { token: _operatorToken, party: _operatorParty } = resolveOperator()
+// The operator PARTY on the OIDC path (a public id). The token does NOT carry party
+// authority (Canton derives rights from the token's user; D9), so the party is configured
+// explicitly (OIDC_OPERATOR_PARTY) or read from the deploy party map's `operator`.
+const resolveOidcOperatorParty = (): string => {
+  const explicit = process.env.OIDC_OPERATOR_PARTY
+  if (explicit) return explicit
+  try {
+    const raw = readFileSync(new URL('../../daml/parties.json', import.meta.url), 'utf8')
+    const m = JSON.parse(raw) as Record<string, string>
+    if (m.operator) return m.operator
+  } catch {
+    // fall through
+  }
+  throw new Error('OIDC mode: set OIDC_OPERATOR_PARTY (or provide daml/parties.json operator)')
+}
+
+// Resolve once. Dev reads the file (token + party); OIDC resolves the party only.
+const _dev = OIDC_MODE ? null : resolveDevOperator()
+// The dev HS256 bearer (module-private, '' on the OIDC path — the OIDC bearer is dynamic).
+const _devOperatorToken: string = _dev?.token ?? ''
+const _operatorParty: string = OIDC_MODE ? resolveOidcOperatorParty() : _dev!.party
 
 // Exported: the Operator PARTY string only (a public id). The token is intentionally
 // NOT exported and NOT part of any return value.
 export const operatorParty: string = _operatorParty
+
+// ── OIDC bearer cache (module-private; NEVER logged) ──────────────────────────────
+// On the OIDC path the bearer is a short-lived RS256 token: acquire it lazily via
+// client-credentials and cache it until shortly before expiry (parsed from the JWT `exp`,
+// with a 60s default TTL when absent). The token string never leaves the request header.
+let _oidcToken: string | null = null
+let _oidcExpEpochMs = 0
+const OIDC_REFRESH_SKEW_MS = 30_000
+
+const jwtExpMs = (token: string): number => {
+  try {
+    const seg = token.split('.')[1] ?? ''
+    const payload = JSON.parse(Buffer.from(seg, 'base64url').toString('utf8')) as { exp?: number }
+    return payload.exp ? payload.exp * 1000 : 0
+  } catch {
+    return 0
+  }
+}
+
+const oidcBearer = async (): Promise<string> => {
+  const now = Date.now()
+  if (_oidcToken && now < _oidcExpEpochMs - OIDC_REFRESH_SKEW_MS) return _oidcToken
+  const token = await acquireToken()
+  _oidcToken = token
+  const exp = jwtExpMs(token)
+  _oidcExpEpochMs = exp || now + 60_000
+  return token
+}
+
+// The current bearer for BOTH modes. Dev returns the static HS256 token (byte-unchanged
+// behaviour); OIDC returns the cached/refreshed client-credentials token.
+const bearerToken = async (): Promise<string> => (OIDC_MODE ? oidcBearer() : _devOperatorToken)
 
 // Default desks for a body-less POST /round (the §4 banks), read fresh from the
 // deploy's party map. openRound uses the caller's desks when provided.
@@ -82,8 +152,10 @@ const resolveDesks = (): string[] => {
 const DEFAULT_DESKS = resolveDesks()
 
 // ── v2 wire helpers (global fetch — mockable in tests) ───────────────────────────
-const authHeaders = (): Record<string, string> => ({
-  Authorization: `Bearer ${_operatorToken}`,
+// Async because the OIDC bearer is acquired/refreshed on demand; on the dev path it
+// resolves synchronously to the static HS256 token (behaviour byte-unchanged).
+const authHeaders = async (): Promise<Record<string, string>> => ({
+  Authorization: `Bearer ${await bearerToken()}`,
   'Content-Type': 'application/json',
 })
 
@@ -101,7 +173,7 @@ interface CreatedEvent {
 const entityOf = (templateId: string): string => templateId.split(':').pop() ?? ''
 
 const ledgerEnd = async (): Promise<number> => {
-  const res = await fetch(`${PARTICIPANT}/v2/state/ledger-end`, { headers: authHeaders() })
+  const res = await fetch(`${PARTICIPANT}/v2/state/ledger-end`, { headers: await authHeaders() })
   if (!res.ok) throw new Error(`ledger-end HTTP ${res.status}`)
   return (await (res.json() as Promise<{ offset: number }>)).offset
 }
@@ -112,7 +184,7 @@ const ledgerEnd = async (): Promise<number> => {
 const submitAndWait = async (commands: unknown[], actAs: string[]): Promise<void> => {
   const res = await fetch(`${PARTICIPANT}/v2/commands/submit-and-wait`, {
     method: 'POST',
-    headers: authHeaders(),
+    headers: await authHeaders(),
     body: JSON.stringify({ commandId: `umbra-solver-${Date.now()}-${_cmdSeq++}`, actAs, commands }),
   })
   if (!res.ok) {
@@ -144,7 +216,7 @@ const queryByEntity = async (entity: string): Promise<CreatedEvent[]> => {
   const activeAtOffset = await ledgerEnd()
   const res = await fetch(`${PARTICIPANT}/v2/state/active-contracts`, {
     method: 'POST',
-    headers: authHeaders(),
+    headers: await authHeaders(),
     body: JSON.stringify({
       filter: { filtersByParty: { [operatorParty]: {} } },
       verbose: true,

@@ -470,7 +470,7 @@ Plans:
 
 **Wave 5** *(blocked on 13-11)*
 
-- [ ] 13-12-PLAN.md — web solver.ts client seam (competing/RFQ/issuance, credential-free) + S2 SolverLeaderboard on Agent view [ADJ-01]
+- [x] 13-12-PLAN.md — web solver.ts client seam (competing/RFQ/issuance, credential-free) + S2 SolverLeaderboard on Agent view [ADJ-01]
 
 **Wave 6** *(blocked on 13-12)*
 
@@ -491,4 +491,4 @@ Build waves run in numeric order 8 → 9 → 10 → 11. Track A (Phase 12) runs 
 | 10. Cryptographic Privacy | 10/10 | Built · live UAT pending | 2026-07-10 |
 | 11. Settlement & Institutional Grade | 11/11 | Built · live UAT pending | 2026-07-10 |
 | 12. Real On-Chain (Canton DevNet) | 5/5 | Built · live UAT + external SV gate pending | 2026-07-10 |
-| 13. Platform Baseline & Adjacent | 11/14 | In Progress|  |
+| 13. Platform Baseline & Adjacent | 12/14 | In Progress|  |

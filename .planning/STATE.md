@@ -4,13 +4,13 @@ milestone: v2.0
 milestone_name: Progress
 status: executing
 stopped_at: Completed 13-07-PLAN.md
-last_updated: "2026-07-10T20:45:39.399Z"
+last_updated: "2026-07-10T20:57:19.303Z"
 last_activity: 2026-07-10 -- Phase 13 execution started
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 54
-  completed_plans: 51
+  completed_plans: 52
   percent: 83
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 ## Current Position
 
 Phase: 13 (platform-baseline-adjacent-track-b-ongoing) — EXECUTING
-Plan: 12 of 14
+Plan: 13 of 14
 Status: Ready to execute
 Prev: Phase 11 built (settlement on CN Token Standard CIP-0056; §4 $100.00; verified 4/4, security 42/42, UI 20/24; live items → UAT).
 Next (NOT in this run): Phase 13 — Platform Baseline & Adjacent (Track B). Milestone v2.0 at 5/6 phases.
@@ -103,6 +103,7 @@ Last activity: 2026-07-10 -- Phase 13 execution started
 | Phase 13 P09 | 13min | 3 tasks | 6 files |
 | Phase 13 P10 | 8min | 1 tasks | 2 files |
 | Phase 13 P11 | 17min | 3 tasks | 6 files |
+| Phase 13 P12 | 20min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -183,6 +184,7 @@ Recent decisions affecting current work:
 - [Phase ?]: 13-10 ADJ-01: proposeCompeting races N AI configs concurrently, refereed by the deterministic §8 recompute (verify-only eligibility), ranked by (matched, surplus) — winner narrative-only, deterministic clear settles unconditionally; proposeClearing byte-unchanged
 - [Phase ?]: 13-11: POST /competing body is {roundId, configs}; leaderboard is advisory, deterministic §8 settles
 - [Phase ?]: 13-11: RFQ/issuance wrappers marshal Int/Decimal choice args as strings (Option-B); multi-party actAs, live per-desk tokens a UAT concern
+- [Phase ?]: 13-12: mirrored authoritative agent.ts RankedProposal (nested config) over the flat configTag sketch; clearIssuance aliases the combined POST /issuance open+clear
 
 ### Pending Todos
 
@@ -208,6 +210,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-10T20:45:29.305Z
+Last session: 2026-07-10T20:57:12.109Z
 Stopped at: Completed 13-07-PLAN.md
 Resume file: None

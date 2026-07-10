@@ -46,6 +46,10 @@ import { createWebhooks, type Webhooks, type WebhookEvent } from './webhooks.js'
 // API contract for integrators, ISOLATED from real rounds. POST /sandbox/round reuses
 // assertSandboxClears, which re-runs the §8 clear and THROWS on any drift from $100.00.
 import { assertSandboxClears } from './sandbox.js'
+// OPS-05 fix.ts — the pure FIX 4.4-subset order-entry acceptor. POST /fix wraps
+// handleFixMessage: a raw NewOrderSingle (35=D) → a raw ExecutionReport (35=8) string; a
+// malformed/unmapped frame degrades to a 35=8 reject (NEVER a 500 throw). Credential-free.
+import { handleFixMessage, newFixSession } from './fix.js'
 // CRYP-02/03 + VIZ-02 crypto types (TYPE-ONLY imports — erased at compile, so pulling
 // them in NEVER triggers tlock-js / snarkjs / circomlibjs module evaluation here; the real
 // implementations are dependency-injected via AppDeps, exactly like the ledger client).
@@ -473,6 +477,9 @@ export const createApp = (deps: AppDeps): Express => {
       .then(() => webhooks.emit(event, data))
       .catch(() => undefined)
   }
+  // OPS-05: one monotonic FIX session for the HTTP-wrapped /fix acceptor (the outbound
+  // MsgSeqNum increments per reply). Credential-free — holds only sender/target comp ids + a seq.
+  const fixSession = newFixSession()
 
   // OPS-01/02: boot timestamp for uptime + the last clear (price/time), tracked in-closure and
   // set at settle. Both feed ONLY the aggregate /status surface — never any per-order data.
@@ -1136,6 +1143,34 @@ export const createApp = (deps: AppDeps): Express => {
         matched, // 10
         sandbox: true,
       })
+    }),
+  )
+
+  // ══ OPS-05 FIX 4.4-subset order-entry acceptor (HTTP-wrapped raw FIX) ═════════════
+  // POST /fix accepts a raw FIX 4.4 NewOrderSingle (35=D) — either as a text/plain body OR a
+  // JSON `{ fix }` field — and returns a raw ExecutionReport (35=8) string. A valid, mappable
+  // 35=D → OrdStatus 0 (New); a malformed frame / unmapped order / unknown MsgType → OrdStatus
+  // 8 (Rejected). handleFixMessage NEVER throws, so a bad frame yields a framed 35=8 reject —
+  // NEVER a 500. HONEST LABEL: "FIX 4.4 subset — order entry only; live OMS interop is a UAT
+  // gate." CREDENTIAL-FREE: no operator token / ANTHROPIC_API_KEY is ever interpolated into a
+  // built FIX message. express.text parses the raw body; body-parser's _body guard means an
+  // already-parsed JSON `{ fix }` body is honored too.
+  app.post(
+    '/fix',
+    express.text({ type: '*/*', limit: '64kb' }),
+    wrap(async (req, res) => {
+      // Resolve the raw FIX string from either a text/plain body or a JSON `{ fix }` field.
+      let raw = ''
+      if (typeof req.body === 'string') {
+        raw = req.body
+      } else if (req.body && typeof req.body === 'object' && typeof (req.body as { fix?: unknown }).fix === 'string') {
+        raw = (req.body as { fix: string }).fix
+      }
+      // handleFixMessage degrades an empty/malformed frame to a clean 35=8 reject (never throws),
+      // so we always return a framed ExecutionReport with a 200 (the reject is IN the frame, not
+      // an HTTP error). The raw FIX string is the response — text/plain, credential-free.
+      const report = handleFixMessage(raw, fixSession)
+      res.status(200).type('text/plain').send(report)
     }),
   )
 

@@ -1792,6 +1792,114 @@ describe('solver OPS-01/02/03 surfaces (status + idempotency + FSM)', () => {
     expect(status.lastClearPrice).toBe(100)
   })
 
+  // ══ OPS-05 FIX gateway — HTTP-wrapped raw-FIX order entry (35=D → 35=8) ════════════
+  const FIX_SOH = '\x01'
+  // A known-good FIX 4.4 NewOrderSingle (35=D): BONDX, Buy 10 @ 100, Limit.
+  const FIX_NEW_ORDER =
+    '8=FIX.4.4' + FIX_SOH +
+    '9=70' + FIX_SOH +
+    '35=D' + FIX_SOH +
+    '49=UMBRA_OMS' + FIX_SOH +
+    '56=UMBRA_VENUE' + FIX_SOH +
+    '34=1' + FIX_SOH +
+    '55=BONDX' + FIX_SOH +
+    '54=1' + FIX_SOH +
+    '38=10' + FIX_SOH +
+    '44=100' + FIX_SOH +
+    '40=2' + FIX_SOH +
+    '10=065' + FIX_SOH
+
+  it('POST /fix maps a valid NewOrderSingle (35=D) to a 35=8 ExecutionReport, OrdStatus 0 New', async () => {
+    const deps = makeDeps({})
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/fix`, {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain' },
+      body: FIX_NEW_ORDER,
+    })
+    const report = await res.text()
+
+    expect(res.status).toBe(200)
+    expect(report).toContain(FIX_SOH + '35=8' + FIX_SOH) // ExecutionReport
+    expect(report).toContain(FIX_SOH + '39=0' + FIX_SOH) // OrdStatus 0 (New / accepted)
+    expect(report).toContain(FIX_SOH + '150=0' + FIX_SOH) // ExecType 0 (New)
+  })
+
+  it('POST /fix accepts a JSON { fix } body too', async () => {
+    const deps = makeDeps({})
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/fix`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ fix: FIX_NEW_ORDER }),
+    })
+    const report = await res.text()
+    expect(res.status).toBe(200)
+    expect(report).toContain(FIX_SOH + '39=0' + FIX_SOH) // New
+  })
+
+  it('POST /fix returns a 35=8 Rejected (OrdStatus 8) for a malformed frame — never a 500 throw', async () => {
+    const deps = makeDeps({})
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/fix`, {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain' },
+      body: 'this is not a fix message',
+    })
+    const report = await res.text()
+
+    expect(res.status).toBe(200) // the reject is IN the FIX frame, not an HTTP 500
+    expect(report).toContain(FIX_SOH + '35=8' + FIX_SOH) // ExecutionReport
+    expect(report).toContain(FIX_SOH + '39=8' + FIX_SOH) // OrdStatus 8 (Rejected)
+  })
+
+  it('POST /fix rejects an unmapped 35=D (foreign symbol) with OrdStatus 8, no throw', async () => {
+    const deps = makeDeps({})
+    const started = await listen(deps)
+    server = started.server
+
+    const foreign = FIX_NEW_ORDER.replace('55=BONDX', '55=NOTBONDX')
+    const res = await fetch(`${started.base}/fix`, {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain' },
+      body: foreign,
+    })
+    const report = await res.text()
+    expect(res.status).toBe(200)
+    expect(report).toContain(FIX_SOH + '39=8' + FIX_SOH) // Rejected (unmapped)
+  })
+
+  it('POST /fix response never leaks the operator token or ANTHROPIC_API_KEY (secret sweep)', async () => {
+    const deps = makeDeps({
+      settle: vi.fn(async (): Promise<SettleResult> => {
+        void SENTINEL_TOKEN
+        return { clearingPrice: 100, allocations: [] }
+      }),
+      proposeClearing: vi.fn(async () => {
+        void SENTINEL_API_KEY
+        return FALLBACK_AGENT_RESULT()
+      }),
+    })
+    const started = await listen(deps)
+    server = started.server
+
+    const report = await (
+      await fetch(`${started.base}/fix`, {
+        method: 'POST',
+        headers: { 'content-type': 'text/plain' },
+        body: FIX_NEW_ORDER,
+      })
+    ).text()
+    expect(report).not.toContain(SENTINEL_TOKEN)
+    expect(report).not.toContain(SENTINEL_API_KEY)
+  })
+
   // ══ OPS-04 sandbox round — deterministic §4 fixture ($100.00), isolated + secret-free ═══
   it('POST /sandbox/round deterministically clears $100.00 with fills A=10/B=8/C=2, marked sandbox:true', async () => {
     const deps = makeDeps({})

@@ -22,7 +22,7 @@
 import { useState } from 'react'
 import { ctxD, type Ctx } from '../ledgerContexts'
 import { tokens, httpBaseUrlFor, wsBaseUrl } from '../desks'
-import { Order } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
+import { Order, Round } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
 import OrderTicket from '../components/OrderTicket'
 import FillCard from '../components/FillCard'
 
@@ -72,6 +72,11 @@ function RejectSurface({ msg }: { msg: string }) {
 function JoinBody({ ctx }: { ctx: Ctx }) {
   const orders = ctx.useStreamQueries(Order)
   const order = orders.contracts[0]?.payload
+  // The guest observes the shared Round (observer = desks) — window is closed once the
+  // status has left `Open` (Closed / Cleared / Settled). Drives the FillCard empty copy
+  // (UI-SPEC:148). If the guest can't observe a round yet, it stays open (UI-SPEC:147).
+  const rounds = ctx.useStreamQueries(Round)
+  const windowClosed = rounds.contracts.some((c) => c.payload.status !== 'Open')
   // COMP-01 — the verbatim ledger rejection (empty until a submit is rejected).
   const [rejection, setRejection] = useState<string>('')
 
@@ -82,6 +87,7 @@ function JoinBody({ ctx }: { ctx: Ctx }) {
         deskKey={GUEST_KEY}
         order={order}
         commitLabel="SEAL GUEST ORDER"
+        mobile
         onCommitRejected={setRejection}
       />
 
@@ -89,8 +95,8 @@ function JoinBody({ ctx }: { ctx: Ctx }) {
       {rejection && <RejectSurface msg={rejection} />}
 
       {/* Own fill after the batch settles — structural per-party privacy (only the guest
-          ever sees this). */}
-      <FillCard ctx={ctx} deskKey={GUEST_KEY} />
+          ever sees this). Guest empty copy (UI-SPEC:147) + window-closed variant (:148). */}
+      <FillCard ctx={ctx} deskKey={GUEST_KEY} guest windowClosed={windowClosed} />
     </div>
   )
 }

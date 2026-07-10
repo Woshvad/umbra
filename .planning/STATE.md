@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.0
-milestone_name: Progress
+milestone: v2.1
+milestone_name: Agentic Payments (x402)
 status: building
-stopped_at: Phase 13 built (14/14) + all gates passed — live UAT pending; milestone v2.0 6/6 phases built (--only 13 requested; milestone lifecycle not run)
-last_updated: "2026-07-10T22:40:00.000Z"
-last_activity: 2026-07-10 -- Phase 13 built (14/14): OPS-01..05 + ADJ-01..03; solver 291 / web 136 / daml test green, §4 $100.00; verify human_needed (4/4 offline-verified, live→UAT), code-review 7 findings (2 HIGH idempotency) ALL fixed+re-tested, security PASS (42/42, 0 high/crit), UI 23/24 (nit fixed). Live items → 13-UAT.md.
+stopped_at: Milestone v2.1 opened — Phase 14 (x402 metered solver access) registered + CONTEXT authored; feasibility confirmed (Canton x402 live via FTP dev-fund #78, DevNet ref dev.cantrustai.xyz). Prior: v2.0 6/6 phases built (--only 13; milestone lifecycle not run).
+last_updated: "2026-07-10T23:20:00.000Z"
+last_activity: 2026-07-10 -- Opened v2.1: researched x402-on-Canton (chain-agnostic, real facilitator/SDK/middleware via FTP; asset = Canton Coin; Umbra has operator-custody USDCx, NO Amulet/CC wired — D13). Registered Phase 14 (PAY-01) + authored 14-CONTEXT.md. Next: gsd-plan-phase 14.
 progress:
-  total_phases: 6
-  completed_phases: 6
-  total_plans: 54
-  completed_plans: 54
-  percent: 100
+  total_phases: 1
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-25)
 
 **Core value:** The privacy money shot — three desks submit sealed orders blind to each other, an AI solver clears them at one uniform price ($100.00 on the §4 fixture), and the whole batch settles atomically in a single Canton transaction.
-**Current focus:** Milestone v2.0 — 6/6 phases built (Phase 13 built · live UAT pending)
+**Current focus:** Milestone v2.1 — Agentic Payments (x402). Phase 14 (PAY-01) opened; v2.0 6/6 phases built.
 
 ## Current Position
 
-Phase: 13 (platform-baseline-adjacent-track-b-ongoing) — BUILT · live UAT pending. All gates passed.
-Plan: 14 of 14 executed + all gates green — OPS-01 telemetry/logger/alerts · OPS-02 secrets(env|vault)+token-free status page+Vault compose/rotate/runbook · OPS-03 idempotency+FSM · OPS-04 HMAC webhooks+sandbox($100) · OPS-05 hand-rolled FIX-4.4 subset · ADJ-01 competing solvers (§8 referee, AI off settle) · ADJ-02 keyless Rfq.daml (settleBatch DvP) · ADJ-03 keyless Issuance.daml+Coupon/Redeem.
-Status: Verified (human_needed — 8/8 requirements delivered + offline-verified; 4 live items → 13-UAT.md) · code-review 7 findings (2 HIGH idempotency-cache/namespacing + 2 MED + 3 LOW) ALL fixed + re-tested · security PASS (42/42 threats, 0 high/critical) · UI 23/24 (red-on-success nit fixed). solver 291/291, web 136/136, daml test exit 0 (§4 $100.00 / A=10·B=8·C=2 + test_rfq_×4 + issuance/coupon/redeem×3). Every Phase-13 commit author/committer = woshvad, zero Claude attribution.
-Prev: Phase 12 built (Real On-Chain/DevNet — four-eyes ClearingApproval, OIDC dual-mode Keycloak+jose+PKCE, Splice compose; live SV sponsorship + token-exchange = external/UAT gate).
-Next: Milestone v2.0 at 6/6 phases BUILT. Remaining are external/live gates only — live UAT (Phases 8–13 → *-UAT.md) + DevNet SV sponsorship (Phase 12). Optional ceremony: /gsd-autonomous (no --only) runs milestone audit→complete→cleanup.
-Last activity: 2026-07-10 -- Phase 13 built + all gates green (details in frontmatter last_activity).
+Phase: 14 (agentic-payments-x402) — PLANNING. Milestone v2.1 opened.
+Plan: TBD (gsd-plan-phase 14 next). Requirement PAY-01 — x402 metered access to the AI solver (`/solve-preview` + `/competing`) behind a spec-accurate Canton HTTP 402; `FacilitatorClient` self(on-ledger USDCx verify)|canton-cc(FTP `/verify`+`/settle`); default-OFF; fee via operator-custody `moveExactHolding`/`Reassign`; §4 untouched; AI off settle; secrets server-side.
+Status: Feasibility CONFIRMED + CONTEXT authored. x402-on-Canton is real (FTP/CanTrustAI dev-fund #78 MERGED: facilitator `/verify`+`/settle` + client SDK + resource-server middleware, Canton Coin scheme; live DevNet ref dev.cantrustai.xyz). Umbra cash = operator-custody USDCx (CN Token Standard HoldingV1 view interface); NO Amulet/CC/AllocationV1 wired (D13) → self-settle offline-verifiable, real-$CC = DevNet-sponsorship-gated UAT.
+Prev: Phase 13 built (14/14) + all gates green — OPS-01..05 + ADJ-01..03; solver 291/web 136/daml test exit 0; §4 $100.00. v2.0 6/6 phases built (live UAT + Phase 12 SV gate pending).
+Next: gsd-plan-phase 14 → PLAN waves → gsd-execute-phase 14 → verify+security(+UI). Then 14-UAT.md for live $CC-on-DevNet.
+Last activity: 2026-07-10 -- v2.1 opened; Phase 14 registered + 14-CONTEXT.md authored (details in frontmatter last_activity).
 
 ## Performance Metrics
 

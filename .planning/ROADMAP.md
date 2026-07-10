@@ -492,3 +492,39 @@ Build waves run in numeric order 8 → 9 → 10 → 11. Track A (Phase 12) runs 
 | 11. Settlement & Institutional Grade | 11/11 | Built · live UAT pending | 2026-07-10 |
 | 12. Real On-Chain (Canton DevNet) | 5/5 | Built · live UAT + external SV gate pending | 2026-07-10 |
 | 13. Platform Baseline & Adjacent | 14/14 | Built · live UAT pending | 2026-07-10 |
+
+---
+
+# Milestone v2.1 — Agentic Payments (x402)
+
+## Overview
+
+Umbra's differentiator is an AI agent that clears the auction; x402 is the HTTP-native payment rail purpose-built for autonomous agents, and it is now live on Canton (the FTP/CanTrustAI dev-fund integration: a Canton x402 facilitator with `/verify`+`/settle`, a client SDK, and resource-server middleware, settling Canton Coin — merged proposal `canton-foundation/canton-dev-fund#78`, live DevNet reference at `dev.cantrustai.xyz`). This milestone monetizes the solver's HTTP surface — the platform Phase 13 built (idempotency/webhooks/status/FIX middleware) — by gating the AI endpoints behind a spec-accurate HTTP 402, **without touching the atomic DvP settlement core** (x402 is unilateral pay-for-access; securities settlement stays native single-transaction Canton DvP). Same continuous invariant: the §4 fixture still clears **$100.00**, and metering is **default-OFF** so the canonical money-shot demo is byte-unchanged.
+
+**Honest scope boundary:** Umbra settles in **operator-custody USDCx** (a CN Token Standard `HoldingV1` view-interface token) — it has **no Amulet / Canton Coin / AllocationV1** wired (DECISIONS.md D13 disclaims wallet interop). So the x402 layer speaks the **real Canton x402 wire protocol**, but settlement is swappable behind one interface: a `self` backend verifies the fee on-ledger in Umbra's own token (built + offline-verified, runs on DevNet today); a `canton-cc` backend settles real Canton Coin via the FTP facilitator (offline-mocked; live = the DevNet-sponsorship-gated UAT item).
+
+## Phases
+
+- [ ] **Phase 14: Agentic Payments (x402 Metered Solver Access)** — HTTP 402 payment-gate middleware over the AI endpoints (`/solve-preview`, `/competing`) emitting the real Canton x402 `accepts[]` envelope; `FacilitatorClient` interface (`self` on-ledger USDCx verify | `canton-cc` FTP facilitator `/verify`+`/settle`); operator-custody fee transfer (reuse `moveExactHolding`/`Reassign`); default-OFF config via env + SecretsProvider; optional pay-to-solve web affordance. §4 stays $100.00; AI off settle; live $CC-on-DevNet → UAT
+
+## Phase Details
+
+### Phase 14: Agentic Payments (x402 Metered Solver Access)
+
+**Goal**: Let an autonomous agent pay per solve. Gate Umbra's AI endpoints behind a spec-accurate, Canton-native HTTP 402 so a machine client pays a small fee to run the solver — reinforcing the AI-agent + agentic-payments story on Canton — while keeping the atomic DvP settlement core, the §4 fixture, and the canonical demo entirely untouched.
+**Depends on**: Phase 13 (solver middleware chain, SecretsProvider, ledger client), Phase 11 (Holding/Settlement CN Token Standard custody). Real-$CC settlement depends on the same external DevNet SV-sponsorship gate as Phase 12.
+**Requirements**: PAY-01
+**Success Criteria** (what must be TRUE):
+
+  1. A machine client calling a metered AI endpoint (`GET /round/:id/solve-preview`, `POST /competing`) with no payment receives a spec-accurate HTTP `402` whose `accepts[]` advertises a real Canton payment scheme (Canton Coin, CAIP-2-style network id, venue `payTo`, price, resource); a retry bearing a valid `X-PAYMENT` returns the solve plus an `X-PAYMENT-RESPONSE` (PAY-01).
+  2. Settlement is swappable behind one `FacilitatorClient` interface: the `self` backend verifies the fee on-ledger (operator-custody USDCx `Holding` transfer to the venue via `moveExactHolding`/`Reassign`, no external dependency — built + offline-verified); the `canton-cc` backend calls the FTP Canton x402 facilitator `/verify`+`/settle` for real Canton Coin (offline-mocked; live = UAT).
+  3. Metering is **default-OFF** (`X402_ENABLED=false`): the canonical §4 money-shot demo and every existing endpoint are byte-unchanged and still clear $100.00; the payment path is fully separate from securities DvP; the AI stays off the settlement path; no facilitator/operator secret reaches the browser (secret-sweep).
+  4. On DevNet: the `self` path runs today against Umbra's own Holdings; the `canton-cc` path settles real $CC once the FTP facilitator + a CC-funded venue party exist (the DevNet-sponsorship gate) — recorded honestly in `14-UAT.md`.
+
+**UI hint**: optional (pay-to-solve affordance / metered-access indicator; droppable)
+
+## v2.1 Progress
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 14. Agentic Payments (x402) | 0/TBD | Planning | — |

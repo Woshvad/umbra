@@ -61,18 +61,23 @@ export default function TheatreView({
   // rationale (CONTEXT). Network reject → OFFLINE caption.
   const closeAndSolve = useCallback(async () => {
     setPhase('solving')
+    // Track whether closeRound already COMMITTED (round flipped to Closed on-ledger).
+    // If the solve step then fails, reverting to 'open' would desync the UI from ledger
+    // truth — CloseRound is only valid from Open, so the window cannot be reopened
+    // (MED-01). On a post-close failure we STAY in 'solving' (the round is Closed and the
+    // solve is retryable); only a pre-close failure (closeRound itself threw) reverts to
+    // 'open'.
+    let closed = false
     try {
       await closeRound(roundId)
+      closed = true
       const result = await solvePreview(roundId)
       setPreview(result)
       setPhase('cleared')
     } catch (e) {
-      if (e instanceof SolverError && e.code === 'OFFLINE') {
-        setOffline(true)
-        setPhase('open')
-      } else {
-        setPhase('open')
-      }
+      if (e instanceof SolverError && e.code === 'OFFLINE') setOffline(true)
+      // Closed on-ledger → keep 'solving' (retry the solve); still Open → back to 'open'.
+      setPhase(closed ? 'solving' : 'open')
     }
   }, [roundId, setPhase, setPreview, setOffline])
 

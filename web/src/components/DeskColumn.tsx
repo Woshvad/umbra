@@ -21,6 +21,7 @@ import { Order } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
 import { Asset } from '@daml.js/umbra-0.1.0/lib/Umbra/Asset/module'
 import { Venue } from '@daml.js/umbra-0.1.0/lib/Umbra/Roles/module'
 import { Side } from '@daml.js/umbra-0.1.0/lib/Umbra/Clearing/module'
+import { DeskEligibility } from '@daml.js/umbra-0.1.0/lib/Umbra/Compliance/module'
 import OrderRow from './OrderRow'
 import RedactionBar from './RedactionBar'
 
@@ -65,7 +66,13 @@ function ActiveBody({ ctx, deskKey }: { ctx: Ctx; deskKey: DeskKey }) {
     try {
       const venues = await ledger.query(Venue)
       const venueCid = venues[0]?.contractId
-      if (!venueCid) return
+      // COMP-01 (11-05): SubmitOrder now takes the desk's eligibility credential
+      // (keyless, D7 Option-B). The desk observes its own DeskEligibility, so query
+      // it on this desk's own ctx and pass its cid. Absent (unseeded / build-gate) →
+      // the best-effort submit is skipped, same as a missing Venue.
+      const eligs = await ledger.query(DeskEligibility)
+      const eligCid = eligs[0]?.contractId
+      if (!venueCid || !eligCid) return
       // Int/Decimal as STRINGS (RESEARCH Pitfall 8). AUCT-01: plain Limit order
       // (orderType='Limit', minQty/firmIf null) — satisfies the regenerated
       // required SubmitOrder args; the order-type selector UI is plan 09-06.
@@ -78,6 +85,7 @@ function ActiveBody({ ctx, deskKey }: { ctx: Ctx; deskKey: DeskKey }) {
         orderType: 'Limit',
         minQty: null,
         firmIf: null,
+        eligCid,
       })
       setSubmitted(true)
     } finally {

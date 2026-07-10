@@ -11,21 +11,75 @@ var jtv = require('@mojotech/json-type-validation');
 var damlTypes = require('@daml/types');
 
 var pkg5aee9b21b8e9a4c4975b5f4c4198e6e6e8469df49e2010820e792f393db870f4 = require('@daml.js/daml-prim-DA-Types-1.0.0');
+var pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69 = require('@daml.js/ghc-stdlib-DA-Internal-Template-1.0.0');
 
-var Umbra_Asset = require('../../Umbra/Asset/module');
 var Umbra_Auction = require('../../Umbra/Auction/module');
+var Umbra_Holding = require('../../Umbra/Holding/module');
+var Umbra_Instrument = require('../../Umbra/Instrument/module');
+var Umbra_Settlement = require('../../Umbra/Settlement/module');
 var Umbra_Setup = require('../../Umbra/Setup/module');
 
 
+exports.RunSettle = {
+  decoder: damlTypes.lazyMemo(function () { return jtv.object({instructions: damlTypes.List(Umbra_Settlement.Instruction).decoder, sources: damlTypes.List(pkg5aee9b21b8e9a4c4975b5f4c4198e6e6e8469df49e2010820e792f393db870f4.DA.Types.Tuple3(damlTypes.Party, Umbra_Instrument.InstrumentId, damlTypes.ContractId(Umbra_Holding.Holding))).decoder, }); }),
+  encode: function (__typed__) {
+  return {
+    instructions: damlTypes.List(Umbra_Settlement.Instruction).encode(__typed__.instructions),
+    sources: damlTypes.List(pkg5aee9b21b8e9a4c4975b5f4c4198e6e6e8469df49e2010820e792f393db870f4.DA.Types.Tuple3(damlTypes.Party, Umbra_Instrument.InstrumentId, damlTypes.ContractId(Umbra_Holding.Holding))).encode(__typed__.sources),
+  };
+}
+,
+};
+
+
+
+exports.SettleHarness = damlTypes.assembleTemplate(
+{
+  templateId: '#umbra:Umbra.Tests:SettleHarness',
+  templateIdWithPackageId: '76118676638da246f5c358566ac0e8959c836263d01011224c7aefed35d84ee9:Umbra.Tests:SettleHarness',
+  keyDecoder: damlTypes.lazyMemo(function () { return jtv.constant(undefined); }),
+  keyEncode: function () { throw 'EncodeError'; },
+  decoder: damlTypes.lazyMemo(function () { return jtv.object({operator: damlTypes.Party.decoder, }); }),
+  encode: function (__typed__) {
+  return {
+    operator: damlTypes.Party.encode(__typed__.operator),
+  };
+}
+,
+  RunSettle: {
+    template: function () { return exports.SettleHarness; },
+    choiceName: 'RunSettle',
+    argumentDecoder: damlTypes.lazyMemo(function () { return exports.RunSettle.decoder; }),
+    argumentEncode: function (__typed__) { return exports.RunSettle.encode(__typed__); },
+    resultDecoder: damlTypes.lazyMemo(function () { return damlTypes.Unit.decoder; }),
+    resultEncode: function (__typed__) { return damlTypes.Unit.encode(__typed__); },
+  },
+  Archive: {
+    template: function () { return exports.SettleHarness; },
+    choiceName: 'Archive',
+    argumentDecoder: damlTypes.lazyMemo(function () { return pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69.DA.Internal.Template.Archive.decoder; }),
+    argumentEncode: function (__typed__) { return pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69.DA.Internal.Template.Archive.encode(__typed__); },
+    resultDecoder: damlTypes.lazyMemo(function () { return damlTypes.Unit.decoder; }),
+    resultEncode: function (__typed__) { return damlTypes.Unit.encode(__typed__); },
+  },
+}
+
+);
+
+
+damlTypes.registerTemplate(exports.SettleHarness, ['76118676638da246f5c358566ac0e8959c836263d01011224c7aefed35d84ee9', '#umbra']);
+
+
+
 exports.SeedResult = {
-  decoder: damlTypes.lazyMemo(function () { return jtv.object({parties: Umbra_Setup.Parties.decoder, roundCid: damlTypes.ContractId(Umbra_Auction.Round).decoder, orderCids: damlTypes.List(damlTypes.ContractId(Umbra_Auction.Order)).decoder, buyerUsdcCid: damlTypes.ContractId(Umbra_Asset.Asset).decoder, sellerBondCids: damlTypes.List(pkg5aee9b21b8e9a4c4975b5f4c4198e6e6e8469df49e2010820e792f393db870f4.DA.Types.Tuple2(damlTypes.Party, damlTypes.ContractId(Umbra_Asset.Asset))).decoder, }); }),
+  decoder: damlTypes.lazyMemo(function () { return jtv.object({parties: Umbra_Setup.Parties.decoder, roundCid: damlTypes.ContractId(Umbra_Auction.Round).decoder, orderCids: damlTypes.List(damlTypes.ContractId(Umbra_Auction.Order)).decoder, buyerCashCids: damlTypes.List(pkg5aee9b21b8e9a4c4975b5f4c4198e6e6e8469df49e2010820e792f393db870f4.DA.Types.Tuple2(damlTypes.Party, damlTypes.ContractId(Umbra_Holding.Holding))).decoder, sellerBondCids: damlTypes.List(pkg5aee9b21b8e9a4c4975b5f4c4198e6e6e8469df49e2010820e792f393db870f4.DA.Types.Tuple2(damlTypes.Party, damlTypes.ContractId(Umbra_Holding.Holding))).decoder, }); }),
   encode: function (__typed__) {
   return {
     parties: Umbra_Setup.Parties.encode(__typed__.parties),
     roundCid: damlTypes.ContractId(Umbra_Auction.Round).encode(__typed__.roundCid),
     orderCids: damlTypes.List(damlTypes.ContractId(Umbra_Auction.Order)).encode(__typed__.orderCids),
-    buyerUsdcCid: damlTypes.ContractId(Umbra_Asset.Asset).encode(__typed__.buyerUsdcCid),
-    sellerBondCids: damlTypes.List(pkg5aee9b21b8e9a4c4975b5f4c4198e6e6e8469df49e2010820e792f393db870f4.DA.Types.Tuple2(damlTypes.Party, damlTypes.ContractId(Umbra_Asset.Asset))).encode(__typed__.sellerBondCids),
+    buyerCashCids: damlTypes.List(pkg5aee9b21b8e9a4c4975b5f4c4198e6e6e8469df49e2010820e792f393db870f4.DA.Types.Tuple2(damlTypes.Party, damlTypes.ContractId(Umbra_Holding.Holding))).encode(__typed__.buyerCashCids),
+    sellerBondCids: damlTypes.List(pkg5aee9b21b8e9a4c4975b5f4c4198e6e6e8469df49e2010820e792f393db870f4.DA.Types.Tuple2(damlTypes.Party, damlTypes.ContractId(Umbra_Holding.Holding))).encode(__typed__.sellerBondCids),
   };
 }
 ,

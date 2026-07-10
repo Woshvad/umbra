@@ -24,7 +24,8 @@ import type { Ctx, DeskKey } from '../ledgerContexts'
 import { tokens } from '../desks'
 import { parseOrder, SolverError, timelockEncrypt, type SealMode } from '../solver'
 import { Order, OrderCommitment } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
-import { Asset } from '@daml.js/umbra-0.1.0/lib/Umbra/Asset/module'
+import { Holding } from '@daml.js/umbra-0.1.0/lib/Umbra/Holding/module'
+import { DeskEligibility } from '@daml.js/umbra-0.1.0/lib/Umbra/Compliance/module'
 import { Venue } from '@daml.js/umbra-0.1.0/lib/Umbra/Roles/module'
 import { Side, type OrderType } from '@daml.js/umbra-0.1.0/lib/Umbra/Clearing/module'
 
@@ -228,7 +229,10 @@ function fmtCountdown(ms: number): string {
 
 export default function OrderTicket({ ctx, deskKey, order }: Props) {
   const ledger = ctx.useLedger()
-  const assets = ctx.useStreamQueries(Asset)
+  // 11-05: the bond migrated Asset → cash Holding (token-agnostic InstrumentId +
+  // operator-custody lock). The desk observes its own Holdings; the CommitOrder bond
+  // is now a cash Holding cid, its instrument driving the required cashInstrument arg.
+  const holdings = ctx.useStreamQueries(Holding)
 
   const [side, setSide] = useState<Side>(Side.Buy)
   const [qty, setQty] = useState<string>('')
@@ -278,8 +282,8 @@ export default function OrderTicket({ ctx, deskKey, order }: Props) {
 
   // The desk's OWN USDCx holding — the bond posted + locked in operator custody on
   // commit (released on a valid reveal, seized by ForfeitBond on non-reveal).
-  const bondAsset = assets.contracts.find((c) => c.payload.symbol === CASH_SYMBOL)
-  const bondLive = bondAsset ? Number(bondAsset.payload.quantity) : null
+  const bondAsset = holdings.contracts.find((c) => c.payload.instrument.id === CASH_SYMBOL)
+  const bondLive = bondAsset ? Number(bondAsset.payload.amount) : null
 
   // Per-type field show/hide + non-blocking validation hints (client-side UX only —
   // the on-ledger `ensure` is the real guard: T-09-06-02).
@@ -377,14 +381,22 @@ export default function OrderTicket({ ctx, deskKey, order }: Props) {
       try {
         const venues = await ledger.query(Venue)
         const venueCid = venues[0]?.contractId
-        if (venueCid && bondAsset) {
+        // COMP-01 + DFIN-03 (11-05): CommitOrder now also takes the cash instrument
+        // the bond must be denominated in (read from the bond Holding itself so it
+        // always matches the on-ledger `bond.instrument == cashInstrument` check) and
+        // the desk's keyless eligibility credential (observed on the desk's own ctx).
+        const eligs = await ledger.query(DeskEligibility)
+        const eligCid = eligs[0]?.contractId
+        if (venueCid && bondAsset && eligCid) {
           await ledger.exercise(Venue.CommitOrder, venueCid, {
             desk: tokens[deskKey].party,
             roundId: 'R1',
             commitment: hash,
             bondCid: bondAsset.contractId,
+            cashInstrument: bondAsset.payload.instrument,
+            eligCid,
           })
-          posted = Number(bondAsset.payload.quantity)
+          posted = Number(bondAsset.payload.amount)
         }
       } catch {
         // Live ledger unreachable (build-gate / offline) — the commit is deferred to

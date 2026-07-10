@@ -53,7 +53,7 @@ exports.Split = {
 exports.Asset = damlTypes.assembleTemplate(
 {
   templateId: '#umbra:Umbra.Asset:Asset',
-  templateIdWithPackageId: 'b5612deed4d4f313a67eeec837e12b2dd10bb702bb3afa04da2e341ac8c35c2d:Umbra.Asset:Asset',
+  templateIdWithPackageId: '76118676638da246f5c358566ac0e8959c836263d01011224c7aefed35d84ee9:Umbra.Asset:Asset',
   keyDecoder: damlTypes.lazyMemo(function () { return jtv.constant(undefined); }),
   keyEncode: function () { throw 'EncodeError'; },
   decoder: damlTypes.lazyMemo(function () { return jtv.object({operator: damlTypes.Party.decoder, owner: damlTypes.Party.decoder, symbol: damlTypes.Text.decoder, quantity: damlTypes.Numeric(10).decoder, }); }),
@@ -103,5 +103,5 @@ exports.Asset = damlTypes.assembleTemplate(
 );
 
 
-damlTypes.registerTemplate(exports.Asset, ['b5612deed4d4f313a67eeec837e12b2dd10bb702bb3afa04da2e341ac8c35c2d', '#umbra']);
+damlTypes.registerTemplate(exports.Asset, ['76118676638da246f5c358566ac0e8959c836263d01011224c7aefed35d84ee9', '#umbra']);
 

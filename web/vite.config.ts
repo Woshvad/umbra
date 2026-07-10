@@ -48,6 +48,12 @@ export default defineConfig({
       '@daml.js/umbra-0.1.0/lib/Umbra/Asset/module',
       '@daml.js/umbra-0.1.0/lib/Umbra/Roles/module',
       '@daml.js/umbra-0.1.0/lib/Umbra/Clearing/module',
+      // Phase-11 (11-05) template surfaces the desk plane now imports: the bond
+      // migrated Asset → Holding + the COMP-01 DeskEligibility credential. Deep
+      // subpaths MUST be pre-bundled here or their named exports come back undefined
+      // in dev (see the note above) → useStreamQueries(undefined) throws → blank root.
+      '@daml.js/umbra-0.1.0/lib/Umbra/Holding/module',
+      '@daml.js/umbra-0.1.0/lib/Umbra/Compliance/module',
       '@daml/ledger',
       '@daml/types',
     ],

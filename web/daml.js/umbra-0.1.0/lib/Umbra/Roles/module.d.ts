@@ -7,9 +7,11 @@ import * as damlTypes from '@daml/types';
 
 import * as pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69 from '@daml.js/ghc-stdlib-DA-Internal-Template-1.0.0';
 
-import * as Umbra_Asset from '../../Umbra/Asset/module';
 import * as Umbra_Auction from '../../Umbra/Auction/module';
 import * as Umbra_Clearing from '../../Umbra/Clearing/module';
+import * as Umbra_Compliance from '../../Umbra/Compliance/module';
+import * as Umbra_Holding from '../../Umbra/Holding/module';
+import * as Umbra_Instrument from '../../Umbra/Instrument/module';
 
 export declare type AnchorProof = {
   roundId: string;
@@ -23,11 +25,26 @@ export declare const AnchorProof:
 ;
 
 
+export declare type IssueHolding = {
+  owner: damlTypes.Party;
+  instrument: Umbra_Instrument.InstrumentId;
+  amount: damlTypes.Numeric;
+  eligCid: damlTypes.ContractId<Umbra_Compliance.DeskEligibility>;
+};
+
+export declare const IssueHolding:
+  damlTypes.Serializable<IssueHolding> & {
+  }
+;
+
+
 export declare type CommitOrder = {
   desk: damlTypes.Party;
   roundId: string;
   commitment: string;
-  bondCid: damlTypes.ContractId<Umbra_Asset.Asset>;
+  bondCid: damlTypes.ContractId<Umbra_Holding.Holding>;
+  cashInstrument: Umbra_Instrument.InstrumentId;
+  eligCid: damlTypes.ContractId<Umbra_Compliance.DeskEligibility>;
 };
 
 export declare const CommitOrder:
@@ -45,6 +62,7 @@ export declare type SubmitOrder = {
   orderType: Umbra_Clearing.OrderType;
   minQty: damlTypes.Optional<damlTypes.Int>;
   firmIf: damlTypes.Optional<damlTypes.Numeric>;
+  eligCid: damlTypes.ContractId<Umbra_Compliance.DeskEligibility>;
 };
 
 export declare const SubmitOrder:
@@ -61,6 +79,7 @@ export declare type Venue = {
 export declare interface VenueInterface {
   SubmitOrder: damlTypes.Choice<Venue, SubmitOrder, damlTypes.ContractId<Umbra_Auction.Order>, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Venue, undefined>>;
   CommitOrder: damlTypes.Choice<Venue, CommitOrder, damlTypes.ContractId<Umbra_Auction.OrderCommitment>, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Venue, undefined>>;
+  IssueHolding: damlTypes.Choice<Venue, IssueHolding, damlTypes.ContractId<Umbra_Holding.Holding>, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Venue, undefined>>;
   Archive: damlTypes.Choice<Venue, pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69.DA.Internal.Template.Archive, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Venue, undefined>>;
   AnchorProof: damlTypes.Choice<Venue, AnchorProof, damlTypes.ContractId<Umbra_Auction.ProofAnchor>, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Venue, undefined>>;
 }

@@ -8,15 +8,18 @@ import * as damlTypes from '@daml/types';
 import * as pkg5aee9b21b8e9a4c4975b5f4c4198e6e6e8469df49e2010820e792f393db870f4 from '@daml.js/daml-prim-DA-Types-1.0.0';
 import * as pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69 from '@daml.js/ghc-stdlib-DA-Internal-Template-1.0.0';
 
-import * as Umbra_Asset from '../../Umbra/Asset/module';
 import * as Umbra_Clearing from '../../Umbra/Clearing/module';
+import * as Umbra_Holding from '../../Umbra/Holding/module';
+import * as Umbra_Instrument from '../../Umbra/Instrument/module';
 
 export declare type Clear = {
   clearingPrice: damlTypes.Numeric;
   allocations: Umbra_Clearing.Allocation[];
   orderCids: damlTypes.ContractId<Order>[];
-  buyerUsdcCid: damlTypes.ContractId<Umbra_Asset.Asset>;
-  sellerBondCids: pkg5aee9b21b8e9a4c4975b5f4c4198e6e6e8469df49e2010820e792f393db870f4.DA.Types.Tuple2<damlTypes.Party, damlTypes.ContractId<Umbra_Asset.Asset>>[];
+  buyerCashCids: pkg5aee9b21b8e9a4c4975b5f4c4198e6e6e8469df49e2010820e792f393db870f4.DA.Types.Tuple2<damlTypes.Party, damlTypes.ContractId<Umbra_Holding.Holding>>[];
+  sellerBondCids: pkg5aee9b21b8e9a4c4975b5f4c4198e6e6e8469df49e2010820e792f393db870f4.DA.Types.Tuple2<damlTypes.Party, damlTypes.ContractId<Umbra_Holding.Holding>>[];
+  cashInstrument: Umbra_Instrument.InstrumentId;
+  bondInstrument: Umbra_Instrument.InstrumentId;
   referencePrice: damlTypes.Numeric;
 };
 
@@ -172,12 +175,12 @@ export declare type OrderCommitment = {
   desk: damlTypes.Party;
   roundId: string;
   commitment: string;
-  bondCid: damlTypes.ContractId<Umbra_Asset.Asset>;
+  bondCid: damlTypes.ContractId<Umbra_Holding.Holding>;
 };
 
 export declare interface OrderCommitmentInterface {
   RevealOrder: damlTypes.Choice<OrderCommitment, RevealOrder, damlTypes.ContractId<Order>, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<OrderCommitment, undefined>>;
-  ForfeitBond: damlTypes.Choice<OrderCommitment, ForfeitBond, damlTypes.ContractId<Umbra_Asset.Asset>, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<OrderCommitment, undefined>>;
+  ForfeitBond: damlTypes.Choice<OrderCommitment, ForfeitBond, damlTypes.ContractId<Umbra_Holding.Holding>, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<OrderCommitment, undefined>>;
   Archive: damlTypes.Choice<OrderCommitment, pkg9e70a8b3510d617f8a136213f33d6a903a10ca0eeec76bb06ba55d1ed9680f69.DA.Internal.Template.Archive, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<OrderCommitment, undefined>>;
 }
 export declare const OrderCommitment:

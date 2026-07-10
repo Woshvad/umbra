@@ -1,0 +1,96 @@
+-- Umbra — on-ledger FOUR-EYES clearing approval (IDEN-03).
+--
+-- `ClearingApproval` is the on-ledger four-eyes credential that gates SETTLEMENT:
+-- an operator/Compliance-signed attestation carrying the round id + the approved
+-- clearing price. `Round.Clear` REQUIRES a matching one before it commits the
+-- Batch DvP — a settle with no / wrong-price / wrong-round / operator-self-made
+-- approval aborts ON-LEDGER. It is the four-eyes GATE PRIMITIVE; the enforcement
+-- (fetch the credential by ContractId + `assertClearingApproved` inside
+-- `Round.Clear`, immediately after the §8 recompute pins `priceDec`, before the
+-- Batch is built) lives in Umbra.Auction. This module ships the request template
+-- + the two-party approval template + the `assertClearingApproved` gate helper.
+--
+-- This is byte-for-byte the `DeskEligibility` mechanism already shipped in
+-- `Compliance.daml` (`signatory operator, compliance` + fetched-by-ContractId +
+-- an `assert…` gate). Operator is a signatory of the approval, so the `fetch`
+-- inside `Round.Clear` (controller operator) is authorized exactly as the
+-- `DeskEligibility` fetch inside `Venue.SubmitOrder` is.
+--
+-- ─────────────────────────────────────────────────────────────────────────────
+-- FOUR-EYES SEPARATION (the tested control): `ClearingApproval` is signed by BOTH
+-- `operator` AND `compliance`, and it can be brought into being ONLY by the
+-- `compliance` party exercising `ApproveClearing` on a request the operator
+-- proposed. The operator ALONE cannot forge a `ClearingApproval` — the distinct
+-- `compliance` signatory is the whole point (a self-approving operator would be a
+-- four-eyes bypass). `operator` and `compliance` MUST be DISTINCT parties for the
+-- separation to be real; the negative test `test_operator_cannot_self_approve`
+-- proves the operator cannot create one alone.
+--
+-- DEV NOTE (honest): for the fast local loop / headless `daml test`, the
+-- `compliance` party may be a DEDICATED dev party (allocated alongside the
+-- operator) so the tests and headless runs proceed without a human in the loop.
+-- The signatory SEPARATION stays REAL regardless — a dedicated dev compliance
+-- party is still a distinct authority the operator does not control. Live human
+-- four-eyes (a real Compliance operator approving in the UI) is Wave-5 + live UAT.
+--
+-- NO CONTRACT KEYS (LF 2.1 — D7 / 11-02 environmental deviation): the approval is
+-- threaded into `Round.Clear` by explicit ContractId (the D7 Option-B discipline
+-- already used for every Asset/Holding leg), NOT via `fetchByKey`.
+--
+-- Standalone module (no Auction/Holding import) so it compiles independently.
+module Umbra.Approval where
+
+-- Operator PROPOSES a clearing to Compliance (carries the deterministically-
+-- recomputed §8 price). Signed by operator only; Compliance is an observer so it
+-- can see the pending clearing and act on it. This is the "request" half of the
+-- propose/approve two-step that supplies the compliance authority.
+template ClearingApprovalRequest
+  with
+    operator      : Party    -- venue operator (proposes the clearing)
+    compliance    : Party    -- Compliance role (distinct authority — approves/rejects)
+    roundId       : Text      -- the round this approval is scoped to
+    clearingPrice : Decimal   -- the deterministically-recomputed §8 price
+  where
+    signatory operator
+    observer compliance
+
+    -- Compliance APPROVES → the two-party-signed `ClearingApproval` is born.
+    -- Compliance authority co-flows here (controller compliance), so the
+    -- operator+compliance signatory set on `ClearingApproval` is satisfied.
+    -- Operator ALONE cannot create it — the four-eyes SEPARATION.
+    choice ApproveClearing : ContractId ClearingApproval
+      controller compliance
+      do
+        create ClearingApproval with operator; compliance; roundId; clearingPrice
+
+    -- Compliance may REJECT (consuming; no approval is created → the settle path
+    -- aborts for lack of a matching `ClearingApproval`).
+    choice RejectClearing : ()
+      controller compliance
+      do pure ()
+
+-- The four-eyes credential `Round.Clear` REQUIRES. Signed by BOTH operator and
+-- compliance (unforgeable by operator alone). Carries the round + the approved
+-- price so the gate can pin both.
+template ClearingApproval
+  with
+    operator      : Party    -- venue operator (settles under sole operator authority)
+    compliance    : Party    -- Compliance co-signer (the distinct four-eyes authority)
+    roundId       : Text      -- the round this approval authorizes settlement of
+    clearingPrice : Decimal   -- the Compliance-approved clearing price
+  where
+    signatory operator, compliance
+
+-- The GATE PRIMITIVE `Round.Clear` calls (keyless — fetched by ContractId, D7
+-- Option-B). Mirrors `assertDeskEligible`: asserts the approval is for THIS
+-- operator/round AND matches the already-rounded `priceDec` that `Round.Clear` is
+-- about to settle. A missing / wrong-price / wrong-round approval aborts ON-LEDGER
+-- (assertMsg failure), never in render logic. The caller passes the already
+-- half-even-rounded `priceDec` (the same `roundBankers 2 clearingPrice` the §8
+-- recompute pinned), so both sides are compared at 2dp.
+assertClearingApproved : Party -> Text -> Decimal -> ClearingApproval -> Update ()
+assertClearingApproved operator roundId priceDec appr = do
+  assertMsg "approval is not for this operator/round"
+    (appr.operator == operator && appr.roundId == roundId)
+  assertMsg "compliance-approved price does not match the clearing price"
+    (roundBankers 2 appr.clearingPrice == priceDec)

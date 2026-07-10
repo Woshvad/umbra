@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: Progress
 status: executing
-stopped_at: Completed 14-01-PLAN.md (x402 v1 wire envelope + default-OFF 402 gate + FacilitatorClient interface — PAY-01)
-last_updated: "2026-07-10T23:23:30.000Z"
-last_activity: 2026-07-10 -- Completed 14-01 (x402 gate wire+seam)
+stopped_at: Completed 14-02-PLAN.md (FacilitatorClient factory — self on-ledger USDCx + canton-cc FTP fetch — PAY-01)
+last_updated: "2026-07-11T00:36:00.000Z"
+last_activity: 2026-07-11 -- Completed 14-02 (FacilitatorClient self + canton-cc backends)
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
-  percent: 33
+  completed_plans: 2
+  percent: 67
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 ## Current Position
 
 Phase: 14 (agentic-payments-x402) — EXECUTING
-Plan: 2 of 3
-Status: Executing Phase 14 (1/3 plans complete)
-Prev: 14-01 complete — hand-rolled x402 v1 wire envelope + default-OFF 402 gate + FacilitatorClient seam; solver 305/305, §4 $100.00, tsc clean (x402).
-Next: 14-02 (FacilitatorClient factory: self on-ledger USDCx + canton-cc FTP fetch, offline-mocked) → 14-03 (wire gate into api.ts/index.ts + X402_* config). Then 14-UAT.md for live $CC-on-DevNet.
-Last activity: 2026-07-10 -- Completed 14-01 (x402 gate wire+seam)
+Plan: 3 of 3
+Status: Executing Phase 14 (2/3 plans complete)
+Prev: 14-02 complete — FacilitatorClient factory (self on-ledger USDCx verify/settle via reused Holding Split/Reassign, no new Daml; canton-cc FTP /verify+/settle over injectable fetch, offline-mocked); ledger.ts listHoldings+moveFee; solver 325/325, §4 $100.00, tsc clean (only the pre-existing idempotency.test.ts:193 deferred error).
+Next: 14-03 (wire gate into api.ts/index.ts — optional DI, per-route, default-OFF — + X402_* config + .env.example + 14-UAT.md). Then 14-UAT.md for live $CC-on-DevNet.
+Last activity: 2026-07-11 -- Completed 14-02 (FacilitatorClient self + canton-cc backends)
 
 ## Performance Metrics
 

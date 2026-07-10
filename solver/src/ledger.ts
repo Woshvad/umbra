@@ -1023,3 +1023,241 @@ export const acceptQuote = async (rfqCid: string, quoteCid: string): Promise<Rfq
   )
   return { rfqId: rfqCid, quoteCid, requester, dealer, side, quantity, price, cashAmount, settled: true }
 }
+
+// ════ ADJ-03: primary issuance orchestration (open → clear/mint, coupon, redeem) ════
+// Keyless exercise wrappers over JSON Ledger API v2 for the ADJ-03 uniform-price primary
+// issuance (Umbra.Issuance). `clearIssuance` recomputes the SAME §8 `computeClearing` the
+// on-ledger `ClearIssuance` re-derives (verify-don't-trust: the choice re-clears + asserts
+// the over-mint guard), gathers each winner's cash source Holding cid (Option-B, fresh ACS
+// query, cash amount from the recomputed p*), and exercises the mint. `payCoupon` enumerates
+// the current bond holders via an ACS `Holding` query (like `readSealedOrders`) and pays the
+// deterministic pro-rata cash. Int/Decimal choice args marshal as STRINGS; the operator token
+// stays module-private and never crosses out (SOLV-04). The issuance tranche uses a DISTINCT
+// instrument id so the §4 "BONDX" bond is never perturbed (§4 still clears $100.00).
+
+// A single sealed issuance bid (a desk's Buy of `quantity` units at `limit`).
+export interface IssuanceBidInput {
+  desk: string
+  quantity: number
+  limit: number
+}
+
+// ── openIssuance: create an IssuanceRound (issuer offers `trancheSize` at `reservePrice`) ──
+export const openIssuance = async (
+  issuer: string,
+  bondInstrumentId: string,
+  cashInstrumentId: string,
+  trancheSize: number,
+  reservePrice = 0,
+  bids: IssuanceBidInput[] = [],
+): Promise<{ issuanceId: string; issuer: string; bondInstrument: string; trancheSize: number }> => {
+  const bondInstrument = bondInstrumentRef(bondInstrumentId)
+  const cashInstrument = cashInstrumentRef(cashInstrumentId)
+  await submitAndWait(
+    [
+      {
+        CreateCommand: {
+          templateId: `${PKG}:Umbra.Issuance:IssuanceRound`,
+          createArguments: {
+            operator: operatorParty,
+            issuer,
+            bondInstrument,
+            cashInstrument,
+            trancheSize: String(trancheSize), // Int as a string (Option-B)
+            reservePrice: String(reservePrice), // Decimal as a string
+            bids: bids.map((b) => ({ desk: b.desk, quantity: String(b.quantity), limit: String(b.limit) })),
+            cleared: false,
+            couponsPaid: [],
+          },
+        },
+      },
+    ],
+    [operatorParty, issuer],
+  )
+  const round = (await queryByEntity('IssuanceRound'))
+    .filter(
+      (c) =>
+        c.createArgument.issuer === issuer &&
+        c.createArgument.bondInstrument?.id === bondInstrumentId &&
+        c.createArgument.cleared === false,
+    )
+    .pop()
+  if (!round) throw new Error(`IssuanceRound not found after open for ${issuer}`)
+  return { issuanceId: round.contractId, issuer, bondInstrument: bondInstrumentId, trancheSize }
+}
+
+// ── clearIssuance: exercise ClearIssuance → the single uniform price + minted Holdings ──
+// Recomputes §8 locally (the referee the on-ledger choice re-verifies) to determine the
+// winners + the p* that prices each winner's cash leg, gathers each winner's cash source
+// Holding cid (Option-B), then exercises the mint. Returns the single uniform price + the
+// minted-holdings summary (secret-free).
+export const clearIssuance = async (
+  issuanceCid: string,
+): Promise<{
+  issuanceId: string
+  clearingPrice: number
+  totalIssued: number
+  winners: { desk: string; filledQty: number }[]
+}> => {
+  const round = (await queryByEntity('IssuanceRound')).find((c) => c.contractId === issuanceCid)
+  if (!round) throw new Error(`IssuanceRound ${issuanceCid} not found`)
+  const a = round.createArgument
+  const issuer = a.issuer as string
+  const bondId = a.bondInstrument?.id as string
+  const cashId = a.cashInstrument?.id as string
+  const trancheSize = Number(a.trancheSize)
+  const reservePrice = Number(a.reservePrice)
+  const bids = ((a.bids ?? []) as Record<string, any>[]).map((b) => ({
+    desk: b.desk as string,
+    quantity: Number(b.quantity),
+    limit: Number(b.limit),
+  }))
+
+  // The SAME §8 book the on-ledger ClearIssuance builds: issuer Sell of the whole tranche at
+  // the reserve + each sealed bid as a plain-Limit Buy. computeClearing derives p* + fills.
+  const book: OrderView[] = [
+    { desk: issuer, side: 'Sell', quantity: trancheSize, limit: reservePrice },
+    ...bids.map((b) => ({ desk: b.desk, side: 'Buy' as Side, quantity: b.quantity, limit: b.limit })),
+  ]
+  const { clearingPrice, allocations } = computeClearing(book)
+  const winners = allocations
+    .filter((al) => al.side === 'Buy' && al.filledQty > 0)
+    .map((al) => ({ desk: al.desk, filledQty: al.filledQty }))
+  const totalIssued = winners.reduce((s, w) => s + w.filledQty, 0)
+
+  // Gather each winner's cash source Holding (owner=desk, cash instrument, ≥ filledQty × p*).
+  const holdings = await queryByEntity('Holding')
+  const used = new Set<string>()
+  const winnerCashCids = winners.map((w) => {
+    const need = w.filledQty * clearingPrice
+    const cash = holdings.find(
+      (c) =>
+        !used.has(c.contractId) &&
+        c.createArgument.owner === w.desk &&
+        c.createArgument.instrument?.id === cashId &&
+        Number(c.createArgument.amount) >= need,
+    )
+    if (!cash) throw new Error(`insufficient or missing ${cashId} holding for ${w.desk} (need ${need})`)
+    used.add(cash.contractId)
+    // Daml (Party, ContractId Holding) tuple → the v2 { _1, _2 } wire shape (Pitfall 4).
+    return { _1: w.desk, _2: cash.contractId }
+  })
+
+  await submitAndWait(
+    [
+      {
+        ExerciseCommand: {
+          templateId: `${PKG}:Umbra.Issuance:IssuanceRound`,
+          contractId: issuanceCid,
+          choice: 'ClearIssuance',
+          choiceArgument: { winnerCashCids },
+        },
+      },
+    ],
+    [operatorParty, issuer],
+  )
+
+  // ClearIssuance consumes + recreates the round `cleared = True`; re-query its lifecycle cid
+  // for the subsequent Coupon/Redeem. Falls back to the original cid if the stub did not recreate.
+  const cleared = (await queryByEntity('IssuanceRound'))
+    .filter((c) => c.createArgument.issuer === issuer && c.createArgument.bondInstrument?.id === bondId && c.createArgument.cleared === true)
+    .pop()
+  return { issuanceId: cleared?.contractId ?? issuanceCid, clearingPrice, totalIssued, winners }
+}
+
+// ── payCoupon: pay the deterministic pro-rata coupon to the CURRENT bond holders ─────
+// Enumerates the live bond `Holding`s for the tranche via an ACS query (the `readSealedOrders`
+// pattern), computes the pro-rata cash (each holder receives `amount × couponPerUnit`), and
+// exercises `Coupon` through the same atomic settleBatch DvP path. Int/Decimal args as strings.
+export const payCoupon = async (
+  issuanceCid: string,
+  period: number,
+  couponPerUnit: number,
+): Promise<{ issuanceId: string; period: number; couponPerUnit: number; holders: number; totalPaid: number }> => {
+  const round = (await queryByEntity('IssuanceRound')).find((c) => c.contractId === issuanceCid)
+  if (!round) throw new Error(`IssuanceRound ${issuanceCid} not found`)
+  const a = round.createArgument
+  const issuer = a.issuer as string
+  const bondId = a.bondInstrument?.id as string
+  const cashId = a.cashInstrument?.id as string
+
+  // Enumerate the CURRENT bond holders (ACS Holding query, like readSealedOrders).
+  const holdings = await queryByEntity('Holding')
+  const holderCids = holdings.filter(
+    (c) => c.createArgument.instrument?.id === bondId && c.createArgument.operator === operatorParty,
+  )
+  const totalPaid = holderCids.reduce((s, c) => s + Number(c.createArgument.amount) * couponPerUnit, 0)
+  // The issuer's cash source (≥ the total coupon due).
+  const issuerCash = holdings.find(
+    (c) =>
+      c.createArgument.owner === issuer &&
+      c.createArgument.instrument?.id === cashId &&
+      Number(c.createArgument.amount) >= totalPaid,
+  )
+  if (!issuerCash) throw new Error(`insufficient or missing ${cashId} holding for issuer ${issuer} (need ${totalPaid})`)
+
+  await submitAndWait(
+    [
+      {
+        ExerciseCommand: {
+          templateId: `${PKG}:Umbra.Issuance:IssuanceRound`,
+          contractId: issuanceCid,
+          choice: 'Coupon',
+          choiceArgument: {
+            period: String(period), // Int as a string
+            couponPerUnit: String(couponPerUnit), // Decimal as a string
+            holderBondCids: holderCids.map((c) => c.contractId),
+            issuerCashCid: issuerCash.contractId,
+          },
+        },
+      },
+    ],
+    [operatorParty, issuer],
+  )
+  return { issuanceId: issuanceCid, period, couponPerUnit, holders: holderCids.length, totalPaid }
+}
+
+// ── redeem: repay principal pro-rata at maturity and retire the bond Holdings ─────────
+export const redeem = async (
+  issuanceCid: string,
+  principalPerUnit: number,
+): Promise<{ issuanceId: string; principalPerUnit: number; holders: number; totalRepaid: number }> => {
+  const round = (await queryByEntity('IssuanceRound')).find((c) => c.contractId === issuanceCid)
+  if (!round) throw new Error(`IssuanceRound ${issuanceCid} not found`)
+  const a = round.createArgument
+  const issuer = a.issuer as string
+  const bondId = a.bondInstrument?.id as string
+  const cashId = a.cashInstrument?.id as string
+
+  const holdings = await queryByEntity('Holding')
+  const holderCids = holdings.filter(
+    (c) => c.createArgument.instrument?.id === bondId && c.createArgument.operator === operatorParty,
+  )
+  const totalRepaid = holderCids.reduce((s, c) => s + Number(c.createArgument.amount) * principalPerUnit, 0)
+  const issuerCash = holdings.find(
+    (c) =>
+      c.createArgument.owner === issuer &&
+      c.createArgument.instrument?.id === cashId &&
+      Number(c.createArgument.amount) >= totalRepaid,
+  )
+  if (!issuerCash) throw new Error(`insufficient or missing ${cashId} holding for issuer ${issuer} (need ${totalRepaid})`)
+
+  await submitAndWait(
+    [
+      {
+        ExerciseCommand: {
+          templateId: `${PKG}:Umbra.Issuance:IssuanceRound`,
+          contractId: issuanceCid,
+          choice: 'Redeem',
+          choiceArgument: {
+            principalPerUnit: String(principalPerUnit), // Decimal as a string
+            holderBondCids: holderCids.map((c) => c.contractId),
+            issuerCashCid: issuerCash.contractId,
+          },
+        },
+      },
+    ],
+    [operatorParty, issuer],
+  )
+  return { issuanceId: issuanceCid, principalPerUnit, holders: holderCids.length, totalRepaid }
+}

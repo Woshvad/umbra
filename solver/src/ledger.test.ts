@@ -481,3 +481,124 @@ describe('ledger RFQ wrappers (ADJ-02 — post/quote/list/accept over JSON Ledge
     errSpy.mockRestore()
   })
 })
+
+// ── ADJ-03: primary issuance orchestration (open → clear/mint, coupon, redeem) ───────
+describe('ledger issuance wrappers (ADJ-03 — clear/mint, coupon, redeem over JSON Ledger API v2)', () => {
+  const bond2 = { issuer: 'operator::test', id: 'BOND2' }
+  const usdc = { issuer: 'operator::test', id: 'USDCx' }
+
+  // A cleared issuance world: an IssuanceRound (cleared) + two current bond holders + the
+  // issuer's cash for the coupon/redeem legs. bondInstrument = the DISTINCT "BOND2" tranche
+  // (never the §4 "BONDX").
+  const seedClearedIssuance = (cid = 'iss-cleared'): string => {
+    acs.push(
+      umbra('#umbra:Umbra.Issuance:IssuanceRound', {
+        operator: 'operator::test', issuer: 'issuer::test', bondInstrument: bond2, cashInstrument: usdc,
+        trancheSize: '100', reservePrice: '99.0', bids: [], cleared: true, couponsPaid: [],
+      }, cid),
+      umbra('#umbra:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'bankA::test', instrument: bond2, amount: '10.0', lock: null }, 'h-bond2-A'),
+      umbra('#umbra:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'bankB::test', instrument: bond2, amount: '5.0', lock: null }, 'h-bond2-B'),
+      umbra('#umbra:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'issuer::test', instrument: usdc, amount: '100000.0', lock: null }, 'h-cash-issuer'),
+    )
+    return cid
+  }
+
+  it('openIssuance creates an IssuanceRound with Int/Decimal fields marshaled as STRINGS', async () => {
+    const opened = await ledgerMod.openIssuance('issuer::test', 'BOND2', 'USDCx', 100, 99, [
+      { desk: 'bankA::test', quantity: 60, limit: 101 },
+    ])
+
+    expect(opened.issuanceId).toBe('cid-1')
+    const create = createCalls.find((c) => c.template.endsWith(':IssuanceRound'))
+    expect(create).toBeTruthy()
+    expect(create!.args.trancheSize).toBe('100')
+    expect(create!.args.reservePrice).toBe('99')
+    expect(create!.args.cleared).toBe(false)
+    expect(create!.args.couponsPaid).toEqual([])
+    // Bids marshal quantity + limit as strings; the tranche uses the DISTINCT BOND2 instrument.
+    expect(create!.args.bids).toEqual([{ desk: 'bankA::test', quantity: '60', limit: '101' }])
+    expect(create!.args.bondInstrument).toEqual(bond2)
+  })
+
+  it('clearIssuance re-derives §8, gathers winner cash cids, and exercises ClearIssuance', async () => {
+    // Book: issuer Sell 100 @99, bankA Buy 60 @101, bankB Buy 50 @100 → uniform clear.
+    acs.push(
+      umbra('#umbra:Umbra.Issuance:IssuanceRound', {
+        operator: 'operator::test', issuer: 'issuer::test', bondInstrument: bond2, cashInstrument: usdc,
+        trancheSize: '100', reservePrice: '99.0',
+        bids: [
+          { desk: 'bankA::test', quantity: '60', limit: '101.0' },
+          { desk: 'bankB::test', quantity: '50', limit: '100.0' },
+        ],
+        cleared: false, couponsPaid: [],
+      }, 'iss-open'),
+      umbra('#umbra:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'bankA::test', instrument: usdc, amount: '1000000.0', lock: null }, 'h-cash-A'),
+      umbra('#umbra:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'bankB::test', instrument: usdc, amount: '1000000.0', lock: null }, 'h-cash-B'),
+    )
+
+    const cleared = await ledgerMod.clearIssuance('iss-open')
+
+    // A SINGLE uniform issuance price + the minted-holdings summary (the cleared cross).
+    expect(cleared.totalIssued).toBe(100)
+    expect(typeof cleared.clearingPrice).toBe('number')
+    const ex = exerciseCalls.find((e) => e.choice === 'ClearIssuance')
+    expect(ex).toBeTruthy()
+    expect(ex!.contractId).toBe('iss-open')
+    // winnerCashCids marshaled as the { _1: party, _2: cid } tuple wire shape.
+    expect(Array.isArray(ex!.arg.winnerCashCids)).toBe(true)
+    for (const t of ex!.arg.winnerCashCids) {
+      expect(typeof t._1).toBe('string')
+      expect(typeof t._2).toBe('string')
+    }
+    // Only winning desks are charged; the total minted equals the cleared cross (100).
+    const chargedTotal = cleared.winners.reduce((s, w) => s + w.filledQty, 0)
+    expect(chargedTotal).toBe(100)
+  })
+
+  it('payCoupon enumerates the current bond holders and exercises Coupon (pro-rata, strings)', async () => {
+    const cid = seedClearedIssuance()
+
+    const paid = await ledgerMod.payCoupon(cid, 1, 2.5)
+
+    // 10 + 5 units held × 2.5 = 37.5 total coupon.
+    expect(paid.holders).toBe(2)
+    expect(paid.totalPaid).toBe(37.5)
+    const ex = exerciseCalls.find((e) => e.choice === 'Coupon')
+    expect(ex).toBeTruthy()
+    expect(ex!.arg.period).toBe('1')
+    expect(ex!.arg.couponPerUnit).toBe('2.5')
+    expect(typeof ex!.arg.period).toBe('string')
+    expect(ex!.arg.holderBondCids).toEqual(['h-bond2-A', 'h-bond2-B'])
+    expect(ex!.arg.issuerCashCid).toBe('h-cash-issuer')
+  })
+
+  it('redeem enumerates holders and exercises Redeem at the principal price (string-marshaled)', async () => {
+    const cid = seedClearedIssuance()
+
+    const redeemed = await ledgerMod.redeem(cid, 100)
+
+    expect(redeemed.holders).toBe(2)
+    expect(redeemed.totalRepaid).toBe(1500) // (10 + 5) × 100
+    const ex = exerciseCalls.find((e) => e.choice === 'Redeem')
+    expect(ex).toBeTruthy()
+    expect(ex!.arg.principalPerUnit).toBe('100')
+    expect(ex!.arg.holderBondCids).toEqual(['h-bond2-A', 'h-bond2-B'])
+  })
+
+  it('never leaks the Operator token through the issuance clear/coupon/redeem path', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const cid = seedClearedIssuance()
+    const paid = await ledgerMod.payCoupon(cid, 1, 2.5)
+    const redeemed = await ledgerMod.redeem(cid, 100)
+
+    expect(JSON.stringify({ paid, redeemed })).not.toContain(SENTINEL_TOKEN)
+    for (const call of [...logSpy.mock.calls, ...errSpy.mock.calls]) {
+      expect(JSON.stringify(call)).not.toContain(SENTINEL_TOKEN)
+    }
+
+    logSpy.mockRestore()
+    errSpy.mockRestore()
+  })
+})

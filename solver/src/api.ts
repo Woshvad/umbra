@@ -35,6 +35,10 @@ import { buildStatus, renderStatusHtml, type Health, type RoundPhase, type Statu
 // (reject illegal lifecycle transitions with 409). transition() throws an ApiError-shaped
 // error the secret-safe middleware serializes identically to a native ApiError.
 import { createIdempotency, type Idempotency } from './idempotency.js'
+// PAY-01 x402 metered-access gate (x402.ts, Plan 01 / boot-wired in Plan 03). createApp
+// defaults an absent gate to a DISABLED no-op so existing endpoints/tests + the §4 money-shot
+// demo are byte-unchanged; main() injects the enabled, facilitator-backed gate when metering is on.
+import { createX402Gate, type PaymentGate } from './x402.js'
 import { transition, sealedAlias } from './fsm.js'
 import type { RoundStatus } from './clock.js'
 // OPS-04 webhooks.ts — the signed/retried lifecycle emitter + subscription registry. createApp
@@ -244,6 +248,15 @@ export interface AppDeps {
   // fresh in-memory unit. The middleware is a no-op unless a POST carries an Idempotency-Key
   // header, so existing endpoints/tests are byte-unaffected.
   idempotency?: Idempotency
+
+  // ── PAY-01 x402 metered-access gate (x402.ts) ─────────────────────────────────────
+  // OPTIONAL x402 gate. When absent, createApp builds a DISABLED no-op gate so existing
+  // endpoints/tests + the §4 demo are byte-unchanged. Attached PER-ROUTE on EXACTLY the two
+  // metered AI-compute endpoints (GET /round/:id/solve-preview + POST /competing) — NEVER
+  // app-wide, so every never-metered path (/health, /status, GET /round/:id, /settle,
+  // /sandbox/round, /fix, /rfq*, /issuance*) can never 402. main() injects the enabled,
+  // facilitator-backed gate (index.ts); the disabled default keeps the money-shot untouched.
+  x402?: PaymentGate
 
   // ── OPS-04 lifecycle webhook emitter + subscription registry (webhooks.ts) ────────
   // OPTIONAL: the signed/retried outbound webhook layer. When absent, createApp builds a
@@ -593,6 +606,12 @@ export const createApp = (deps: AppDeps): Express => {
   const idempotency = deps.idempotency ?? createIdempotency()
   app.use(idempotency.middleware)
 
+  // PAY-01: the x402 gate. Defaulted ONCE to a DISABLED no-op when not injected, so with
+  // metering off (the default) it is byte-identical to no gate at all (primary invariant).
+  // Attached PER-ROUTE below on EXACTLY the two metered AI endpoints — NEVER via app.use, so
+  // no free/lifecycle/settlement path can ever be metered (T-14-11).
+  const x402 = deps.x402 ?? createX402Gate({ enabled: false })
+
   // OPS-04: the lifecycle webhook emitter + subscription registry. Absent in existing tests →
   // a fresh in-memory instance (emit is a no-op fan-out with zero subscriptions), so the §11
   // endpoints stay byte-compatible. round.opened/round.sealed fire off the index.ts/clock.ts
@@ -815,8 +834,11 @@ export const createApp = (deps: AppDeps): Express => {
   )
 
   // GET /round/:id/solve-preview — the deterministic §8 proposal. COMPUTE, NO SETTLE.
+  // PAY-01: x402.middleware is the PER-ROUTE metered gate (disabled no-op by default). It runs
+  // BEFORE wrap() — with metering on, no X-PAYMENT ⇒ 402; a valid payment ⇒ settle → handler.
   app.get(
     '/round/:id/solve-preview',
+    x402.middleware,
     wrap(async (req, res) => {
       const { id } = req.params
       const sealed = await deps.readSealedOrders(id)
@@ -1347,8 +1369,12 @@ export const createApp = (deps: AppDeps): Express => {
   // across N solver configs; returns { winner, leaderboard, deterministic }. The leaderboard is
   // a NARRATIVE / ADVISORY panel — NO settlement path consults the winner. The deterministic §8
   // block is the ONLY thing that settles (AI strictly off the settlement path). Keyless-degrades.
+  // PAY-01: x402.middleware is the PER-ROUTE metered gate (disabled no-op by default) — the
+  // SECOND and LAST metered endpoint. roundId is in the BODY (not the path), so the gate builds
+  // `resource` from req.originalUrl (never req.params) — no path coupling.
   app.post(
     '/competing',
+    x402.middleware,
     wrap(async (req, res) => {
       const parsed = competingBody.safeParse(req.body ?? {})
       if (!parsed.success) {

@@ -391,11 +391,35 @@ export const x402Gate = (facilitator: FacilitatorClient, opts: X402Options): Req
   }
 }
 
+// A never-settling stub facilitator. A DISABLED gate never calls it (the first handler line
+// is `if (!opts.enabled) return next()`), so this only exists to keep the disabled-only
+// `createX402Gate({ enabled: false })` construction fully self-contained (Plan 03 DI default).
+const NOOP_FACILITATOR: FacilitatorClient = {
+  verify: async () => ({ valid: false, reason: X402_REASON.invalid_payload }),
+  settle: async () => ({ settled: false, txRef: '' }),
+}
+
 // Create a payment-gate unit: a middleware bound to the facilitator + options (mirrors
 // createIdempotency). Consumed by the boot wiring in Plan 03.
+//
+// The `facilitator` + the non-`enabled` options are OPTIONAL so a DISABLED no-op gate can be
+// built with just `createX402Gate({ enabled: false })` — the DI default api.ts installs when
+// no gate is injected (the primary default-OFF invariant). When metering is enabled main()
+// passes the real facilitator + full options.
 export const createX402Gate = (
-  args: { facilitator: FacilitatorClient } & X402Options,
+  args: { facilitator?: FacilitatorClient } & Partial<X402Options> & { enabled: boolean },
 ): PaymentGate => {
-  const { facilitator, ...opts } = args
-  return { middleware: x402Gate(facilitator, opts) }
+  const { facilitator, ...rest } = args
+  const opts: X402Options = {
+    enabled: rest.enabled,
+    network: rest.network ?? '',
+    asset: rest.asset ?? '',
+    price: rest.price ?? '0',
+    payTo: rest.payTo ?? '',
+    description: rest.description,
+    maxTimeoutSeconds: rest.maxTimeoutSeconds,
+    now: rest.now,
+    nonceTtlMs: rest.nonceTtlMs,
+  }
+  return { middleware: x402Gate(facilitator ?? NOOP_FACILITATOR, opts) }
 }

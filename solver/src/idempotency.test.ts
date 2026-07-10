@@ -162,6 +162,38 @@ describe('idempotency middleware', () => {
     expect(calls).toBe(2)
   })
 
+  it('HI-02: the same key on TWO endpoints does NOT cross-replay (namespaced by method+path)', async () => {
+    let roundCalls = 0
+    let settleCalls = 0
+    const { middleware } = createIdempotency()
+    const base = await start((app) => {
+      app.use(middleware)
+      // Both accept an empty body → identical `{}` canonical hash; only the ROUTE differs.
+      app.post('/round', (_req, res) => {
+        roundCalls += 1
+        res.status(201).json({ route: 'round', status: 'Open' })
+      })
+      app.post('/settle', (_req, res) => {
+        settleCalls += 1
+        res.status(200).json({ route: 'settle', settled: true })
+      })
+    })
+    // One reused key across two DIFFERENT endpoints, empty body on each.
+    const headers = { 'Content-Type': 'application/json', 'Idempotency-Key': 'k-shared' }
+    const body = JSON.stringify({})
+
+    const rRound = await fetch(`${base}/round`, { method: 'POST', headers, body })
+    const jRound = await rRound.json()
+    const rSettle = await fetch(`${base}/settle`, { method: 'POST', headers, body })
+    const jSettle = await rSettle.json()
+
+    // Each endpoint ran its OWN handler and returned its OWN response — no cross-replay.
+    expect(roundCalls).toBe(1)
+    expect(settleCalls).toBe(1)
+    expect(jRound).toEqual({ route: 'round', status: 'Open' })
+    expect(jSettle).toEqual({ route: 'settle', settled: true })
+  })
+
   it('HI-01: does NOT cache a 5xx — a retry under the same key re-executes the handler', async () => {
     let calls = 0
     const { middleware, store } = createIdempotency()

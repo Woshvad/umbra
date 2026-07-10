@@ -6,9 +6,12 @@
 // A same-key-DIFFERENT-body replay is rejected with 422 IDEMPOTENCY_KEY_REUSED so a
 // buggy/hostile client cannot smuggle a new payload under a reused key.
 //
-// KEYING (threat T-13-06): the store is keyed by the client `Idempotency-Key`, and each
-// entry records a sha256 of the CANONICALIZED body (object keys sorted recursively) so a
-// mere JSON key reorder is NOT mistaken for a different body (Pitfall 4 — false 422).
+// KEYING (threat T-13-06): the store is keyed by `${method} ${baseUrl}${path} ${key}` —
+// the client `Idempotency-Key` NAMESPACED by the HTTP method + route path (HI-02) so a key
+// is scoped to the single endpoint it was issued for and cannot cross-replay an unrelated
+// endpoint whose empty body canonicalizes to the same hash. Each entry also records a
+// sha256 of the CANONICALIZED body (object keys sorted recursively) so a mere JSON key
+// reorder is NOT mistaken for a different body (Pitfall 4 — false 422).
 //
 // OPT-IN: the middleware is a no-op unless BOTH (a) the method is POST and (b) an
 // `Idempotency-Key` header is present. A request without the header passes through
@@ -86,8 +89,17 @@ export const idempotencyMiddleware = (
     const key = req.header('Idempotency-Key')
     if (!key) return next()
 
+    // HI-02: namespace the store identity by HTTP method + route path so an idempotency
+    // key is scoped to the SINGLE endpoint it was issued for. Many mutating POSTs accept
+    // an empty/optional body that canonicalizes to the same `{}` hash (POST /round,
+    // /round/:id/settle, /round/:id/close, /sandbox/round). Keying by the raw
+    // Idempotency-Key alone lets one key reused across two of these cross-replay the wrong
+    // endpoint's stored response (e.g. /round's 201 replayed for /settle, which then never
+    // runs). Composing method + baseUrl + path scopes the key to its operation.
+    const storeKey = `${req.method} ${req.baseUrl}${req.path} ${key}`
+
     const bodyHash = hashBody(req.body)
-    const existing = store.get(key)
+    const existing = store.get(storeKey)
 
     if (existing && now() - existing.at <= ttlMs) {
       if (existing.bodyHash !== bodyHash) {
@@ -119,7 +131,7 @@ export const idempotencyMiddleware = (
       // (Stripe-style semantics), so a retry under the same key re-executes the handler.
       // (A deterministic 4xx recomputes to the same result, so it need not be cached.)
       if (res.statusCode < 400) {
-        store.set(key, { bodyHash, status: res.statusCode, body, at: now() })
+        store.set(storeKey, { bodyHash, status: res.statusCode, body, at: now() })
       }
       return originalJson(body)
     }

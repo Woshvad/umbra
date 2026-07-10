@@ -523,8 +523,14 @@ Umbra's differentiator is an AI agent that clears the auction; x402 is the HTTP-
 
 **UI hint**: optional (pay-to-solve affordance / metered-access indicator; droppable)
 
+**Plans**: 3 plans (3 waves — interface-first: wire+gate → facilitator → integration)
+
+- [ ] 14-01-PLAN.md — x402 v1 wire envelope + hand-rolled default-OFF 402 gate middleware + FacilitatorClient interface (Wave 1)
+- [ ] 14-02-PLAN.md — FacilitatorClient factory: self (on-ledger USDCx verify/settle, no new Daml) + canton-cc (FTP /verify+/settle fetch, offline-mocked) (Wave 2)
+- [ ] 14-03-PLAN.md — wire the gate into api.ts/index.ts (optional DI, per-route, default-OFF) + X402_* config + .env.example + 14-UAT.md (Wave 3)
+
 ## v2.1 Progress
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 14. Agentic Payments (x402) | 0/TBD | Planning | — |
+| 14. Agentic Payments (x402) | 0/3 | Planning | — |

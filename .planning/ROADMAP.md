@@ -457,7 +457,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1)*
 
 - [x] 13-07-PLAN.md — OPS-01/02/03 API integration: telemetry-first boot + SIGTERM + spans/metrics + /health + /status + SecretsProvider wiring + idempotency mw + FSM guard [OPS-01, OPS-02, OPS-03]
-- [ ] 13-08-PLAN.md — ADJ-03 Issuance.daml keyless uniform-price mint (reuse §8) + Coupon/Redeem + Tests.daml + regenerate/commit web/daml.js [ADJ-03]
+- [x] 13-08-PLAN.md — ADJ-03 Issuance.daml keyless uniform-price mint (reuse §8) + Coupon/Redeem + Tests.daml + regenerate/commit web/daml.js [ADJ-03]
 
 **Wave 3** *(blocked on 13-07)*
 
@@ -491,4 +491,4 @@ Build waves run in numeric order 8 → 9 → 10 → 11. Track A (Phase 12) runs 
 | 10. Cryptographic Privacy | 10/10 | Built · live UAT pending | 2026-07-10 |
 | 11. Settlement & Institutional Grade | 11/11 | Built · live UAT pending | 2026-07-10 |
 | 12. Real On-Chain (Canton DevNet) | 5/5 | Built · live UAT + external SV gate pending | 2026-07-10 |
-| 13. Platform Baseline & Adjacent | 7/14 | In Progress|  |
+| 13. Platform Baseline & Adjacent | 8/14 | In Progress|  |

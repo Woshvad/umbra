@@ -4,13 +4,13 @@ milestone: v2.0
 milestone_name: Progress
 status: executing
 stopped_at: Completed 13-07-PLAN.md
-last_updated: "2026-07-10T19:42:17.781Z"
+last_updated: "2026-07-10T19:58:02.609Z"
 last_activity: 2026-07-10 -- Phase 13 execution started
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 54
-  completed_plans: 47
+  completed_plans: 48
   percent: 83
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 ## Current Position
 
 Phase: 13 (platform-baseline-adjacent-track-b-ongoing) — EXECUTING
-Plan: 8 of 14
+Plan: 9 of 14
 Status: Ready to execute
 Prev: Phase 11 built (settlement on CN Token Standard CIP-0056; §4 $100.00; verified 4/4, security 42/42, UI 20/24; live items → UAT).
 Next (NOT in this run): Phase 13 — Platform Baseline & Adjacent (Track B). Milestone v2.0 at 5/6 phases.
@@ -99,6 +99,7 @@ Last activity: 2026-07-10 -- Phase 13 execution started
 | Phase 13 P05 | 4min | 1 tasks | 2 files |
 | Phase 13 P06 | 12min | 2 tasks tasks | 2 files files |
 | Phase 13 P7 | 22min | 3 tasks | 6 files |
+| Phase 13 P08 | 12min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -173,6 +174,7 @@ Recent decisions affecting current work:
 - [Phase 13]: [13-06 / ADJ-02]: Keyless Umbra.Rfq module — RfqRequest (signatory operator,requester; observer=invited dealers) + FIRM Quote (signatory operator,dealer; observer requester). AcceptQuote (controller requester) builds a 1×1 [Instruction] batch and calls settleBatch operator — the SAME atomic DvP path as Round.Clear, no parallel mechanism. Body runs under RfqRequest signatory authority (operator ∈ signatories) so operator-custody Holding choices are authorized; tests co-submit submitMulti [requester,operator] [] for read-visibility of operator-custodied holdings. 4 scenarios (firm/accept-best/conservation/privacy) green; §4 golden still 00.00; Clearing.daml + Round.Clear byte-unchanged. web/daml.js regen deferred to 13-08.
 - [Phase ?]: 13-07: telemetry-first solver boot (initTelemetry before instrumented imports, shutdown on SIGTERM) + SecretsProvider-injected Anthropic client (env backend byte-for-byte, keyless-degrade preserved)
 - [Phase ?]: 13-07: token-free /health,/status,/status.html (aggregate-only, secret-swept) + opt-in idempotency middleware + FSM transition() guard (409 ILLEGAL_TRANSITION); §4 still clears $100.00, existing §11 endpoints byte-compatible
+- [Phase ?]: [13-08 / ADJ-03]: Keyless Umbra.Issuance — ClearIssuance reuses §8 computeClearing (issuer=one Sell of trancheSize, bids=Buys) for ONE uniform issuance price, mints CIP-0056 Holdings to winners + collects cash via moveExactHolding (over-mint guard buyFills==sellFills<=trancheSize). Coupon pays pro-rata via settleBatch with a per-round couponsPaid double-pay marker; Redeem repays principal + archives bond Holdings. Distinct BOND2 tranche keeps §4 BONDX untouched (35.0); daml test green incl 100.00 golden; Clearing.daml byte-unchanged; web/daml.js regenerated+committed (Rfq+Issuance), web tsc clean.
 
 ### Pending Todos
 
@@ -198,6 +200,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-10T19:42:17.371Z
+Last session: 2026-07-10T19:57:51.835Z
 Stopped at: Completed 13-07-PLAN.md
 Resume file: None

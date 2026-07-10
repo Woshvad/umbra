@@ -138,6 +138,26 @@ const oidcBearer = async (): Promise<string> => {
 // behaviour); OIDC returns the cached/refreshed client-credentials token.
 const bearerToken = async (): Promise<string> => (OIDC_MODE ? oidcBearer() : _devOperatorToken)
 
+// ── IDEN-03 four-eyes Compliance credential (module-private) ──────────────────────
+// The approve step needs a DISTINCT compliance authority. An optional dedicated
+// compliance credential (scripts/.compliance-token) enables the REAL authority
+// separation on the dev path; when absent, the dev fast-loop falls back to
+// operator-held compliance so headless runs proceed. The distinct-signatory SEPARATION
+// — the actual tested control — is proven by `daml test` (12-01) with a dedicated
+// compliance party, and live human four-eyes is UAT. The compliance token, like the
+// operator token, is NEVER exported/returned/logged.
+const resolveCompliance = (): { token: string; party: string } => {
+  try {
+    const raw = readFileSync(new URL('../../scripts/.compliance-token', import.meta.url), 'utf8')
+    const { token, party } = JSON.parse(raw) as { token: string; party: string }
+    if (token && party) return { token, party }
+  } catch {
+    // fall through — dev fast-loop / OIDC path uses operator-held compliance
+  }
+  return { token: _devOperatorToken, party: _operatorParty }
+}
+const { token: _complianceToken, party: _complianceParty } = resolveCompliance()
+
 // Default desks for a body-less POST /round (the §4 banks), read fresh from the
 // deploy's party map. openRound uses the caller's desks when provided.
 const resolveDesks = (): string[] => {
@@ -181,10 +201,16 @@ const ledgerEnd = async (): Promise<number> => {
 // Submit a command list as `actAs` and wait for completion. Throws a SECRET-FREE
 // error on non-200 (the request body carries only parties/templates/args; the token
 // lives in the Authorization header and is never echoed).
-const submitAndWait = async (commands: unknown[], actAs: string[]): Promise<void> => {
+// `bearer` overrides the Authorization header for actions submitted as a DISTINCT party
+// (IDEN-03: the compliance-authorized ApproveClearing). When omitted, the operator bearer
+// (dual-mode: dev HMAC or OIDC) is used. The token lives only in the header, never echoed.
+const submitAndWait = async (commands: unknown[], actAs: string[], bearer?: string): Promise<void> => {
+  const headers = bearer
+    ? { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json' }
+    : await authHeaders()
   const res = await fetch(`${PARTICIPANT}/v2/commands/submit-and-wait`, {
     method: 'POST',
-    headers: await authHeaders(),
+    headers,
     body: JSON.stringify({ commandId: `umbra-solver-${Date.now()}-${_cmdSeq++}`, actAs, commands }),
   })
   if (!res.ok) {
@@ -206,8 +232,9 @@ const exerciseChoice = (
   choice: string,
   choiceArgument: Record<string, unknown>,
   actAs: string = operatorParty,
+  bearer?: string,
 ): Promise<void> =>
-  submitAndWait([{ ExerciseCommand: { templateId: `${PKG}:${template}`, contractId, choice, choiceArgument } }], [actAs])
+  submitAndWait([{ ExerciseCommand: { templateId: `${PKG}:${template}`, contractId, choice, choiceArgument } }], [actAs], bearer)
 
 // Read the Operator's active Umbra contracts of a given entity (e.g. 'Round').
 // The Operator is a stakeholder of every Umbra contract it needs, so one party
@@ -393,6 +420,48 @@ export const closeRound = async (roundId: string): Promise<RoundStatus> => {
   return closed?.payload.status ?? 'Closed'
 }
 
+// ── IDEN-03 four-eyes: request → compliance-approve → collect the approval cid ─────
+// The on-ledger `Round.Clear` REQUIRES a matching compliance-signed `ClearingApproval`
+// (12-01). This mirrors how settle() gathers `orderCids`: the operator PROPOSES a
+// `ClearingApprovalRequest` at the deterministically-recomputed §8 price; the (distinct,
+// when configured) Compliance party exercises `ApproveClearing` → the operator+compliance
+// -signed `ClearingApproval` is born; the operator collects its ContractId to thread into
+// `Round.Clear`. In the dev fast-loop with no dedicated compliance credential this runs
+// operator-held (documented); the REAL distinct-authority separation is proven by
+// `daml test` (12-01) and is live UAT. The compliance token stays module-private.
+const gatherApprovalCid = async (roundId: string, clearingPrice: number): Promise<string> => {
+  // 1. Operator PROPOSES the recomputed clearing to Compliance.
+  await createContract('Umbra.Approval:ClearingApprovalRequest', {
+    operator: operatorParty,
+    compliance: _complianceParty,
+    roundId,
+    clearingPrice,
+  })
+  // 2. Compliance exercises ApproveClearing (distinct authority when configured) → the
+  //    two-party-signed ClearingApproval. The compliance bearer overrides the operator
+  //    header for THIS submission; falls back to the current operator bearer when no
+  //    dedicated compliance token exists (operator-held dev compliance).
+  const req = (await queryByEntity('ClearingApprovalRequest')).find(
+    (c) => c.createArgument.roundId === roundId && Number(c.createArgument.clearingPrice) === clearingPrice,
+  )
+  if (!req) throw new Error(`no ClearingApprovalRequest to approve for round ${roundId}`)
+  const approveBearer = _complianceToken || (await bearerToken())
+  await exerciseChoice(
+    'Umbra.Approval:ClearingApprovalRequest',
+    req.contractId,
+    'ApproveClearing',
+    {},
+    _complianceParty,
+    approveBearer,
+  )
+  // 3. Operator collects the resulting ClearingApproval cid (matching round + price).
+  const appr = (await queryByEntity('ClearingApproval')).find(
+    (c) => c.createArgument.roundId === roundId && Number(c.createArgument.clearingPrice) === clearingPrice,
+  )
+  if (!appr) throw new Error(`no ClearingApproval collected for round ${roundId}`)
+  return appr.contractId
+}
+
 // ── The token-agnostic, N-buyer Round.Clear settle sequence (DFIN-02/03) ──────────
 // `Round.Clear` cannot query the ACS, so the solver gathers every ContractId the
 // choice needs and passes them as additive Option-B args. The deterministic §8 output
@@ -437,7 +506,11 @@ export const settle = async (
     throw new Error(`round ${roundId} has no Buy-side allocation (no cross)`)
   }
 
-  // 5. Re-query the CURRENT Round cid, then exercise the token-agnostic Clear. The
+  // 5. IDEN-03 four-eyes: request + collect the compliance-signed ClearingApproval at the
+  //    recomputed price (mirrors the orderCids gather). Round.Clear fetches + asserts it.
+  const approvalCid = await gatherApprovalCid(roundId, clearingPrice)
+
+  // 6. Re-query the CURRENT Round cid, then exercise the token-agnostic Clear. The
   //    on-ledger guard (status == Closed || Cleared) rejects a non-settleable round.
   const round = await queryRound(roundId)
   if (!round) throw new Error(`round ${roundId} not found`)
@@ -449,10 +522,11 @@ export const settle = async (
     sellerBondCids,
     cashInstrument,
     bondInstrument,
+    approvalCid, // IDEN-03 four-eyes credential (compliance-signed; Round.Clear fetches + asserts it)
     referencePrice: REFERENCE_PRICE_STUB, // AUCT-04 labeled benchmark stub (drives only the SIGNED vs-reference bp)
   })
 
-  // 6. The Round was recreated as Settled. The verified result is reconstructed
+  // 7. The Round was recreated as Settled. The verified result is reconstructed
   //    locally — the on-ledger Clear re-verified §8, so local == on-ledger.
   const settled = await queryRound(roundId)
   return {
@@ -557,6 +631,11 @@ export const tamperClear = async (
   const round = await queryRound(roundId)
   if (!round) throw new Error(`round ${roundId} not found`)
 
+  // IDEN-03: gather a VALID approval at the CORRECT recomputed price (the four-eyes field
+  // is required on Clear). The §8 recompute-and-assert fires BEFORE the approval fetch, so
+  // the tampered price/allocation is what the backstop rejects — the tamper demo is intact.
+  const approvalCid = await gatherApprovalCid(roundId, clearingPrice)
+
   // Perturb ONLY numeric values (Pitfall 3): a still-valid Decimal price one dollar off
   // (wrong-price) OR an over-filled Buy leg breaking the recomputed allocation +
   // conservation (overfill). Everything else is the exact settle() shape.
@@ -575,6 +654,7 @@ export const tamperClear = async (
       sellerBondCids,
       cashInstrument,
       bondInstrument,
+      approvalCid, // valid four-eyes credential; the §8 backstop rejects the tampered values before this is fetched
       referencePrice: REFERENCE_PRICE_STUB, // additive arg; the tampered numeric values are still what the backstop rejects
     })
   } catch (e) {

@@ -28,7 +28,12 @@ let cidSeq = 0
 const createCalls: { template: string; args: Record<string, any> }[] = []
 const archiveCalls: { template: string; cid: string }[] = []
 // WOW-02: every `Clear` exercise the client submits (captured to assert the TAMPERED shape).
-const clearCalls: { clearingPrice: number; allocations: { desk: string; side: string; filledQty: number }[] }[] = []
+// IDEN-03: `approvalCid` captured too, to assert the four-eyes credential is threaded.
+const clearCalls: {
+  clearingPrice: number
+  allocations: { desk: string; side: string; filledQty: number }[]
+  approvalCid?: string
+}[] = []
 
 const umbra = (templateId: string, createArgument: Record<string, any>, contractId = `cid-${++cidSeq}`): Created => ({
   contractId,
@@ -61,6 +66,14 @@ const mockFetch = vi.fn(async (url: unknown, opts?: any) => {
         if (choice === 'Archive' || choice === 'Retire') {
           acs = acs.filter((c) => c.contractId !== contractId)
           archiveCalls.push({ template: templateId, cid: contractId })
+        } else if (choice === 'ApproveClearing') {
+          // IDEN-03: Compliance approves a ClearingApprovalRequest → the two-party-signed
+          // ClearingApproval is born (mirrors the on-ledger choice body). Copy the request's
+          // {operator, compliance, roundId, clearingPrice} onto the new ClearingApproval.
+          const req = acs.find((c) => c.contractId === contractId)
+          if (req) {
+            acs.push(umbra('#umbra:Umbra.Approval:ClearingApproval', { ...req.createArgument }))
+          }
         } else if (choice === 'Clear') {
           // Emulate the on-ledger recompute-and-assert backstop (Auction.daml 183/187/192)
           // for the §4 fixture (correct clear = price 100, A=10 Buy / B=8 Sell / C=2 Sell).
@@ -69,8 +82,13 @@ const mockFetch = vi.fn(async (url: unknown, opts?: any) => {
           const arg = choiceArgument as {
             clearingPrice: number
             allocations: { desk: string; side: string; filledQty: number }[]
+            approvalCid?: string
           }
-          clearCalls.push({ clearingPrice: arg.clearingPrice, allocations: arg.allocations })
+          clearCalls.push({
+            clearingPrice: arg.clearingPrice,
+            allocations: arg.allocations,
+            approvalCid: arg.approvalCid,
+          })
           const buyTotal = arg.allocations.filter((a) => a.side === 'Buy').reduce((s, a) => s + a.filledQty, 0)
           const sellTotal = arg.allocations.filter((a) => a.side === 'Sell').reduce((s, a) => s + a.filledQty, 0)
           const expected: Record<string, number> = { 'bankA::test|Buy': 10, 'bankB::test|Sell': 8, 'bankC::test|Sell': 2 }
@@ -289,6 +307,60 @@ describe('ledger.tamperClear (WOW-02 — the on-ledger recompute-and-assert back
       expect(r.rejected).toBe(true)
       expect(JSON.stringify(r)).not.toContain(SENTINEL_TOKEN)
     }
+    for (const call of [...logSpy.mock.calls, ...errSpy.mock.calls]) {
+      expect(JSON.stringify(call)).not.toContain(SENTINEL_TOKEN)
+    }
+
+    logSpy.mockRestore()
+    errSpy.mockRestore()
+  })
+})
+
+// ── IDEN-03: settle threads a compliance-signed four-eyes approval into Round.Clear ──
+describe('ledger.settle (IDEN-03 four-eyes — requests + collects a ClearingApproval)', () => {
+  it('proposes a ClearingApprovalRequest, collects the approval, and threads its cid into the §4 Clear', async () => {
+    seedSection4World('R1')
+
+    const { result } = await ledgerMod.settle('R1')
+
+    // §4 clears at 100.00 / matched 10 — the four-eyes step does not perturb the numbers.
+    expect(result.clearingPrice).toBe(100)
+    expect(result.totalMatched).toBe(10)
+
+    // Exactly one Clear, at the correct price, carrying a NON-EMPTY four-eyes approvalCid.
+    expect(clearCalls).toHaveLength(1)
+    expect(clearCalls[0].clearingPrice).toBe(100)
+    expect(typeof clearCalls[0].approvalCid).toBe('string')
+    expect((clearCalls[0].approvalCid ?? '').length).toBeGreaterThan(0)
+
+    // The operator PROPOSED a ClearingApprovalRequest and a compliance-signed
+    // ClearingApproval was collected (request → approve → collect wiring).
+    expect(createCalls.some((c) => c.template.endsWith(':ClearingApprovalRequest'))).toBe(true)
+    const appr = acs.find((c) => c.templateId.endsWith(':ClearingApproval'))
+    expect(appr).toBeTruthy()
+    // The threaded cid is exactly the collected on-ledger ClearingApproval.
+    expect(clearCalls[0].approvalCid).toBe(appr!.contractId)
+  })
+
+  it('the collected approval carries the recomputed §4 price (100) and the round id', async () => {
+    seedSection4World('R1')
+
+    await ledgerMod.settle('R1')
+
+    const appr = acs.find((c) => c.templateId.endsWith(':ClearingApproval'))!
+    expect(Number(appr.createArgument.clearingPrice)).toBe(100)
+    expect(appr.createArgument.roundId).toBe('R1')
+    expect(appr.createArgument.operator).toBe('operator::test')
+  })
+
+  it('never leaks the Operator token through the four-eyes settle path', async () => {
+    seedSection4World('R1')
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const { result } = await ledgerMod.settle('R1')
+
+    expect(JSON.stringify(result)).not.toContain(SENTINEL_TOKEN)
     for (const call of [...logSpy.mock.calls, ...errSpy.mock.calls]) {
       expect(JSON.stringify(call)).not.toContain(SENTINEL_TOKEN)
     }

@@ -4,13 +4,13 @@ milestone: v2.0
 milestone_name: Progress
 status: executing
 stopped_at: Completed 13-07-PLAN.md
-last_updated: "2026-07-10T20:13:16.369Z"
+last_updated: "2026-07-10T20:23:55.236Z"
 last_activity: 2026-07-10 -- Phase 13 execution started
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 54
-  completed_plans: 49
+  completed_plans: 50
   percent: 83
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 ## Current Position
 
 Phase: 13 (platform-baseline-adjacent-track-b-ongoing) — EXECUTING
-Plan: 10 of 14
+Plan: 11 of 14
 Status: Ready to execute
 Prev: Phase 11 built (settlement on CN Token Standard CIP-0056; §4 $100.00; verified 4/4, security 42/42, UI 20/24; live items → UAT).
 Next (NOT in this run): Phase 13 — Platform Baseline & Adjacent (Track B). Milestone v2.0 at 5/6 phases.
@@ -101,6 +101,7 @@ Last activity: 2026-07-10 -- Phase 13 execution started
 | Phase 13 P7 | 22min | 3 tasks | 6 files |
 | Phase 13 P08 | 12min | 3 tasks | 3 files |
 | Phase 13 P09 | 13min | 3 tasks | 6 files |
+| Phase 13 P10 | 8min | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -178,6 +179,7 @@ Recent decisions affecting current work:
 - [Phase ?]: [13-08 / ADJ-03]: Keyless Umbra.Issuance — ClearIssuance reuses §8 computeClearing (issuer=one Sell of trancheSize, bids=Buys) for ONE uniform issuance price, mints CIP-0056 Holdings to winners + collects cash via moveExactHolding (over-mint guard buyFills==sellFills<=trancheSize). Coupon pays pro-rata via settleBatch with a per-round couponsPaid double-pay marker; Redeem repays principal + archives bond Holdings. Distinct BOND2 tranche keeps §4 BONDX untouched (35.0); daml test green incl 100.00 golden; Clearing.daml byte-unchanged; web/daml.js regenerated+committed (Rfq+Issuance), web tsc clean.
 - [Phase ?]: 13-09: Lifecycle webhooks fire FIRE-AND-FORGET off existing open/close/settle seams — legal path byte-unchanged; a webhook rejection is swallowed
 - [Phase ?]: 13-09: POST /fix is an honest FIX 4.4 subset (order-entry only, maps+replies, no ledger submission); live OMS interop is a UAT gate
+- [Phase ?]: 13-10 ADJ-01: proposeCompeting races N AI configs concurrently, refereed by the deterministic §8 recompute (verify-only eligibility), ranked by (matched, surplus) — winner narrative-only, deterministic clear settles unconditionally; proposeClearing byte-unchanged
 
 ### Pending Todos
 
@@ -203,6 +205,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-10T20:13:06.145Z
+Last session: 2026-07-10T20:22:58.181Z
 Stopped at: Completed 13-07-PLAN.md
 Resume file: None

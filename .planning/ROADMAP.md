@@ -462,7 +462,7 @@ Plans:
 **Wave 3** *(blocked on 13-07)*
 
 - [x] 13-09-PLAN.md — OPS-04/05 integration surfaces: lifecycle webhook emits + register endpoints + POST /sandbox/round + POST /fix [OPS-04, OPS-05]
-- [ ] 13-10-PLAN.md — ADJ-01 agent.ts proposeCompeting (referee = deterministic §8; additive, off settlement path) [ADJ-01]
+- [x] 13-10-PLAN.md — ADJ-01 agent.ts proposeCompeting (referee = deterministic §8; additive, off settlement path) [ADJ-01]
 
 **Wave 4** *(blocked on 13-08, 13-09, 13-10)*
 
@@ -491,4 +491,4 @@ Build waves run in numeric order 8 → 9 → 10 → 11. Track A (Phase 12) runs 
 | 10. Cryptographic Privacy | 10/10 | Built · live UAT pending | 2026-07-10 |
 | 11. Settlement & Institutional Grade | 11/11 | Built · live UAT pending | 2026-07-10 |
 | 12. Real On-Chain (Canton DevNet) | 5/5 | Built · live UAT + external SV gate pending | 2026-07-10 |
-| 13. Platform Baseline & Adjacent | 9/14 | In Progress|  |
+| 13. Platform Baseline & Adjacent | 10/14 | In Progress|  |

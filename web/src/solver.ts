@@ -454,6 +454,165 @@ export type TopologyMeta = {
 export const getTopology = (id: string): Promise<TopologyMeta> =>
   call<TopologyMeta>(`/round/${id}/topology`)
 
+// ══ ADJ-01/02/03 competing / RFQ / issuance client seam (mirror solver/src/api.ts 13-11 + agent.ts) ══
+// The credential-free web seam the S2 leaderboard (this plan) + the S3 RFQ / S4 issuance panels
+// (later waves) consume. Every type is a BYTE-mirror of the authoritative solver wire shapes —
+// agent.ts RankedProposal/CompetingResult + the api.ts /competing, /rfq*, /issuance* handlers
+// (STATE 10-07 lesson: mirror the authoritative api.ts over an approximate sketch). Every fn rides
+// the single SOLVER_BASE_URL/call<T>() — NO :4000, NO auth header, NO operator token / ANTHROPIC_API_KEY
+// in the bundle; a network reject throws SolverError(0,'OFFLINE',OFFLINE_CAPTION) like the shipped five.
+
+// Trade side — mirrors the Daml/solver Side ('Buy' | 'Sell') used across the adjacent endpoints.
+export type Side = 'Buy' | 'Sell'
+
+// ── ADJ-01 competing solvers ──────────────────────────────────────────────────────
+// One solver entrant's honest config (model + temperature + optional prompt override).
+// Mirrors agent.ts SolverConfig EXACTLY — the systemPrompt is NEVER echoed back in a response.
+export type SolverConfig = { id: string; model: string; temperature: number; systemPrompt?: string }
+
+// A single ranked competitor — BYTE-mirror of agent.ts RankedProposal. `config` is the honest
+// tag ({ id, model, temperature }); for a verified entry the numbers are the DETERMINISTIC ones
+// (referee-authoritative) and `rationale` is the model's. NOTE: the wire nests the tag under
+// `config` (NOT a flat `configTag`) — the display helper (lib/leaderboard.ts) formats it.
+export type RankedProposal = {
+  config: { id: string; model: string; temperature: number }
+  verified: boolean
+  clearingPrice: number
+  matchedVolume: number
+  surplus: number
+  rationale: string
+}
+
+// POST /competing response — `{ roundId, winner, leaderboard, deterministic }` (api.ts L1364-1369).
+// `leaderboard` is the VERIFIED set only, ranked (matched desc, surplus desc); `winner` is
+// leaderboard[0] or null. `deterministic` carries the AUTHORITATIVE §8 numbers that actually settle —
+// the winner/leaderboard are NARRATIVE ONLY and no settlement path consults them (AI off the settle path).
+export type CompetingResponse = {
+  roundId: string
+  winner: RankedProposal | null
+  leaderboard: RankedProposal[]
+  deterministic: {
+    clearingPrice: number
+    allocations: Allocation[]
+    matchedVolume: number
+    surplus: number
+  }
+}
+
+// ADJ-01 — race the round's sealed batch across N solver configs. Advisory/narrative leaderboard;
+// keyless-degrades (all entries verified:false, winner null) and NEVER throws the Anthropic key.
+export const getCompeting = (roundId: string, configs: SolverConfig[]): Promise<CompetingResponse> =>
+  call<CompetingResponse>('/competing', {
+    method: 'POST',
+    body: JSON.stringify({ roundId, configs }),
+  })
+
+// ── ADJ-02 RFQ ────────────────────────────────────────────────────────────────────
+// POST /rfq (201) — mirror api.ts postRfq return.
+export type RfqPostResponse = { rfqId: string; requester: string; side: Side; quantity: number }
+// One requester-visible firm signed quote (GET /rfq/:id/quotes row — api.ts listQuotes).
+export type FirmQuote = { contractId: string; dealer: string; price: number; quantity: number }
+// GET /rfq/:id/quotes — `{ rfqId, quotes }` (api.ts L1394).
+export type RfqQuotesResponse = { rfqId: string; quotes: FirmQuote[] }
+// POST /rfq/:id/accept — the secret-free 1×1 DvP settle summary (api.ts acceptQuote return).
+export type RfqAcceptResponse = {
+  rfqId: string
+  quoteCid: string
+  requester: string
+  dealer: string
+  side: Side
+  quantity: number
+  price: number
+  cashAmount: number
+  settled: true
+}
+
+// ADJ-02 — post an RfqRequest to the (optional) invited dealer set.
+export const postRfq = (b: {
+  requester: string
+  side: Side
+  quantity: number
+  dealers?: string[]
+}): Promise<RfqPostResponse> =>
+  call<RfqPostResponse>('/rfq', { method: 'POST', body: JSON.stringify(b) })
+
+// ADJ-02 — list the requester-visible firm signed quotes for an RFQ.
+export const getRfqQuotes = (rfqId: string): Promise<RfqQuotesResponse> =>
+  call<RfqQuotesResponse>(`/rfq/${rfqId}/quotes`)
+
+// ADJ-02 — accept the (best) quote by its ContractId → settles the 1×1 batch via the SAME atomic DvP.
+export const acceptRfqQuote = (rfqId: string, quoteCid: string): Promise<RfqAcceptResponse> =>
+  call<RfqAcceptResponse>(`/rfq/${rfqId}/accept`, {
+    method: 'POST',
+    body: JSON.stringify({ quoteCid }),
+  })
+
+// ── ADJ-03 issuance ─────────────────────────────────────────────────────────────
+// POST /issuance open body (api.ts issuanceOpenBody) — the tranche + optional reserve + bids.
+export type IssuanceBid = { desk: string; quantity: number; limit: number }
+export type IssuanceOpenBody = {
+  issuer: string
+  bondInstrument: string
+  cashInstrument: string
+  trancheSize: number
+  reservePrice?: number
+  bids?: IssuanceBid[]
+}
+// POST /issuance (201) response — the CLEARED tranche at ONE uniform issuance price (api.ts L1427-1432).
+export type IssuanceClearResponse = {
+  issuanceId: string
+  clearingPrice: number
+  totalIssued: number
+  winners: { desk: string; filledQty: number }[]
+}
+// POST /issuance/:id/coupon response — the deterministic pro-rata coupon summary (api.ts payCoupon).
+export type CouponResponse = {
+  issuanceId: string
+  period: number
+  couponPerUnit: number
+  holders: number
+  totalPaid: number
+}
+// POST /issuance/:id/redeem response — the pro-rata principal repayment + retirement (api.ts redeem).
+export type RedeemResponse = {
+  issuanceId: string
+  principalPerUnit: number
+  holders: number
+  totalRepaid: number
+}
+
+// ADJ-03 — open AND clear a primary tranche at ONE uniform price (mint Holdings). The wire
+// POST /issuance is COMBINED: it opens then runs the deterministic §8 clear server-side inside
+// the SAME request (api.ts L1414-1434), so the response is already the cleared tranche.
+export const openIssuance = (b: IssuanceOpenBody): Promise<IssuanceClearResponse> =>
+  call<IssuanceClearResponse>('/issuance', { method: 'POST', body: JSON.stringify(b) })
+
+// ADJ-03 — the clear step. There is NO separate clear endpoint to mirror: POST /issuance already
+// opens+clears atomically (above), so clearIssuance is the SAME combined call, named for the S4
+// clear-reveal caller's readability (both exports are required by the client seam contract).
+export const clearIssuance = openIssuance
+
+// ADJ-03 — pay the deterministic pro-rata coupon to the current holders for a period.
+export const payCoupon = (
+  issuanceId: string,
+  period: number,
+  couponPerUnit: number,
+): Promise<CouponResponse> =>
+  call<CouponResponse>(`/issuance/${issuanceId}/coupon`, {
+    method: 'POST',
+    body: JSON.stringify({ period, couponPerUnit }),
+  })
+
+// ADJ-03 — repay principal pro-rata + retire the bond Holdings at maturity.
+export const redeemIssuance = (
+  issuanceId: string,
+  principalPerUnit: number,
+): Promise<RedeemResponse> =>
+  call<RedeemResponse>(`/issuance/${issuanceId}/redeem`, {
+    method: 'POST',
+    body: JSON.stringify({ principalPerUnit }),
+  })
+
 // ══ DFIN-01/02/03 settlement-meta (mirror solver/src/settlement.ts + the D13 provenance) ══
 // The additive Batch/Instruction settlement metadata the SettlementView delta (11-11)
 // consumes off the settle/preview/terminal-GET body. These types are DEFINED here (the

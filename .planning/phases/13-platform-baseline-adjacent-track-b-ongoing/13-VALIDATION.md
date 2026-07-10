@@ -1,10 +1,11 @@
 ---
 phase: 13
 slug: platform-baseline-adjacent-track-b-ongoing
-status: draft
-nyquist_compliant: false
+status: approved
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-07-10
+approved: 2026-07-10
 ---
 
 # Phase 13 — Validation Strategy
@@ -75,11 +76,11 @@ created: 2026-07-10
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags (all `vitest run`, not `vitest`)
-- [ ] Feedback latency < 45s (module tests)
-- [ ] `nyquist_compliant: true` set in frontmatter (after planner assigns task IDs)
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references
+- [x] No watch-mode flags (all `vitest run`, not `vitest`)
+- [x] Feedback latency < 45s (module tests)
+- [x] `nyquist_compliant: true` set in frontmatter (after planner assigns task IDs)
 
-**Approval:** pending
+**Approval:** approved 2026-07-10 (plan-checker: VERIFICATION PASSED, Dimension 8 PASS)

@@ -36,6 +36,9 @@ import Umbra.Settlement
   ( Instruction(..)
   , buildGrossInstructions, netLegs, conservationOk, settleBatch
   )
+-- ADJ-02 (13-06): the keyless RFQ side-mode — a firm signed Quote accepted by the
+-- requester settles a 1×1 batch via the SAME Umbra.Settlement.settleBatch DvP path.
+import Umbra.Rfq (RfqRequest(..), Quote(..), AcceptQuote(..))
 
 -- LEDG-02 — the §4 seed is the single correctness reference. Assert that after
 -- `initialize` the operator sees exactly the 5 §4 `Holding`s with the right
@@ -1530,3 +1533,177 @@ test_operator_cannot_self_approve = do
       operator; compliance; roundId = "R1"; clearingPrice = 100.0
   submitMustFail operator do
     exerciseCmd reqCid ApproveClearing
+
+-- ===========================================================================
+-- ADJ-02 (13-06) — the keyless RFQ side-mode. A requester posts an RfqRequest;
+-- one or more dealers respond with a FIRM signed Quote (signatory operator,
+-- dealer); the requester accepts the best quote and it settles a 1×1 batch via
+-- the SAME atomic `Umbra.Settlement.settleBatch` DvP path — cash + bond conserve,
+-- and quotes are structurally private to their requester. Rfq.daml is KEYLESS
+-- (fetch-by-ContractId + assertMsg), and the §4 clearing path is byte-unchanged.
+-- ===========================================================================
+
+-- ADJ-02 — accept-settles-1×1. bankA (requester) posts an RfqRequest to BUY 5
+-- units of the bond; bankB (dealer) responds with a FIRM Quote @100.0; the
+-- requester exercises AcceptQuote and the 1×1 batch settles through settleBatch:
+-- the bond lands with the requester, the cash with the dealer, and BOTH
+-- instruments conserve globally (Σ before == Σ after).
+test_rfq_accept_settles : Script ()
+test_rfq_accept_settles = do
+  Parties{..} <- initialize
+  let bond      = bondInstrumentOf operator
+      cash      = cashInstrumentOf operator
+      requester = bankA     -- buyer (funded 5000 USDCx by initialize)
+      dealer    = bankB     -- dealer (funded 20 BONDX + 1000 USDCx)
+
+  -- The requester posts the request (operator co-signs — signatory operator, requester).
+  reqCid <- submitMulti [requester, operator] [] do
+    createCmd RfqRequest with
+      operator; requester; dealers = [bankB, bankC]
+      instrument = bond; side = Buy; quantity = 5
+
+  -- The dealer responds with a FIRM quote @100.0 (its signature makes it binding).
+  quoteCid <- submitMulti [dealer, operator] [] do
+    createCmd Quote with
+      operator; dealer; requester; instrument = bond; price = 100.0; quantity = 5
+
+  -- Conservation reference: global instrument totals BEFORE the accept.
+  before <- query @Holding operator
+  let totalOf hs inst = sum [ h.amount | (_, h) <- hs, h.instrument == inst ]
+  totalOf before bond === 35.0    -- 20 (B) + 15 (C)
+  totalOf before cash === 7000.0  -- 5000 (A) + 1000 (B) + 1000 (C)
+
+  -- Locate the Option-B source Holding cids (Script-tier query, as settle does).
+  let bondSrc = findHoldingCid dealer    before bond   -- bankB's 20 BONDX
+      cashSrc = findHoldingCid requester before cash   -- bankA's 5000 USDCx
+
+  -- The requester accepts (controller = requester). The operator — a signatory of
+  -- RfqRequest and the settlement custodian — co-submits so the operator-custodied
+  -- source Holdings are readable to drive settleBatch (the SAME atomic DvP path as
+  -- Round.Clear, which likewise runs under operator custody).
+  submitMulti [requester, operator] [] do
+    exerciseCmd reqCid AcceptQuote with
+      quoteCid; bondSourceCid = bondSrc; cashSourceCid = cashSrc; cashInstrument = cash
+
+  -- Post-settle: the bond went to the requester, the cash to the dealer.
+  after <- query @Holding operator
+  let balOf owner inst = sum [ h.amount | (_, h) <- after, h.owner == owner, h.instrument == inst ]
+  balOf requester bond === 5.0      -- bought 5 bond units
+  balOf requester cash === 4500.0   -- 5000 − 5×100
+  balOf dealer    cash === 1500.0   -- 1000 + 5×100
+  balOf dealer    bond === 15.0     -- 20 − 5
+  -- Per-instrument conservation: no value created or destroyed.
+  totalOf after bond === 35.0
+  totalOf after cash === 7000.0
+
+-- ADJ-02 — accept-BEST. Two dealers quote DIFFERENT firm prices for the same
+-- BUY request; the requester accepts the BETTER (lower, since buying) quote and
+-- settlement uses THAT price. Discriminating: the accepted dealer receives
+-- 5×100 = 500 (not 5×101 = 505), and the worse-priced dealer receives nothing.
+test_rfq_best_quote : Script ()
+test_rfq_best_quote = do
+  Parties{..} <- initialize
+  let bond      = bondInstrumentOf operator
+      cash      = cashInstrumentOf operator
+      requester = bankA
+
+  reqCid <- submitMulti [requester, operator] [] do
+    createCmd RfqRequest with
+      operator; requester; dealers = [bankB, bankC]
+      instrument = bond; side = Buy; quantity = 5
+
+  -- Two firm quotes at different prices: bankB @101 (worse), bankC @100 (better).
+  _quoteB <- submitMulti [bankB, operator] [] do
+    createCmd Quote with
+      operator; dealer = bankB; requester; instrument = bond; price = 101.0; quantity = 5
+  quoteC  <- submitMulti [bankC, operator] [] do
+    createCmd Quote with
+      operator; dealer = bankC; requester; instrument = bond; price = 100.0; quantity = 5
+
+  -- The requester accepts the BEST (lower) price for a buy: bankC @100 over
+  -- bankB @101. The discriminating proof is the settled amount below (500, not 505).
+  before <- query @Holding operator
+  let bondSrc = findHoldingCid bankC     before bond   -- winning dealer delivers bond
+      cashSrc = findHoldingCid requester before cash
+  submitMulti [requester, operator] [] do
+    exerciseCmd reqCid AcceptQuote with
+      quoteCid = quoteC; bondSourceCid = bondSrc; cashSourceCid = cashSrc; cashInstrument = cash
+
+  after <- query @Holding operator
+  let balOf owner inst = sum [ h.amount | (_, h) <- after, h.owner == owner, h.instrument == inst ]
+  -- Settlement used the ACCEPTED price 100.0 → bankC received exactly 500 (NOT 505).
+  balOf bankC cash === 1500.0        -- 1000 + 5×100
+  balOf requester bond === 5.0
+  balOf requester cash === 4500.0    -- 5000 − 5×100 (proves 100 used, not 101)
+  -- The worse-priced (unaccepted) dealer bankB received nothing — its cash is untouched.
+  balOf bankB cash === 1000.0
+  balOf bankB bond === 20.0
+
+-- ADJ-02 — the Quote is FIRM (signatory dealer). A quote cannot exist on-ledger
+-- without the dealer's authority: neither the operator alone nor the requester can
+-- forge one (both submitMustFail). WITH the dealer's signature the firm quote IS
+-- created — proving the dealer's authority is the necessary-and-sufficient control.
+test_rfq_quote_is_firm : Script ()
+test_rfq_quote_is_firm = do
+  Parties{..} <- initialize
+  let bond = bondInstrumentOf operator
+  -- The operator alone CANNOT mint a dealer's quote (missing dealer authority).
+  submitMustFail operator do
+    createCmd Quote with
+      operator; dealer = bankB; requester = bankA; instrument = bond; price = 100.0; quantity = 5
+  -- Neither can the requester forge a rival dealer's firm quote.
+  submitMustFail bankA do
+    createCmd Quote with
+      operator; dealer = bankB; requester = bankA; instrument = bond; price = 100.0; quantity = 5
+  -- WITH the dealer + operator co-signing, the FIRM quote is created and binding.
+  quoteCid <- submitMulti [bankB, operator] [] do
+    createCmd Quote with
+      operator; dealer = bankB; requester = bankA; instrument = bond; price = 100.0; quantity = 5
+  Some q <- queryContractId bankB quoteCid
+  q.dealer === bankB
+  q.price === 100.0
+
+-- ADJ-02 — RFQ privacy is STRUCTURAL. A Quote's ONLY observer is its requester, so
+-- a rival dealer never sees another dealer's quote; and an RfqRequest's observer
+-- set (the invited dealers) is the privacy control, so an uninvited desk never
+-- sees the request. Both proven by per-party `query` (the disclosure boundary).
+test_rfq_privacy : Script ()
+test_rfq_privacy = do
+  Parties{..} <- initialize
+  let bond      = bondInstrumentOf operator
+      requester = bankA
+  -- Two dealers post firm quotes to the SAME requester.
+  _qB <- submitMulti [bankB, operator] [] do
+    createCmd Quote with
+      operator; dealer = bankB; requester; instrument = bond; price = 101.0; quantity = 5
+  _qC <- submitMulti [bankC, operator] [] do
+    createCmd Quote with
+      operator; dealer = bankC; requester; instrument = bond; price = 100.0; quantity = 5
+
+  -- The requester (sole observer) sees BOTH quotes addressed to it.
+  reqQuotes <- query @Quote requester
+  length reqQuotes === 2
+
+  -- Dealer bankB sees ONLY its own quote — bankC's is INVISIBLE (observer = requester).
+  bQuotes <- query @Quote bankB
+  length bQuotes === 1
+  assertMsg "dealer sees only its OWN quote" (all (\(_, q) -> q.dealer == bankB) bQuotes)
+  assertMsg "a rival dealer's quote is INVISIBLE" (notElem bankC [ q.dealer | (_, q) <- bQuotes ])
+  -- Symmetrically, bankC sees only its own quote.
+  cQuotes <- query @Quote bankC
+  length cQuotes === 1
+  assertMsg "dealer sees only its OWN quote" (all (\(_, q) -> q.dealer == bankC) cQuotes)
+  -- operator (Quote signatory) sees both.
+  opQuotes <- query @Quote operator
+  length opQuotes === 2
+
+  -- The RfqRequest observer set is the privacy control: a request naming ONLY
+  -- bankB as an invited dealer is invisible to the uninvited bankC.
+  _ <- submitMulti [requester, operator] [] do
+    createCmd RfqRequest with
+      operator; requester; dealers = [bankB]
+      instrument = bond; side = Buy; quantity = 5
+  bReqs <- query @RfqRequest bankB
+  cReqs <- query @RfqRequest bankC
+  length bReqs === 1   -- the invited dealer sees the request
+  length cReqs === 0   -- the uninvited dealer does NOT

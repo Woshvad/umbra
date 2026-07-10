@@ -98,4 +98,6 @@ export const verifyToken = (token: string): Promise<JWTVerifyResult<JWTPayload>>
   jwtVerify(token, jwks(), {
     algorithms: ['RS256'], // pin — reject HS256/none downgrade (alg confusion)
     audience: CANTON_AUDIENCE,
+    issuer: oidcIssuer(), // pin `iss` to OIDC_ISSUER (MED-03 — defense-in-depth vs a
+    // same-audience token from another issuer sharing a JWKS/key set)
   })

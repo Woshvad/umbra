@@ -46,11 +46,12 @@ const captured: { tokenBodies: string[] } = { tokenBodies: [] }
 // Sign an RS256 token with a given private key + claims, using KID so the JWKS selects it.
 const signToken = (
   key: PrivKey,
-  { aud = AUDIENCE, expired = false }: { aud?: string; expired?: boolean } = {},
+  { aud = AUDIENCE, iss = OIDC_ISSUER, expired = false }: { aud?: string; iss?: string; expired?: boolean } = {},
 ): Promise<string> => {
   const jwt = new SignJWT({})
     .setProtectedHeader({ alg: 'RS256', kid: KID })
     .setSubject(OIDC_CLIENT_ID)
+    .setIssuer(iss) // MED-03: verifyToken now pins `iss` to OIDC_ISSUER
     .setAudience(aud)
     .setIssuedAt()
     .setExpirationTime(expired ? '-5m' : '5m')
@@ -133,6 +134,14 @@ describe('auth.verifyToken (RS256 JWKS verify, mocked JWKS)', () => {
     vi.stubGlobal('fetch', stubFetch(stale))
 
     await expect(auth.verifyToken(stale)).rejects.toThrow()
+  })
+
+  it('REJECTS a WRONG-ISSUER token (MED-03 — iss pinned to OIDC_ISSUER)', async () => {
+    // Correct key + audience, but minted by a DIFFERENT issuer sharing the JWKS.
+    const badIss = await signToken(correct.privateKey, { iss: 'https://evil-issuer.example/realms/umbra' })
+    vi.stubGlobal('fetch', stubFetch(badIss))
+
+    await expect(auth.verifyToken(badIss)).rejects.toThrow()
   })
 })
 

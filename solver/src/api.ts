@@ -33,6 +33,9 @@ import type { SealResult, DrandRoundInfo } from './tlock.js'
 import type { ClearingProof, Groth16Proof, PublicSignals, VKey } from './zk/prove.js'
 import type { ProofAnchor } from './zk/verify.js'
 import type { StageOffsets } from './timemachine.js'
+// VIZ-03 party→participant hosting map (TYPE-ONLY — erased at compile; the real probe
+// is dependency-injected via AppDeps, exactly like the ledger/crypto clients).
+import type { TopologyResult } from './topology.js'
 
 // The Vite dev origin — the ONLY allowed CORS origin (never '*').
 export const ALLOWED_ORIGIN = 'http://localhost:5173'
@@ -184,6 +187,32 @@ export interface AppDeps {
   // cleared → settled). The browser replays these offsets per-party to reconstruct
   // "what desk X could see at stage N". Numeric bookmarks only — never a token.
   getStageOffsets: (roundId: string) => Promise<StageOffsets> | StageOffsets
+
+  // ── VIZ-03 party→participant hosting map (topology.ts) ───────────────────────────
+  // The honest party→participant residency for the "07 Topology" view. CREDENTIAL-FREE:
+  // the admin/probe token lives inside topology.ts's injected probe closure and NEVER
+  // crosses out — only party ids + participant ids + the demo-real caption. `demoReal`
+  // fires the SAME PARTICIPANT (LOCALNET) honesty caption when every desk maps to one
+  // participant (Pitfall 7 / T-11-03-OVERCLAIM). Live-ledger-optional: a down LocalNet
+  // yields an empty/degraded map, never an error.
+  hostingMap: () => Promise<TopologyResult>
+
+  // ── WOW-07 guest 4th-desk bootstrap (index.ts wiring) ────────────────────────────
+  // The credential-free /join bootstrap for the guest desk: its party id + the /join
+  // URL + the roundId. It carries NO scoped token — the guest token is minted server-
+  // /script-side into web/src/tokens.json (guest-onboard.mjs, the D6 boundary) and
+  // delivered to the /join page there; it must NEVER appear in this response or a QR
+  // payload (V2/V4 security / T-11-03-QR).
+  onboardGuest: () => Promise<GuestBootstrap>
+}
+
+// WOW-07: the guest /join bootstrap returned by GET /guest/bootstrap. Party id + join
+// URL + roundId ONLY — the scoped token is delivered via tokens.json server-side, never
+// here and never in a QR (T-11-03-QR).
+export interface GuestBootstrap {
+  party: string
+  joinUrl: string
+  roundId: string
 }
 
 // ── A typed application error that maps cleanly onto the secret-safe envelope ────
@@ -840,6 +869,33 @@ export const createApp = (deps: AppDeps): Express => {
       const { id } = req.params
       const offsets = await deps.getStageOffsets(id)
       res.json({ roundId: id, offsets })
+    }),
+  )
+
+  // GET /round/:id/topology — VIZ-03 party→participant hosting map. CREDENTIAL-FREE
+  // read-only passthrough (mirrors /proof): the admin/probe token lives inside the
+  // injected probe (topology.ts) and NEVER crosses out — only party ids + participant
+  // ids + the demo-real caption. The `demoReal` flag drives the HARD honesty caption.
+  // Live-ledger-optional: deps.hostingMap degrades gracefully when LocalNet is down.
+  app.get(
+    '/round/:id/topology',
+    wrap(async (req, res) => {
+      const { id } = req.params
+      const topology = await deps.hostingMap()
+      res.json({ roundId: id, ...topology })
+    }),
+  )
+
+  // GET /guest/bootstrap — WOW-07 guest 4th-desk /join bootstrap. Returns the guest
+  // party id + the /join URL + roundId; NEVER the scoped token (it is delivered to the
+  // /join page via tokens.json, minted server-/script-side by guest-onboard.mjs — the
+  // token must not appear in any GET body or QR payload, T-11-03-QR). Credential-free,
+  // side-effect-free (party allocation is the guest-onboard.mjs job, not this GET).
+  app.get(
+    '/guest/bootstrap',
+    wrap(async (_req, res) => {
+      const bootstrap = await deps.onboardGuest()
+      res.json(bootstrap)
     }),
   )
 

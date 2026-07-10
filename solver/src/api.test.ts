@@ -35,7 +35,9 @@ import {
   type SealedOrder,
   type RoundView,
   type SettleResult,
+  type GuestBootstrap,
 } from './api.js'
+import type { TopologyResult } from './topology.js'
 import type { SealResult, DrandRoundInfo } from './tlock.js'
 import type { ClearingProof } from './zk/prove.js'
 import type { ProofAnchor } from './zk/verify.js'
@@ -153,6 +155,19 @@ const makeDeps = (overrides: Partial<AppDeps>): AppDeps => ({
   ),
   // VIZ-02 stage-offset stub — a representative recorded map; the stage-offsets test overrides.
   getStageOffsets: vi.fn(async (): Promise<StageOffsets> => ({ open: 10, sealed: 24, settled: 42 })),
+  // VIZ-03 topology stub — a representative demo-real single-participant map; tests override.
+  hostingMap: vi.fn(async (): Promise<TopologyResult> => ({
+    nodes: [{ participant: 'app-provider', parties: ['bankA::x', 'bankB::y', 'bankC::z'] }],
+    perParty: { 'bankA::x': ['app-provider'], 'bankB::y': ['app-provider'], 'bankC::z': ['app-provider'] },
+    demoReal: true,
+    caption: 'SAME PARTICIPANT (LOCALNET)',
+  })),
+  // WOW-07 guest bootstrap stub — party + join URL + roundId, NEVER a token; tests override.
+  onboardGuest: vi.fn(async (): Promise<GuestBootstrap> => ({
+    party: 'bankD::guest',
+    joinUrl: '/join?round=R1',
+    roundId: 'R1',
+  })),
   // Real pure §8 helpers — solve-preview asserts true deterministic clearing.
   computeClearing,
   matchedAt,
@@ -1066,6 +1081,110 @@ describe('solver §11 HTTP API', () => {
     expect(res.status).toBe(200)
     expect(body).not.toContain(SENTINEL_API_KEY)
     expect(body).not.toContain(SENTINEL_TOKEN)
+  })
+
+  // ── VIZ-03 topology + WOW-07 guest bootstrap ──────────────────────────────────────
+  it('GET /round/:id/topology returns the party→participant hosting map (credential-free)', async () => {
+    const hostingMap = vi.fn(async (): Promise<TopologyResult> => ({
+      nodes: [{ participant: 'app-provider', parties: ['bankA::x', 'bankB::y', 'bankC::z'] }],
+      perParty: { 'bankA::x': ['app-provider'], 'bankB::y': ['app-provider'], 'bankC::z': ['app-provider'] },
+      demoReal: true,
+      caption: 'SAME PARTICIPANT (LOCALNET)',
+    }))
+    const deps = makeDeps({ hostingMap })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/topology`)
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    expect(body.roundId).toBe('R1')
+    expect(body.demoReal).toBe(true)
+    // The HARD honesty caption fires when all desks map to one participant (Pitfall 7).
+    expect(body.caption).toBe('SAME PARTICIPANT (LOCALNET)')
+    expect(body.nodes).toHaveLength(1)
+    expect(body.perParty['bankA::x']).toEqual(['app-provider'])
+    expect(hostingMap).toHaveBeenCalledTimes(1)
+  })
+
+  it('GET /round/:id/topology surfaces a distributed (multi-node) map when desks are split', async () => {
+    const hostingMap = vi.fn(async (): Promise<TopologyResult> => ({
+      nodes: [
+        { participant: 'app-user', parties: ['bankA::x'] },
+        { participant: 'sv', parties: ['bankB::y'] },
+        { participant: 'app-provider', parties: ['bankC::z'] },
+      ],
+      perParty: { 'bankA::x': ['app-user'], 'bankB::y': ['sv'], 'bankC::z': ['app-provider'] },
+      demoReal: false,
+      caption: 'DISTRIBUTED (MULTI-NODE)',
+    }))
+    const deps = makeDeps({ hostingMap })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/round/R1/topology`)
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    expect(body.demoReal).toBe(false)
+    expect(body.nodes).toHaveLength(3)
+  })
+
+  it('GET /guest/bootstrap returns party + join URL + roundId and NEVER a token (WOW-07)', async () => {
+    const onboardGuest = vi.fn(async (): Promise<GuestBootstrap> => ({
+      party: 'bankD::guest',
+      joinUrl: '/join?round=R1',
+      roundId: 'R1',
+    }))
+    const deps = makeDeps({ onboardGuest })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/guest/bootstrap`)
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    expect(body.party).toBe('bankD::guest')
+    expect(body.joinUrl).toBe('/join?round=R1')
+    expect(body.roundId).toBe('R1')
+    // The scoped guest token is NEVER part of the bootstrap (T-11-03-QR).
+    expect(body).not.toHaveProperty('token')
+    expect(body).not.toHaveProperty('jwt')
+    expect(onboardGuest).toHaveBeenCalledTimes(1)
+  })
+
+  it('topology + guest bootstrap never echo the operator token, API key, or a scoped guest token (secret sweep)', async () => {
+    // A sentinel scoped guest token — the WOW-07 secret that must live ONLY in tokens.json,
+    // never in a GET body or QR. The stubs close over all three sentinels as the real
+    // ledger/agent/onboarding hold their secrets; none may reach the wire.
+    const SENTINEL_GUEST_TOKEN = 'eyJhbGci-SENTINEL-GUEST-JWT-do-not-leak-4d1e8a'
+    const hostingMap = vi.fn(async (): Promise<TopologyResult> => {
+      void SENTINEL_TOKEN
+      return {
+        nodes: [{ participant: 'app-provider', parties: ['bankA::x'] }],
+        perParty: { 'bankA::x': ['app-provider'] },
+        demoReal: true,
+        caption: 'SAME PARTICIPANT (LOCALNET)',
+      }
+    })
+    const onboardGuest = vi.fn(async (): Promise<GuestBootstrap> => {
+      // The onboarding holds the scoped guest token (in tokens.json) but returns none of it.
+      void SENTINEL_GUEST_TOKEN
+      void SENTINEL_API_KEY
+      return { party: 'bankD::guest', joinUrl: '/join?round=R1', roundId: 'R1' }
+    })
+    const deps = makeDeps({ hostingMap, onboardGuest })
+    const started = await listen(deps)
+    server = started.server
+
+    const topoWire = await fetch(`${started.base}/round/R1/topology`).then((r) => r.text())
+    const guestWire = await fetch(`${started.base}/guest/bootstrap`).then((r) => r.text())
+    const combined = `${topoWire}\n${guestWire}`
+
+    expect(combined).not.toContain(SENTINEL_TOKEN)
+    expect(combined).not.toContain(SENTINEL_API_KEY)
+    expect(combined).not.toContain(SENTINEL_GUEST_TOKEN)
   })
 
   it('CORS is scoped to http://localhost:5173 and never wildcard for a foreign origin', async () => {

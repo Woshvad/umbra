@@ -87,6 +87,12 @@ export interface BuildDepsArgs {
   anchorProof?: AppDeps['anchorProof']
   tamperProof?: AppDeps['tamperProof']
   getStageOffsets?: AppDeps['getStageOffsets']
+  // VIZ-03 / WOW-07 — the topology hosting map + the guest /join bootstrap. Optional so
+  // the boot-wiring unit test (index.test.ts) need not inject them; buildDeps defaults
+  // each to an inert, secret-free stub. main() supplies the real topology.ts probe +
+  // the guest bootstrap composed from the deploy party map.
+  hostingMap?: AppDeps['hostingMap']
+  onboardGuest?: AppDeps['onboardGuest']
 }
 
 // Assemble the AppDeps so the API routes are wired to the ledger + clock.
@@ -118,6 +124,12 @@ export const buildDeps = (args: BuildDepsArgs): AppDeps => {
   const tamperProof: AppDeps['tamperProof'] =
     args.tamperProof ?? (async () => ({ rejected: true, verified: false as const, error: '' }))
   const getStageOffsets: AppDeps['getStageOffsets'] = args.getStageOffsets ?? (() => ({}))
+  // VIZ-03 / WOW-07: inert, secret-free defaults for the boot-wiring path (index.test.ts).
+  // main() overrides both with the real topology probe + guest bootstrap.
+  const hostingMap: AppDeps['hostingMap'] =
+    args.hostingMap ?? (async () => ({ nodes: [], perParty: {}, demoReal: true, caption: 'SAME PARTICIPANT (LOCALNET)' }))
+  const onboardGuest: AppDeps['onboardGuest'] =
+    args.onboardGuest ?? (async () => ({ party: '', joinUrl: '/join', roundId: '' }))
   return {
     // POST /round → ledger create THEN timer start (both).
     openRound: async (roundId, desks, windowSeconds): Promise<RoundView> => {
@@ -158,6 +170,10 @@ export const buildDeps = (args: BuildDepsArgs): AppDeps => {
     anchorProof,
     tamperProof,
     getStageOffsets,
+    // VIZ-03: the party→participant hosting map (credential-free).
+    hostingMap,
+    // WOW-07: the guest /join bootstrap (party + URL + roundId; never a token).
+    onboardGuest,
     computeClearing: math.computeClearing,
     matchedAt: math.matchedAt,
     demandAt: math.demandAt,
@@ -399,6 +415,66 @@ const main = async (): Promise<void> => {
     }
   }
 
+  // ── VIZ-03 topology probe (topology.ts) + WOW-07 guest bootstrap ──────────────────
+  // The hosting map probes each participant's /v2/parties with the ADMIN bearer
+  // (ledger-api-user, the same token xnode-up.mjs uses across :2975/:3975/:4975). The
+  // token lives ONLY inside the probe closure — it never crosses into the TopologyResult
+  // (credential-free boundary, SOLV-04 / T-11-03-LEAK). Live-ledger-optional: hostingMap
+  // catches a down participant per-probe and degrades to an honest partial/empty map.
+  const topology = await import('./topology.js')
+  const readAdminBearer = (): string => {
+    try {
+      const raw = readFileSync(fileURLToPath(new URL('../../scripts/.operator-token', import.meta.url)), 'utf8')
+      return (JSON.parse(raw) as { token?: string }).token ?? ''
+    } catch {
+      return ''
+    }
+  }
+  const readDeskParties = (): string[] => {
+    try {
+      const raw = readFileSync(fileURLToPath(new URL('../../daml/parties.json', import.meta.url)), 'utf8')
+      const p = JSON.parse(raw) as Record<string, string>
+      // Focus the hosting map on the DESK parties (A/B/C + the guest bankD when present)
+      // so demoReal reflects desk residency, not the participants' own admin parties.
+      return [p.bankA, p.bankB, p.bankC, p.bankD].filter((x): x is string => Boolean(x))
+    } catch {
+      return []
+    }
+  }
+  const readGuestParty = (): string => {
+    try {
+      const raw = readFileSync(fileURLToPath(new URL('../../web/src/tokens.json', import.meta.url)), 'utf8')
+      // Read ONLY the guest party id — the scoped token in tokens.json is NEVER surfaced
+      // by the bootstrap endpoint (T-11-03-QR).
+      return (JSON.parse(raw) as Record<string, { party?: string }>).bankD?.party ?? ''
+    } catch {
+      return ''
+    }
+  }
+  const hostingMap: AppDeps['hostingMap'] = () => {
+    const adminBearer = readAdminBearer()
+    const probe = async (base: string): Promise<{ party: string; isLocal: boolean }[]> => {
+      const res = await fetch(`${base}/v2/parties`, { headers: { Authorization: `Bearer ${adminBearer}` } })
+      if (!res.ok) throw new Error(`/v2/parties HTTP ${res.status}`)
+      const json = (await res.json()) as { partyDetails?: { party: string; isLocal: boolean }[] }
+      return (json.partyDetails ?? []).map((d) => ({ party: d.party, isLocal: Boolean(d.isLocal) }))
+    }
+    return topology.hostingMap(probe, { desks: readDeskParties() })
+  }
+  const onboardGuest: AppDeps['onboardGuest'] = async () => {
+    // Pick a live round for the /join deep-link (Open preferred), degrade to R1. No token.
+    let roundId = 'R1'
+    try {
+      const live = await ledger.queryAllRounds()
+      const open = live.find((r) => r.status === 'Open') ?? live[0]
+      if (open) roundId = open.roundId
+    } catch {
+      // ledger unreachable — the default deep-link still works once a round exists.
+    }
+    // The /join URL carries ONLY the roundId (the QR encodes THIS) — never the token.
+    return { party: readGuestParty(), joinUrl: `/join?round=${encodeURIComponent(roundId)}`, roundId }
+  }
+
   const deps = buildDeps({
     ledger: {
       openRound: openRoundView,
@@ -440,6 +516,10 @@ const main = async (): Promise<void> => {
     tamperProof,
     // VIZ-02: the recorded stage→offset map for the round (timemachine.ts).
     getStageOffsets: (roundId) => timemachine.getStageOffsets(roundId),
+    // VIZ-03: the credential-free party→participant hosting map (topology.ts probe).
+    hostingMap,
+    // WOW-07: the guest /join bootstrap (party + URL + roundId; never a token).
+    onboardGuest,
   })
 
   const app = createApp(deps)

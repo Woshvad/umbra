@@ -162,7 +162,7 @@ Scoped for milestone v2.0. Grounded in the **current** stack (Daml 3.4.11 + Cant
 
 ### Agentic Payments (PAY) — milestone v2.1
 
-- [ ] **PAY-01**: x402 metered access to the AI solver — the AI endpoints (`/solve-preview`, `/competing`) are gated behind a spec-accurate Canton HTTP 402; settlement is swappable behind a `FacilitatorClient` interface (`self` on-ledger USDCx verify | `canton-cc` FTP facilitator `/verify`+`/settle` for real Canton Coin); metering is default-OFF so the §4 fixture and canonical demo are byte-unchanged; the fee is separate from the securities DvP and the AI stays off the settlement path (x402 is live on Canton via FTP dev-fund #78; real $CC-on-DevNet settlement = UAT)
+- [x] **PAY-01**: x402 metered access to the AI solver — the AI endpoints (`/solve-preview`, `/competing`) are gated behind a spec-accurate Canton HTTP 402; settlement is swappable behind a `FacilitatorClient` interface (`self` on-ledger USDCx verify | `canton-cc` FTP facilitator `/verify`+`/settle` for real Canton Coin); metering is default-OFF so the §4 fixture and canonical demo are byte-unchanged; the fee is separate from the securities DvP and the AI stays off the settlement path (x402 is live on Canton via FTP dev-fund #78; real $CC-on-DevNet settlement = UAT)
 
 ## Out of Scope
 

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: Progress
 status: executing
-stopped_at: Completed 14-02-PLAN.md (FacilitatorClient factory — self on-ledger USDCx + canton-cc FTP fetch — PAY-01)
-last_updated: "2026-07-11T00:36:00.000Z"
-last_activity: 2026-07-11 -- Completed 14-02 (FacilitatorClient self + canton-cc backends)
+stopped_at: Completed 14-03-PLAN.md (x402 gate boot wiring + X402_* config + .env.example + 14-UAT.md — PAY-01 closed offline)
+last_updated: "2026-07-11T00:52:00.000Z"
+last_activity: 2026-07-11 -- Completed 14-03 (x402 gate wired into api.ts/index.ts; Phase 14 built 3/3)
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 3
-  completed_plans: 2
-  percent: 67
+  completed_plans: 3
+  percent: 100
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 
 ## Current Position
 
-Phase: 14 (agentic-payments-x402) — EXECUTING
-Plan: 3 of 3
-Status: Executing Phase 14 (2/3 plans complete)
-Prev: 14-02 complete — FacilitatorClient factory (self on-ledger USDCx verify/settle via reused Holding Split/Reassign, no new Daml; canton-cc FTP /verify+/settle over injectable fetch, offline-mocked); ledger.ts listHoldings+moveFee; solver 325/325, §4 $100.00, tsc clean (only the pre-existing idempotency.test.ts:193 deferred error).
-Next: 14-03 (wire gate into api.ts/index.ts — optional DI, per-route, default-OFF — + X402_* config + .env.example + 14-UAT.md). Then 14-UAT.md for live $CC-on-DevNet.
-Last activity: 2026-07-11 -- Completed 14-02 (FacilitatorClient self + canton-cc backends)
+Phase: 14 (agentic-payments-x402) — BUILT (3/3 plans; live UAT pending)
+Plan: 3 of 3 — COMPLETE
+Status: Phase 14 built 3/3 — PAY-01 closed offline; live gates → 14-UAT.md
+Prev: 14-03 complete — x402 gate wired into api.ts (AppDeps.x402? optional DI, per-route on EXACTLY /solve-preview + /competing, DISABLED no-op default) + index.ts (X402_* config default-OFF, X402_FACILITATOR_KEY via SecretsProvider, createFacilitator→createX402Gate→buildDeps threading) + .env.example + 14-UAT.md. solver 331/331, §4 $100.00 (test_clears_at_100 ok), tsc clean of new errors (only the pre-existing idempotency.test.ts:193 deferred).
+Next: Phase 14 verification / live UAT (real x402 client end-to-end, self USDCx on DevNet, canton-cc real $CC = SV-sponsorship gate, GET /supported network/asset confirm — all in 14-UAT.md).
+Last activity: 2026-07-11 -- Completed 14-03 (x402 gate boot wiring; Phase 14 built 3/3)
 
 ## Performance Metrics
 
@@ -107,6 +107,8 @@ Last activity: 2026-07-11 -- Completed 14-02 (FacilitatorClient self + canton-cc
 | Phase 13 P13 | ~12min | 1 tasks | 3 files |
 | Phase 13 P14 | ~14min | 1 tasks | 3 files |
 | Phase 14 P01 | ~7min | 2 tasks | 2 files |
+| Phase 14 P02 | ~15min | 2 tasks | 3 files |
+| Phase 14 P03 | ~22min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -193,6 +195,8 @@ Recent decisions affecting current work:
 - [Phase ?]: S4 IssuancePanel BUILT (not deferred): primary-issuance uniform-price clear reusing CrossingChart + PriceReveal (the one allowed lime use) + coupon/redeem LifecycleRow, on a self-contained dark stage; theatre-plane credential-free
 - [14-01 / PAY-01]: solver/src/x402.ts is a hand-rolled, dependency-free x402 **v1** payment gate (NO x402-express — EVM/Solana-oriented, can't speak Canton; recorded deviation). buildAccepts emits the v1 accepts[] envelope (Canton-Coin primary + honestly-labeled operator-custody USDCx-self second; `maxAmountRequired`, never v2 `amount`) — ALL v1 field mapping isolated to that one helper for a cheap v2 flip. decodePayment = base64→JSON→paymentPayloadSchema (zod `.strict`, bounded lengths, 8KB header bound) throwing X402Error(reason-code-only, never the raw header). Gate's FIRST line `if (!opts.enabled) return next()` = the default-OFF byte-unchanged invariant (proven by `off unchanged` test). verify→settle delegated to an injected FacilitatorClient (Plan 02 implements self|canton-cc); TTL-bounded spent-nonce + spent-holdingCid sets + validBefore expiry (nonce_replayed/payment_expired/invalid_holding). safeReason whitelists facilitator reasons so a backend can't leak a secret; secret-sweep proves an X402_FACILITATOR_KEY/Authorization sentinel never reaches a 402 body or X-PAYMENT-RESPONSE. validBefore=unix ms, atomic units 2dp (toAtomic/fromAtomic). createX402Gate/PaymentGate/X402Options = the DI seam for Plan 03. 14 tests, solver 305/305, §4 still $100.00, zero new npm deps.
 - [14-01 / pre-existing]: idempotency.test.ts:193 has a pre-existing `tsc` TS2571 (Response.json() typed `unknown` under @types/node) — verified present WITHOUT the x402 files; out of executor scope, logged to phases/14/deferred-items.md. x402 test uses a `body()` helper to narrow `.json()`.
+- [14-02 / PAY-01]: solver/src/facilitator.ts createFacilitator(config) selects self (on-ledger USDCx verify/settle over an injected FacilitatorLedger port — owner===payer + USDCx + unlocked + amount≥price predicate; settle=moveFee reused Holding Split/Reassign, NO new Daml) | canton-cc (FTP /verify+/settle over injectable fetch, Bearer key, non-2xx→status-only secret-free reason, offline-mocked). ledger.ts gains listHoldings + moveFee (operator-authority, standalone — never on the /settle/Round.Clear/§8 path). solver 325/325, §4 $100.00, tsc clean.
+- [14-03 / PAY-01]: x402 gate wired into api.ts (AppDeps.x402? optional DI next to idempotency?, defaulted ONCE in createApp to `createX402Gate({ enabled:false })` = a DISABLED no-op; `x402.middleware` per-route on EXACTLY GET /round/:id/solve-preview + POST /competing, NEVER app.use — no free/lifecycle/settlement path can 402) + index.ts (main() reads X402_ENABLED/FACILITATOR/NETWORK/ASSET/PRICE/PAY_TO/FACILITATOR_URL via process.env??default, default-OFF; X402_FACILITATOR_KEY via SecretsProvider.get module-private canton-cc-only; createFacilitator(listHoldings/moveFee port)→createX402Gate→buildDeps({x402}); BuildDepsArgs.x402? threads onto AppDeps). Relaxed createX402Gate to accept a disabled-only {enabled:false} (Rule 3 blocking fix; NOOP_FACILITATOR never called). Dropped the optional /status availability line (PaymentGate exposes only middleware; plan-droppable — keeps token-free /status + secret-sweep clean). .env.example documents all X402_* (X402_ENABLED=false default). 14-UAT.md records the four live gates (real x402 client; self USDCx on DevNet; canton-cc real $CC = Phase-12 SV-sponsorship gate; GET /supported confirm). solver 331/331, §4 $100.00 (test_clears_at_100 ok), tsc clean of new errors, zero new npm deps. PAY-01 CLOSED offline; Phase 14 built 3/3.
 
 ### Pending Todos
 
@@ -218,6 +222,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-10T23:23:30.000Z
-Stopped at: Completed 14-01-PLAN.md (x402 v1 wire envelope + default-OFF 402 gate + FacilitatorClient interface — PAY-01)
+Last session: 2026-07-11T00:52:00.000Z
+Stopped at: Completed 14-03-PLAN.md (x402 gate boot wiring + X402_* config + .env.example + 14-UAT.md — PAY-01 closed offline; Phase 14 built 3/3)
 Resume file: None

@@ -1,0 +1,201 @@
+-- Umbra — ADJ-03 primary bond issuance: a KEYLESS, uniform-price EasyAuction that
+-- REUSES the existing §8 `computeClearing` to allocate a new bond tranche at ONE
+-- uniform price and mint `Holding`s (CIP-0056 conformant) to the winning desks,
+-- plus a post-settlement `Coupon`/`Redeem` lifecycle.
+--
+-- Three load-bearing design facts:
+--
+--   * REUSE §8, DON'T REINVENT IT. `ClearIssuance` builds the issuance order book
+--     — the issuer as ONE `Sell` of `trancheSize` at `reservePrice`, each desk's
+--     sealed bid as a `Buy` — and calls the SAME `Umbra.Clearing.computeClearing`
+--     the §4 secondary market uses. There is NO parallel clearing mechanism: the
+--     single uniform issuance price and the per-winner allocation come straight
+--     from §8 (threat T-13-22, over-mint: the minted amount == the cleared cross,
+--     asserted on-ledger by `buyFills == sellFills`).
+--
+--   * MINT = `create Holding`. Each winning allocation mints a bond `Holding`
+--     (`operator` custodian, `owner = winner`), conforming to
+--     `Splice.Api.Token.HoldingV1.Holding` (CIP-0056) exactly as the §4 seed does;
+--     the winners' cash moves to the issuer via the keyless `moveExactHolding`
+--     (operator-custody transfer), so cash conserves globally.
+--
+--   * KEYLESS (D7 / Canton LF 2.1): NO contract key / maintainer anywhere. Every
+--     cross-contract read is `fetch cid` + `assertMsg`, exactly like `Holding.daml`
+--     and `Rfq.daml`. A per-round `couponsPaid` marker (carried on the recreated
+--     round) prevents a double coupon for the same period (threat T-13-23).
+--
+-- Additive: this module imports only the leaf `Clearing` types + `Holding` +
+-- `Settlement`, never `Auction` — so the §4 secondary-market clearing path is
+-- byte-unchanged and still clears $100.00 (`Clearing.daml` / `Round.Clear`
+-- untouched — threat T-13-24). The issuance tranche uses a DISTINCT instrument id
+-- (e.g. "BOND2"), so the §4 "BONDX" bond is never perturbed.
+module Umbra.Issuance where
+
+import DA.Foldable (forA_)
+import Umbra.Instrument (InstrumentId)
+import Umbra.Clearing
+  ( Side(..), Allocation(..), OrderView(..), OrderType(..)
+  , computeClearing
+  )
+import Umbra.Holding (Holding(..), moveExactHolding)
+import Umbra.Settlement (Instruction(..), settleBatch)
+
+-- One desk's sealed issuance bid: `quantity` units at a per-unit `limit` price.
+-- The requester's side is implicitly Buy (desks bid to BUY the new tranche); the
+-- issuer is the sole Sell of `trancheSize`. Pure data — converted to an `OrderView`
+-- inside `ClearIssuance` so the SAME §8 `computeClearing` allocates the issuance.
+data IssuanceBid = IssuanceBid with
+    desk     : Party
+    quantity : Int
+    limit    : Decimal
+  deriving (Eq, Show)
+
+-- The result of a uniform-price issuance clear: the single clearing price §8
+-- derived, the total bond issued (== the cleared cross), and the recreated round
+-- ContractId (now `cleared = True`) that hosts the Coupon/Redeem lifecycle.
+data ClearIssuanceResult = ClearIssuanceResult with
+    clearingPrice : Decimal
+    totalIssued   : Int
+    clearedRound  : ContractId IssuanceRound
+  deriving (Eq, Show)
+
+-- A KEYLESS primary-issuance round. The issuer offers `trancheSize` units of
+-- `bondInstrument` at `reservePrice`; `bids` are the sealed per-desk issuance bids.
+-- `cleared`/`couponsPaid` are the lifecycle state carried across recreates:
+-- `ClearIssuance` flips `cleared` True (and blocks a re-clear / over-mint), and each
+-- `Coupon` appends its `period` to `couponsPaid` (blocking a double coupon).
+template IssuanceRound
+  with
+    operator       : Party           -- sole signatory & custodian (operator-custody MVP)
+    issuer         : Party           -- offers the tranche, receives the proceeds, pays coupons/principal
+    bondInstrument : InstrumentId    -- the NEW tranche (distinct id, e.g. "BOND2" — §4 "BONDX" untouched)
+    cashInstrument : InstrumentId    -- the proceeds/coupon/principal cash leg (token-agnostic)
+    trancheSize    : Int             -- units offered (the issuer's Sell quantity)
+    reservePrice   : Decimal         -- the issuer's minimum acceptable uniform price (its Sell limit)
+    bids           : [IssuanceBid]   -- the sealed issuance bids (each a Buy in the §8 book)
+    cleared        : Bool            -- lifecycle: has ClearIssuance run? (blocks re-clear / over-mint)
+    couponsPaid    : [Int]           -- lifecycle: coupon periods already paid (blocks double-pay)
+  where
+    signatory operator, issuer
+    ensure trancheSize > 0 && reservePrice >= 0.0
+
+    -- Uniform-price allocation reusing §8. Builds the book (issuer Sell + desk Buys),
+    -- calls `computeClearing` for the SINGLE clearing price + per-winner fills, mints
+    -- a bond `Holding` to each winner (create, CIP-0056 conformant), and moves each
+    -- winner's cash to the issuer via the keyless `moveExactHolding`. On-ledger
+    -- over-mint guard: the minted bond (Σ Buy fills) MUST equal the cleared cross
+    -- (the issuer's Sell fill). Recreates the round `cleared = True` (a second
+    -- ClearIssuance is impossible — the round is consumed and re-created cleared).
+    choice ClearIssuance : ClearIssuanceResult
+      with
+        -- Option-B (D7): a choice body cannot query the ACS, so each winner's cash
+        -- source `Holding` is passed in (owner, cid), exactly as `Round.Clear` takes
+        -- the buyer cash cids. Only winners with a positive fill are charged.
+        winnerCashCids : [(Party, ContractId Holding)]
+      controller operator, issuer
+      do
+        assertMsg "ClearIssuance: round already cleared" (not cleared)
+        -- The §8 order book: the issuer as one Sell of the whole tranche at the
+        -- reserve, every sealed bid as a plain-Limit Buy. SAME `computeClearing`.
+        let issuerSell = OrderView with
+              desk = issuer; side = Sell; quantity = trancheSize; limit = reservePrice
+              orderType = Limit; minQty = None; firmIf = None
+            bidViews =
+              map (\b -> OrderView with
+                    desk = b.desk; side = Buy; quantity = b.quantity; limit = b.limit
+                    orderType = Limit; minQty = None; firmIf = None)
+                  bids
+            book = issuerSell :: bidViews
+            (pStar, allocs) = computeClearing book
+            winners  = [ a | a <- allocs, a.side == Buy,  a.filledQty > 0 ]
+            buyFills  = sum [ a.filledQty | a <- allocs, a.side == Buy ]
+            sellFills = sum [ a.filledQty | a <- allocs, a.side == Sell ]
+        -- Over-mint guard (T-13-22): bond minted == the cleared cross (issuer sold).
+        assertMsg "ClearIssuance: issued bond must equal the cleared cross"
+          (buyFills == sellFills)
+        assertMsg "ClearIssuance: cannot issue more than the tranche"
+          (buyFills <= trancheSize)
+        -- Mint each winner's bond Holding + collect its cash to the issuer.
+        forA_ winners $ \a -> do
+          let qtyD    = intToDecimal a.filledQty
+              cashDue = qtyD * pStar
+          -- MINT: a CIP-0056-conformant bond Holding for the winner (operator custody).
+          _ <- create Holding with
+            operator; owner = a.desk; instrument = bondInstrument; amount = qtyD; lock = None
+          -- COLLECT: move the winner's cash to the issuer (keyless operator-custody move).
+          case lookup a.desk winnerCashCids of
+            None      -> abort ("ClearIssuance: no cash source for winner " <> show a.desk)
+            Some cid  -> do
+              _ <- moveExactHolding cid cashDue issuer
+              pure ()
+        clearedRound <- create this with cleared = True
+        pure ClearIssuanceResult with
+          clearingPrice = pStar
+          totalIssued   = buyFills
+          clearedRound
+
+    -- COUPON — the issuer pays cash pro-rata to the CURRENT bond holders. Each
+    -- holder receives `h.amount * couponPerUnit` (deterministic, proportional to its
+    -- holding). Paid through the SAME atomic `settleBatch` DvP path (issuer → holders,
+    -- threaded off the issuer's single cash source). Double-pay guard (T-13-23): the
+    -- `period` must not already be in `couponsPaid`; on success the round is recreated
+    -- with `period` appended, so a second Coupon for the same period is rejected.
+    choice Coupon : ContractId IssuanceRound
+      with
+        period        : Int                          -- the coupon period (double-pay marker)
+        couponPerUnit : Decimal                       -- cash paid per bond unit held
+        holderBondCids: [ContractId Holding]          -- the current bond holders (Option-B cids)
+        issuerCashCid : ContractId Holding            -- the issuer's cash source to pay from
+      controller operator, issuer
+      do
+        assertMsg "Coupon: round is not cleared yet" cleared
+        assertMsg "Coupon: this period was already paid" (notElem period couponsPaid)
+        assertMsg "Coupon: couponPerUnit must be > 0" (couponPerUnit > 0.0)
+        -- Read the current holders (keyless fetch + assert they are THIS bond).
+        holders <- mapA
+          (\cid -> do
+              h <- fetch cid
+              assertMsg "Coupon: holding is not this bond instrument" (h.instrument == bondInstrument)
+              assertMsg "Coupon: holding not operator-custodied"       (h.operator == operator)
+              pure h)
+          holderBondCids
+        let instructions =
+              [ Instruction with
+                  sender = issuer; receiver = h.owner
+                  instrument = cashInstrument; amount = h.amount * couponPerUnit
+              | h <- holders, h.amount * couponPerUnit > 0.0 ]
+            sources = [ (issuer, cashInstrument, issuerCashCid) ]
+        -- SAME atomic all-or-nothing DvP path as Round.Clear (custodian = operator).
+        settleBatch operator instructions sources
+        create this with couponsPaid = period :: couponsPaid
+
+    -- REDEEM — at maturity the issuer repays principal (`principalPerUnit` cash per
+    -- bond unit) to every holder and RETIRES (archives) the bond Holdings, so the
+    -- tranche supply contracts back to zero. Cash conserves (moved issuer → holders);
+    -- the bond is retired. Terminal: the round is consumed (no recreate).
+    choice Redeem : ()
+      with
+        principalPerUnit : Decimal                    -- cash principal repaid per bond unit
+        holderBondCids   : [ContractId Holding]       -- the current bond holders to redeem
+        issuerCashCid    : ContractId Holding         -- the issuer's cash source to repay from
+      controller operator, issuer
+      do
+        assertMsg "Redeem: round is not cleared yet" cleared
+        assertMsg "Redeem: principalPerUnit must be > 0" (principalPerUnit > 0.0)
+        holders <- mapA
+          (\cid -> do
+              h <- fetch cid
+              assertMsg "Redeem: holding is not this bond instrument" (h.instrument == bondInstrument)
+              assertMsg "Redeem: holding not operator-custodied"       (h.operator == operator)
+              pure h)
+          holderBondCids
+        let instructions =
+              [ Instruction with
+                  sender = issuer; receiver = h.owner
+                  instrument = cashInstrument; amount = h.amount * principalPerUnit
+              | h <- holders, h.amount * principalPerUnit > 0.0 ]
+            sources = [ (issuer, cashInstrument, issuerCashCid) ]
+        -- Repay principal atomically, THEN retire the bond Holdings (archive).
+        settleBatch operator instructions sources
+        forA_ holderBondCids archive
+        pure ()

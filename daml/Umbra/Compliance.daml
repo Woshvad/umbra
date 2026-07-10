@@ -84,5 +84,9 @@ assertDeskEligible : Party -> Party -> DeskEligibility -> Update ()
 assertDeskEligible operator desk cred = do
   assertMsg "eligibility credential does not match (operator, desk)"
     (cred.operator == operator && cred.desk == desk)
-  assertMsg "desk not eligible (accreditation/jurisdiction/sanctions)"
+  -- Message names ONLY what `isEligible` actually gates (accreditation AND
+  -- sanctions-clear). `jurisdiction` is recorded/observable but NOT enforced in the
+  -- MVP stub, so it is deliberately absent here — the verbatim reject surfaced on the
+  -- JoinView must not imply a jurisdiction gate that does not exist.
+  assertMsg "desk not eligible (accreditation/sanctions)"
     (isEligible cred)

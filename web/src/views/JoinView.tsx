@@ -57,7 +57,7 @@ function RejectSurface({ msg }: { msg: string }) {
       </div>
 
       <div className="font-body text-13" style={{ opacity: 0.7, lineHeight: 1.6, marginTop: '12px' }}>
-        This desk has no active eligibility credential (accreditation / jurisdiction / sanctions).
+        This desk has no active eligibility credential (accreditation / sanctions).
         Onboarding is operator/Compliance-issued (stub — real KYC vendor is Track B).
       </div>
     </div>

@@ -42,6 +42,10 @@ import type { RoundStatus } from './clock.js'
 // blocking/branching the legal path) and exposes register/unregister endpoints. The
 // per-subscription secret stays module-private inside webhooks.ts and is NEVER echoed.
 import { createWebhooks, type Webhooks, type WebhookEvent } from './webhooks.js'
+// OPS-04 sandbox.ts — the deterministic §4 fixture ($100.00, fills A=10/B=8/C=2), a stable
+// API contract for integrators, ISOLATED from real rounds. POST /sandbox/round reuses
+// assertSandboxClears, which re-runs the §8 clear and THROWS on any drift from $100.00.
+import { assertSandboxClears } from './sandbox.js'
 // CRYP-02/03 + VIZ-02 crypto types (TYPE-ONLY imports — erased at compile, so pulling
 // them in NEVER triggers tlock-js / snarkjs / circomlibjs module evaluation here; the real
 // implementations are dependency-injected via AppDeps, exactly like the ledger client).
@@ -1105,6 +1109,33 @@ export const createApp = (deps: AppDeps): Express => {
     wrap(async (_req, res) => {
       const bootstrap = await deps.onboardGuest()
       res.json(bootstrap)
+    }),
+  )
+
+  // ══ OPS-04 sandbox round — the deterministic §4 fixture, isolated from real rounds ═══
+  // POST /sandbox/round ALWAYS seeds + clears + "settles" the canonical §4 batch (three desks
+  // A/B/C) at EXACTLY $100.00 with fills A=10/B=8/C=2. It is a STABLE, never-varying API
+  // contract for third-party integration tests: assertSandboxClears re-runs the deterministic
+  // §8 clear and THROWS a fixed drift message unless the price is 100.00 and the allocation set
+  // matches — so the sandbox can never silently diverge from the golden fixture. ISOLATED: the
+  // response id is namespaced (SANDBOX-…) and NO real round's state is read or mutated. The
+  // fixture is pure numbers only — no operator token / ANTHROPIC_API_KEY is ever touched.
+  app.post(
+    '/sandbox/round',
+    wrap(async (_req, res) => {
+      // Deterministic §8 clear over the fixed §4 fixture; throws on ANY drift from $100.00.
+      const result = assertSandboxClears()
+      const matched = result.allocations
+        .filter((a) => a.side === 'Buy')
+        .reduce((sum, a) => sum + a.filledQty, 0)
+      res.status(201).json({
+        // Namespaced sandbox id — never collides with a real round's `R-…` id namespace.
+        roundId: `SANDBOX-${Date.now()}`,
+        clearingPrice: result.clearingPrice, // ALWAYS 100.00
+        allocations: result.allocations, // A=10 / B=8 / C=2
+        matched, // 10
+        sandbox: true,
+      })
     }),
   )
 

@@ -1792,6 +1792,69 @@ describe('solver OPS-01/02/03 surfaces (status + idempotency + FSM)', () => {
     expect(status.lastClearPrice).toBe(100)
   })
 
+  // ══ OPS-04 sandbox round — deterministic §4 fixture ($100.00), isolated + secret-free ═══
+  it('POST /sandbox/round deterministically clears $100.00 with fills A=10/B=8/C=2, marked sandbox:true', async () => {
+    const deps = makeDeps({})
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/sandbox/round`, { method: 'POST' })
+    const body = await readJson(res)
+
+    expect(res.status).toBe(201)
+    expect(body.sandbox).toBe(true)
+    expect(body.clearingPrice).toBe(100) // §4 golden — never drifts.
+    expect(body.matched).toBe(10)
+    // The canonical winning allocation set A=10 / B=8 / C=2 (order-insensitive).
+    const byDesk = Object.fromEntries(
+      (body.allocations as { desk: string; filledQty: number }[]).map((a) => [a.desk, a.filledQty]),
+    )
+    expect(byDesk).toEqual({ BankA: 10, BankB: 8, BankC: 2 })
+  })
+
+  it('POST /sandbox/round is namespaced (SANDBOX-…) and never collides with a real round id', async () => {
+    const openRound = vi.fn(async (roundId: string): Promise<RoundView> => ({ roundId, status: 'Open' }))
+    const deps = makeDeps({ openRound })
+    const started = await listen(deps)
+    server = started.server
+
+    const sandbox = await readJson(await fetch(`${started.base}/sandbox/round`, { method: 'POST' }))
+    expect(String(sandbox.roundId)).toMatch(/^SANDBOX-/)
+    // A real round opens under the `R-…` namespace (or a caller-supplied id) — never SANDBOX-.
+    const real = await readJson(
+      await fetch(`${started.base}/round`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ roundId: 'R-100' }),
+      }),
+    )
+    expect(real.roundId).toBe('R-100')
+    expect(sandbox.roundId).not.toBe(real.roundId)
+    // The sandbox never touched the real-round ledger seam.
+    expect(openRound).toHaveBeenCalledTimes(1)
+    expect(openRound).not.toHaveBeenCalledWith(sandbox.roundId, expect.anything(), expect.anything())
+  })
+
+  it('POST /sandbox/round response never leaks the operator token or ANTHROPIC_API_KEY (secret sweep)', async () => {
+    // Deps whose ledger/agent stubs close over the sentinels — the sandbox must touch NONE of them.
+    const deps = makeDeps({
+      settle: vi.fn(async (): Promise<SettleResult> => {
+        void SENTINEL_TOKEN
+        return { clearingPrice: 100, allocations: [] }
+      }),
+      proposeClearing: vi.fn(async () => {
+        void SENTINEL_API_KEY
+        return FALLBACK_AGENT_RESULT()
+      }),
+    })
+    const started = await listen(deps)
+    server = started.server
+
+    const wire = JSON.stringify(await readJson(await fetch(`${started.base}/sandbox/round`, { method: 'POST' })))
+    expect(wire).not.toContain(SENTINEL_TOKEN)
+    expect(wire).not.toContain(SENTINEL_API_KEY)
+  })
+
   // ══ OPS-04 lifecycle webhooks — register/unregister endpoints + settle-seam emits ═══
   // A sentinel subscription secret — accepted by POST /webhooks but NEVER echoed back.
   const SENTINEL_WEBHOOK_SECRET = 'WHSEC-SUBSCRIPTION-SECRET-do-not-leak-4d1c8e'

@@ -307,3 +307,127 @@ seedCommitRevealRound = do
     orderCids      = [oa, ob, oc]
     buyerCashCids  = [(bankA, buyerCashCid)]
     sellerBondCids = [(bankB, bondCidOf bankB), (bankC, bondCidOf bankC)]
+
+-- ===========================================================================
+-- DFIN-02 / DFIN-03 / WOW-07 (11-06) — a 2-buyer × 2-seller GOLDEN seed that
+-- runs through the REAL, generalized `Round.Clear` (not the pure Settlement
+-- layer of `test_netting_conserves`). Two buyers (A, D) and two sellers (B, C)
+-- cross at ONE uniform price p*=100; a fourth GUEST desk (bankD) participates as
+-- a first-class, eligibility-gated desk — the same structural per-party privacy
+-- as A/B/C (WOW-07). Parameterized by the cash instrument id so the SAME batch
+-- can settle with a non-USDCx cash token unchanged (DFIN-03, token-agnostic).
+--
+-- The book (candidate prices {101,100,99}):
+--   A Buy 6 @101 · D Buy 4 @100   (demand)
+--   B Sell 7 @99 · C Sell 3 @100  (supply)
+--   @99 : demand 10, supply 7  → matched 7  (imbalance 3)
+--   @100: demand 10, supply 10 → matched 10 (imbalance 0)  ← unique max-matched
+--   @101: demand 6,  supply 10 → matched 6  (imbalance 4)
+--   ⇒ p*=100 (unique), everyone fully filled: A=6 / D=4 / B=7 / C=3.
+--   Cash: A pays 600, D pays 400 (Σ 1000). Bond: B delivers 7, C delivers 3 (Σ 10).
+-- ===========================================================================
+
+-- Everything the real `Round.Clear` needs to settle the 2×2 golden, plus the
+-- verified allocation and the four desks (bankD is the guest) so tests can drive
+-- Clear and prove per-party privacy without re-deriving anything.
+data MultiBuyerSeed = MultiBuyerSeed with
+    operator       : Party
+    bankA          : Party   -- buyer, fills 6
+    bankB          : Party   -- seller, fills 7
+    bankC          : Party   -- seller, fills 3
+    bankD          : Party   -- GUEST buyer, fills 4 (WOW-07)
+    roundCid       : ContractId Round
+    orderCids      : [ContractId Order]
+    buyerCashCids  : [(Party, ContractId Holding)]   -- A, D
+    sellerBondCids : [(Party, ContractId Holding)]   -- B, C
+    cashInstrument : InstrumentId                     -- the cash token this batch used (USDCx or a swapped-in token)
+    bondInstrument : InstrumentId
+    allocations    : [Allocation]                     -- the verified 2×2 clear (A=6/D=4/B=7/C=3)
+
+-- Seed the 2×2 golden with a caller-chosen cash instrument id (DFIN-03). All four
+-- desks are registered + eligible; buyers fund their EXACT cash legs, sellers fund
+-- their EXACT bond legs; the round is opened, the four sealed orders submitted
+-- (each under its OWN desk authority, eligibility-gated), and closed. The caller
+-- drives the SAME `Round.Clear` used by §4 — nothing here is hardcoded to "USDCx".
+seedMultiBuyerRound : Text -> Script MultiBuyerSeed
+seedMultiBuyerRound cashId = do
+  operator <- allocatePartyByHint (PartyIdHint "operator")
+  bankA    <- allocatePartyByHint (PartyIdHint "bankA")
+  bankB    <- allocatePartyByHint (PartyIdHint "bankB")
+  bankC    <- allocatePartyByHint (PartyIdHint "bankC")
+  bankD    <- allocatePartyByHint (PartyIdHint "bankD")   -- the guest desk
+  let bond = bondInstrumentOf operator
+      cash = InstrumentId with issuer = operator; id = cashId
+
+  -- Venue registers ALL FOUR desks (the guest is a first-class participant).
+  venueCid <- submit operator do
+    createCmd Venue with operator, desks = [bankA, bankB, bankC, bankD]
+
+  -- COMP-01: every desk (guest included) holds an eligible credential.
+  let mkElig desk = submit operator do
+        createCmd DeskEligibility with
+          operator; compliance = operator; desk
+          accredited = True; jurisdiction = "US"; sanctionsClear = True
+  _ <- mkElig bankA
+  _ <- mkElig bankB
+  _ <- mkElig bankC
+  _ <- mkElig bankD
+  creds <- query @DeskEligibility operator
+
+  -- Fund the EXACT DvP legs: buyers' cash, sellers' bond (so totals are unambiguous).
+  aCash <- mintHolding operator bankA cash 600.0
+  dCash <- mintHolding operator bankD cash 400.0
+  bBond <- mintHolding operator bankB bond 7.0
+  cBond <- mintHolding operator bankC bond 3.0
+
+  -- Open the Round (desks observe; guest included).
+  now <- getTime
+  roundCid0 <- submit operator do
+    createCmd Round with
+      operator
+      roundId       = "R1"
+      symbol        = "BONDX"
+      desks         = [bankA, bankB, bankC, bankD]
+      openedAt      = now
+      windowSeconds = 60
+      status        = Open
+
+  -- The four sealed §11 orders (each under its OWN desk authority, eligibility-gated).
+  oa <- submit bankA do
+    exerciseCmd venueCid SubmitOrder with
+      desk = bankA; roundId = "R1"; side = Buy;  quantity = 6; limit = 101.0
+      orderType = Limit; minQty = None; firmIf = None
+      eligCid = findEligCid operator creds bankA
+  od <- submit bankD do
+    exerciseCmd venueCid SubmitOrder with
+      desk = bankD; roundId = "R1"; side = Buy;  quantity = 4; limit = 100.0
+      orderType = Limit; minQty = None; firmIf = None
+      eligCid = findEligCid operator creds bankD
+  ob <- submit bankB do
+    exerciseCmd venueCid SubmitOrder with
+      desk = bankB; roundId = "R1"; side = Sell; quantity = 7; limit = 99.0
+      orderType = Limit; minQty = None; firmIf = None
+      eligCid = findEligCid operator creds bankB
+  oc <- submit bankC do
+    exerciseCmd venueCid SubmitOrder with
+      desk = bankC; roundId = "R1"; side = Sell; quantity = 3; limit = 100.0
+      orderType = Limit; minQty = None; firmIf = None
+      eligCid = findEligCid operator creds bankC
+
+  -- CloseRound → the recreated Closed contract is what Clear settles.
+  roundCid <- submit operator do exerciseCmd roundCid0 CloseRound
+
+  pure MultiBuyerSeed with
+    operator; bankA; bankB; bankC; bankD
+    roundCid
+    orderCids      = [oa, od, ob, oc]
+    buyerCashCids  = [(bankA, aCash), (bankD, dCash)]
+    sellerBondCids = [(bankB, bBond), (bankC, cBond)]
+    cashInstrument = cash
+    bondInstrument = bond
+    allocations    =
+      [ Allocation with desk = bankA; side = Buy;  filledQty = 6
+      , Allocation with desk = bankD; side = Buy;  filledQty = 4
+      , Allocation with desk = bankB; side = Sell; filledQty = 7
+      , Allocation with desk = bankC; side = Sell; filledQty = 3
+      ]

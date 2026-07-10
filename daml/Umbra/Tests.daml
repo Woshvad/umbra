@@ -1060,3 +1060,109 @@ test_netting_conserves = do
     exerciseCmd harness RunSettle with instructions = gross; sources = sources2
   afterFail <- query @Holding operator
   snap afterFail === snap beforeFail
+
+-- ===========================================================================
+-- DFIN-02 / DFIN-03 / COMP-01 / WOW-07 (11-06) — the Phase-11 generalization
+-- goldens, each proven through the REAL generalized `Round.Clear` (not the pure
+-- Settlement layer of `test_netting_conserves`). The §4 canary stays the
+-- continuous single-buyer reference (test_clears_at_100 / test_settled_balances).
+-- ===========================================================================
+
+-- DFIN-02 — a 2-buyer × 2-seller batch clears at ONE uniform price through the
+-- generalized Round.Clear and conserves cash + bond on-ledger. Two buyers (A, D)
+-- and two sellers (B, C) cross at p*=100; the recompute-§8-and-assert backstop
+-- accepts the verified allocation, the Batch DvP settles atomically, and every
+-- desk's post-settle position matches its fill. Proves the settlement path is
+-- genuinely N-buyer × M-seller — not the single-funded-buyer §4 shortcut.
+test_multibuyer_golden : Script ()
+test_multibuyer_golden = do
+  MultiBuyerSeed{..} <- seedMultiBuyerRound "USDCx"
+  -- Snapshot instrument totals BEFORE settling (the conservation reference).
+  before <- query @Holding operator
+  let totalOf hs inst = sum [ h.amount | (_, h) <- hs, h.instrument == inst ]
+  totalOf before bondInstrument === 10.0   -- 7 (B) + 3 (C)
+  totalOf before cashInstrument === 1000.0 -- 600 (A) + 400 (D)
+
+  -- Drive the REAL, generalized Round.Clear (recompute-§8-and-assert + Batch DvP).
+  result <- submit operator do
+    exerciseCmd roundCid Clear with
+      clearingPrice  = 100.0
+      allocations
+      orderCids
+      buyerCashCids
+      sellerBondCids
+      cashInstrument
+      bondInstrument
+      referencePrice = 100.0
+
+  -- (a) A SINGLE uniform clearing price the ledger re-derived + accepted.
+  result.clearingPrice === 100.0
+  result.totalMatched  === 10
+
+  -- (b) Per-instrument conservation: global totals unchanged (no value made/lost).
+  after <- query @Holding operator
+  totalOf after bondInstrument === 10.0
+  totalOf after cashInstrument === 1000.0
+
+  -- (c) Each desk's post-settle position matches its fill (buyers get bond, sellers cash).
+  let balOf owner inst = sum [ h.amount | (_, h) <- after, h.owner == owner, h.instrument == inst ]
+  balOf bankA bondInstrument === 6.0
+  balOf bankD bondInstrument === 4.0
+  balOf bankB cashInstrument === 700.0   -- sold 7 @100
+  balOf bankC cashInstrument === 300.0   -- sold 3 @100
+  -- Buyers' cash + sellers' bond fully consumed (nothing stranded/leaked).
+  balOf bankA cashInstrument === 0.0
+  balOf bankD cashInstrument === 0.0
+  balOf bankB bondInstrument === 0.0
+  balOf bankC bondInstrument === 0.0
+  -- Σ cash received == Σ cash paid (1000); Σ bond received == Σ bond delivered (10).
+  (balOf bankB cashInstrument + balOf bankC cashInstrument) === 1000.0
+  (balOf bankA bondInstrument + balOf bankD bondInstrument) === 10.0
+
+  -- Per-desk fills via the private TradeConfirmations (A=6 / D=4 / B=7 / C=3).
+  confs <- query @TradeConfirmation operator
+  length confs === 4
+  let fillOf d = sum [ t.filledQty | (_, t) <- confs, t.desk == d ]
+  fillOf bankA === 6
+  fillOf bankD === 4
+  fillOf bankB === 7
+  fillOf bankC === 3
+
+-- DFIN-03 — the SAME 2×2 golden settled with a DIFFERENT cash instrument (EURt)
+-- behaves identically: Round.Clear follows the passed `cashInstrument`, with NO
+-- hardcoded "USDCx" anywhere on the settlement path (token-agnostic). If any code
+-- path assumed USDCx, the EURt cash leg would fail to settle / mis-conserve here.
+test_cash_instrument_agnostic : Script ()
+test_cash_instrument_agnostic = do
+  MultiBuyerSeed{..} <- seedMultiBuyerRound "EURt"
+  -- The cash leg really is the swapped-in instrument (not USDCx).
+  cashInstrument.id === "EURt"
+
+  result <- submit operator do
+    exerciseCmd roundCid Clear with
+      clearingPrice  = 100.0
+      allocations
+      orderCids
+      buyerCashCids
+      sellerBondCids
+      cashInstrument
+      bondInstrument
+      referencePrice = 100.0
+
+  -- Identical clearing behavior: p*=100, matched 10.
+  result.clearingPrice === 100.0
+  result.totalMatched  === 10
+
+  after <- query @Holding operator
+  let balOf owner inst = sum [ h.amount | (_, h) <- after, h.owner == owner, h.instrument == inst ]
+      totalOf inst = sum [ h.amount | (_, h) <- after, h.instrument == inst ]
+  -- The EURt cash leg settled EXACTLY as USDCx would have (sellers receive EURt).
+  balOf bankB cashInstrument === 700.0
+  balOf bankC cashInstrument === 300.0
+  totalOf cashInstrument === 1000.0
+  -- No stray USDCx was created (the swap is total, not additive).
+  totalOf (cashInstrumentOf operator) === 0.0
+  -- Receipts record the EURt-denominated cashMoved for the guest (4 @100 = 400).
+  confs <- query @TradeConfirmation operator
+  let cashMovedOf d = sum [ t.cashMoved | (_, t) <- confs, t.desk == d ]
+  cashMovedOf bankD === 400.0

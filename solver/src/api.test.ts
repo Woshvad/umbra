@@ -27,7 +27,7 @@ import {
   choosePStar,
   type OrderView,
 } from './auction.js'
-import type { AgentResult } from './agent.js'
+import type { AgentResult, SolverConfig, CompetingResult } from './agent.js'
 import { composeBrief } from './brief.js'
 import {
   createApp,
@@ -168,6 +168,36 @@ const makeDeps = (overrides: Partial<AppDeps>): AppDeps => ({
     party: 'bankD::guest',
     joinUrl: '/join?round=R1',
     roundId: 'R1',
+  })),
+  // ADJ-01 competing solvers — the default computes the REAL §8 deterministic block over the
+  // provided views (so /competing genuinely returns $100.00 on the §4 batch) with an empty
+  // (keyless-style) leaderboard; the /competing test overrides to assert a ranked winner.
+  proposeCompeting: vi.fn(async (views: OrderView[], _configs: SolverConfig[]): Promise<CompetingResult> => {
+    const { clearingPrice, allocations } = computeClearing(views)
+    const matchedVolume = matchedAt(views, clearingPrice)
+    return { winner: null, leaderboard: [], entries: [], deterministic: { clearingPrice, allocations, matchedVolume, surplus: 0 } }
+  }),
+  // ADJ-02 RFQ stubs — inert secret-free defaults; the /rfq* tests override per scenario.
+  postRfq: vi.fn(async (requester: string, side: 'Buy' | 'Sell', quantity: number) => ({
+    rfqId: 'rfq-1', requester, side, quantity,
+  })),
+  listQuotes: vi.fn(async () => [{ contractId: 'quote-1', dealer: 'bankB::x', price: 100, quantity: 10 }]),
+  acceptQuote: vi.fn(async (rfqCid: string, quoteCid: string) => ({
+    rfqId: rfqCid, quoteCid, requester: 'bankA::x', dealer: 'bankB::x',
+    side: 'Buy' as const, quantity: 10, price: 100, cashAmount: 1000, settled: true as const,
+  })),
+  // ADJ-03 issuance stubs — inert secret-free defaults; the /issuance* tests override.
+  openIssuance: vi.fn(async (issuer: string, bondInstrument: string, _cash: string, trancheSize: number) => ({
+    issuanceId: 'iss-open', issuer, bondInstrument, trancheSize,
+  })),
+  clearIssuance: vi.fn(async (issuanceCid: string) => ({
+    issuanceId: `${issuanceCid}-cleared`, clearingPrice: 100, totalIssued: 100, winners: [{ desk: 'bankA::x', filledQty: 100 }],
+  })),
+  payCoupon: vi.fn(async (issuanceCid: string, period: number, couponPerUnit: number) => ({
+    issuanceId: issuanceCid, period, couponPerUnit, holders: 2, totalPaid: 37.5,
+  })),
+  redeem: vi.fn(async (issuanceCid: string, principalPerUnit: number) => ({
+    issuanceId: issuanceCid, principalPerUnit, holders: 2, totalRepaid: 1500,
   })),
   // Real pure §8 helpers — solve-preview asserts true deterministic clearing.
   computeClearing,
@@ -2128,5 +2158,255 @@ describe('solver OPS-01/02/03 surfaces (status + idempotency + FSM)', () => {
     expect(body.clearingPrice).toBe(100)
     expect(body.matchedVolume).toBe(10)
     await new Promise((r) => setTimeout(r, 10)) // let the rejected emit settle harmlessly
+  })
+})
+
+// ══ ADJ-01/02/03 competing / RFQ / issuance endpoints (additive; off the §11/settle path) ══
+describe('solver ADJ-01/02/03 competing / RFQ / issuance endpoints', () => {
+  let server: Server | undefined
+  afterEach(async () => {
+    if (server) {
+      await new Promise<void>((resolve) => server!.close(() => resolve()))
+      server = undefined
+    }
+  })
+
+  const CONFIGS: SolverConfig[] = [
+    { id: 'haiku-0', model: 'claude-haiku-4-5', temperature: 0 },
+    { id: 'sonnet-0', model: 'claude-sonnet-4-6', temperature: 0.2 },
+  ]
+
+  it('POST /competing returns a ranked leaderboard with the deterministic §4 block at $100.00', async () => {
+    // Override proposeCompeting to return a ranked (verified) winner alongside the real §8 block.
+    const proposeCompeting = vi.fn(async (views: OrderView[]): Promise<CompetingResult> => {
+      const { clearingPrice, allocations } = computeClearing(views)
+      const matchedVolume = matchedAt(views, clearingPrice)
+      const winner = {
+        config: { id: 'haiku-0', model: 'claude-haiku-4-5', temperature: 0 },
+        verified: true,
+        clearingPrice,
+        matchedVolume,
+        surplus: 12,
+        // The rationale MUST NOT carry the module-private Anthropic key.
+        rationale: `Cleared at ${clearingPrice.toFixed(2)}.`,
+      }
+      return { winner, leaderboard: [winner], entries: [winner], deterministic: { clearingPrice, allocations, matchedVolume, surplus: 12 } }
+    })
+    const deps = makeDeps({
+      readSealedOrders: vi.fn(async (): Promise<SealedOrder[]> => SECTION4_SEALED),
+      proposeCompeting,
+    })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/competing`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roundId: 'R1', configs: CONFIGS }),
+    })
+    const body = await readJson(res)
+
+    expect(res.status).toBe(200)
+    // The deterministic block is the authoritative §4 clear — the ONLY thing that settles.
+    expect(body.deterministic.clearingPrice).toBe(100)
+    expect(body.deterministic.matchedVolume).toBe(10)
+    // The advisory leaderboard is present + ranked; the winner is narrative-only.
+    expect(Array.isArray(body.leaderboard)).toBe(true)
+    expect(body.winner.verified).toBe(true)
+    expect(body.winner.clearingPrice).toBe(100)
+    // proposeCompeting was called with the sealed §4 views + the posted configs.
+    expect(proposeCompeting).toHaveBeenCalledWith(SECTION4_VIEWS, CONFIGS)
+    // Secret-sweep: no operator token / Anthropic key sentinel anywhere in the response.
+    const raw = JSON.stringify(body)
+    expect(raw).not.toContain(SENTINEL_TOKEN)
+    expect(raw).not.toContain(SENTINEL_API_KEY)
+  })
+
+  it('POST /competing rejects a malformed body → 400 INVALID_BODY', async () => {
+    const deps = makeDeps({})
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/competing`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roundId: 'R1' }), // missing configs
+    })
+    const body = await readJson(res)
+    expect(res.status).toBe(400)
+    expect(body.error.code).toBe('INVALID_BODY')
+  })
+
+  it('POST /rfq posts an RfqRequest; POST /rfq/:id/accept returns a settle summary', async () => {
+    const postRfq = vi.fn(async (requester: string, side: 'Buy' | 'Sell', quantity: number) => ({
+      rfqId: 'rfq-42', requester, side, quantity,
+    }))
+    const acceptQuote = vi.fn(async (rfqCid: string, quoteCid: string) => ({
+      rfqId: rfqCid, quoteCid, requester: 'bankA::x', dealer: 'bankB::x',
+      side: 'Buy' as const, quantity: 10, price: 100, cashAmount: 1000, settled: true as const,
+    }))
+    const deps = makeDeps({ postRfq, acceptQuote })
+    const started = await listen(deps)
+    server = started.server
+
+    const posted = await fetch(`${started.base}/rfq`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requester: 'bankA::x', side: 'Buy', quantity: 10, dealers: ['bankB::x'] }),
+    })
+    const postedBody = await readJson(posted)
+    expect(posted.status).toBe(201)
+    expect(postedBody.rfqId).toBe('rfq-42')
+    expect(postRfq).toHaveBeenCalledWith('bankA::x', 'Buy', 10, ['bankB::x'])
+
+    const accepted = await fetch(`${started.base}/rfq/rfq-42/accept`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ quoteCid: 'quote-9' }),
+    })
+    const acceptBody = await readJson(accepted)
+    expect(accepted.status).toBe(200)
+    expect(acceptBody).toMatchObject({ rfqId: 'rfq-42', quoteCid: 'quote-9', settled: true, price: 100, cashAmount: 1000 })
+    expect(acceptQuote).toHaveBeenCalledWith('rfq-42', 'quote-9')
+    // Secret-sweep across both responses.
+    const raw = JSON.stringify({ postedBody, acceptBody })
+    expect(raw).not.toContain(SENTINEL_TOKEN)
+    expect(raw).not.toContain(SENTINEL_API_KEY)
+  })
+
+  it('GET /rfq/:id/quotes lists the firm signed quotes', async () => {
+    const listQuotes = vi.fn(async () => [
+      { contractId: 'q1', dealer: 'bankB::x', price: 100, quantity: 10 },
+      { contractId: 'q2', dealer: 'bankC::x', price: 101, quantity: 10 },
+    ])
+    const deps = makeDeps({ listQuotes })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/rfq/rfq-42/quotes`)
+    const body = await readJson(res)
+    expect(res.status).toBe(200)
+    expect(body.rfqId).toBe('rfq-42')
+    expect(body.quotes).toHaveLength(2)
+    expect(listQuotes).toHaveBeenCalledWith('rfq-42')
+  })
+
+  it('POST /rfq rejects a malformed body → 400 INVALID_BODY', async () => {
+    const deps = makeDeps({})
+    const started = await listen(deps)
+    server = started.server
+    const res = await fetch(`${started.base}/rfq`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requester: 'bankA::x', side: 'Hold', quantity: 10 }), // bad side
+    })
+    const body = await readJson(res)
+    expect(res.status).toBe(400)
+    expect(body.error.code).toBe('INVALID_BODY')
+  })
+
+  it('POST /issuance opens + clears a tranche at ONE uniform price', async () => {
+    const openIssuance = vi.fn(async (issuer: string, bondInstrument: string, _cash: string, trancheSize: number) => ({
+      issuanceId: 'iss-1', issuer, bondInstrument, trancheSize,
+    }))
+    const clearIssuance = vi.fn(async (issuanceCid: string) => ({
+      issuanceId: `${issuanceCid}-cleared`, clearingPrice: 100.5, totalIssued: 100, winners: [{ desk: 'bankA::x', filledQty: 100 }],
+    }))
+    const deps = makeDeps({ openIssuance, clearIssuance })
+    const started = await listen(deps)
+    server = started.server
+
+    const res = await fetch(`${started.base}/issuance`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        issuer: 'issuer::x', bondInstrument: 'BOND2', cashInstrument: 'USDCx', trancheSize: 100, reservePrice: 99,
+        bids: [{ desk: 'bankA::x', quantity: 60, limit: 101 }],
+      }),
+    })
+    const body = await readJson(res)
+    expect(res.status).toBe(201)
+    // A SINGLE uniform issuance clearing price is returned.
+    expect(body.clearingPrice).toBe(100.5)
+    expect(body.totalIssued).toBe(100)
+    expect(body.issuanceId).toBe('iss-1-cleared')
+    expect(openIssuance).toHaveBeenCalledWith('issuer::x', 'BOND2', 'USDCx', 100, 99, [{ desk: 'bankA::x', quantity: 60, limit: 101 }])
+    expect(clearIssuance).toHaveBeenCalledWith('iss-1')
+  })
+
+  it('POST /issuance/:id/coupon and /redeem drive the lifecycle wrappers', async () => {
+    const payCoupon = vi.fn(async (issuanceCid: string, period: number, couponPerUnit: number) => ({
+      issuanceId: issuanceCid, period, couponPerUnit, holders: 2, totalPaid: 37.5,
+    }))
+    const redeem = vi.fn(async (issuanceCid: string, principalPerUnit: number) => ({
+      issuanceId: issuanceCid, principalPerUnit, holders: 2, totalRepaid: 1500,
+    }))
+    const deps = makeDeps({ payCoupon, redeem })
+    const started = await listen(deps)
+    server = started.server
+
+    const coupon = await fetch(`${started.base}/issuance/iss-1-cleared/coupon`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ period: 1, couponPerUnit: 2.5 }),
+    })
+    const couponBody = await readJson(coupon)
+    expect(coupon.status).toBe(200)
+    expect(couponBody.totalPaid).toBe(37.5)
+    expect(payCoupon).toHaveBeenCalledWith('iss-1-cleared', 1, 2.5)
+
+    const redeemed = await fetch(`${started.base}/issuance/iss-1-cleared/redeem`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ principalPerUnit: 100 }),
+    })
+    const redeemedBody = await readJson(redeemed)
+    expect(redeemed.status).toBe(200)
+    expect(redeemedBody.totalRepaid).toBe(1500)
+    expect(redeem).toHaveBeenCalledWith('iss-1-cleared', 100)
+  })
+
+  it('POST /issuance rejects a malformed body → 400 INVALID_BODY; secret-sweep on all new endpoints', async () => {
+    const deps = makeDeps({ readSealedOrders: vi.fn(async (): Promise<SealedOrder[]> => SECTION4_SEALED) })
+    const started = await listen(deps)
+    server = started.server
+
+    const bad = await fetch(`${started.base}/issuance`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ issuer: 'issuer::x', bondInstrument: 'BOND2' }), // missing cash/tranche
+    })
+    const badBody = await readJson(bad)
+    expect(bad.status).toBe(400)
+    expect(badBody.error.code).toBe('INVALID_BODY')
+
+    // Secret-sweep: hit every new endpoint and assert no token/key sentinel leaks anywhere.
+    const responses: string[] = []
+    const competing = await fetch(`${started.base}/competing`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roundId: 'R1', configs: CONFIGS }),
+    })
+    responses.push(JSON.stringify(await readJson(competing)))
+    const rfq = await fetch(`${started.base}/rfq`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requester: 'bankA::x', side: 'Buy', quantity: 10 }),
+    })
+    responses.push(JSON.stringify(await readJson(rfq)))
+    const quotes = await fetch(`${started.base}/rfq/rfq-1/quotes`)
+    responses.push(JSON.stringify(await readJson(quotes)))
+    const accept = await fetch(`${started.base}/rfq/rfq-1/accept`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ quoteCid: 'q1' }),
+    })
+    responses.push(JSON.stringify(await readJson(accept)))
+    const issuance = await fetch(`${started.base}/issuance`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ issuer: 'issuer::x', bondInstrument: 'BOND2', cashInstrument: 'USDCx', trancheSize: 100 }),
+    })
+    responses.push(JSON.stringify(await readJson(issuance)))
+    for (const raw of responses) {
+      expect(raw).not.toContain(SENTINEL_TOKEN)
+      expect(raw).not.toContain(SENTINEL_API_KEY)
+    }
   })
 })

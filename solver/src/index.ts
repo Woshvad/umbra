@@ -39,6 +39,15 @@ export interface LedgerPort {
   // WOW-02: the dedicated tamper seam (ledger.tamperClear) — mirrors settle wiring.
   tamperClear: AppDeps['tamperClear']
   readTradeConfirmations: AppDeps['readTradeConfirmations']
+  // ADJ-02 RFQ + ADJ-03 issuance exercise wrappers (ledger.ts) — threaded onto AppDeps so
+  // createApp can serve the /rfq* + /issuance* endpoints. The unit test injects spies.
+  postRfq: AppDeps['postRfq']
+  listQuotes: AppDeps['listQuotes']
+  acceptQuote: AppDeps['acceptQuote']
+  openIssuance: AppDeps['openIssuance']
+  clearIssuance: AppDeps['clearIssuance']
+  payCoupon: AppDeps['payCoupon']
+  redeem: AppDeps['redeem']
 }
 
 // The pure §8 helpers (auction.ts) the API needs.
@@ -65,6 +74,10 @@ export interface BuildDepsArgs {
   // WOW-03: the agent's server-side NL order parser (agent.ts). Same boot agent, same
   // module-private key; keyless-degrades to null. The unit test injects a stub.
   parseOrder: AppDeps['parseOrder']
+  // ADJ-01: the agent's competing-solvers racer (agent.proposeCompeting). Same boot agent +
+  // module-private key; keyless-degrades (all entries verified:false, winner null). The
+  // deterministic §8 block always settles — advisory leaderboard only. The unit test stubs it.
+  proposeCompeting: AppDeps['proposeCompeting']
   // WOW-04: the agent's live rationale streamer (agent.ts messages.stream) + the pure
   // post-round brief composer (brief.ts). Same boot agent for the stream; the brief is
   // a pure import. The unit test injects stubs.
@@ -117,7 +130,7 @@ export interface BuildDepsArgs {
 // is the single path index.ts and index.test.ts both use, so the test's spies prove
 // the live wiring.
 export const buildDeps = (args: BuildDepsArgs): AppDeps => {
-  const { ledger, math, clock, openRoundClock, roundSeconds, proposeClearing, parseOrder, streamRationale, composeBrief } =
+  const { ledger, math, clock, openRoundClock, roundSeconds, proposeClearing, parseOrder, proposeCompeting, streamRationale, composeBrief } =
     args
   // TRUST-03: default to a null reader when not injected (index.test.ts boot-wiring path).
   const readProofBundle: AppDeps['readProofBundle'] = args.readProofBundle ?? (() => null)
@@ -173,6 +186,15 @@ export const buildDeps = (args: BuildDepsArgs): AppDeps => {
     settle: ledger.settle,
     // WOW-02: the dedicated tamper seam (never on the /settle path).
     tamperClear: ledger.tamperClear,
+    // ADJ-01/02/03: competing solvers (agent) + RFQ + issuance exercise wrappers (ledger).
+    proposeCompeting,
+    postRfq: ledger.postRfq,
+    listQuotes: ledger.listQuotes,
+    acceptQuote: ledger.acceptQuote,
+    openIssuance: ledger.openIssuance,
+    clearIssuance: ledger.clearIssuance,
+    payCoupon: ledger.payCoupon,
+    redeem: ledger.redeem,
     // The AI Solver Agent — proposes a clearing, the deterministic core verifies it.
     proposeClearing,
     // WOW-03: server-side NL order parsing (same boot agent, key module-private).
@@ -603,6 +625,14 @@ const main = async (): Promise<void> => {
       settle: settleResult,
       tamperClear: ledger.tamperClear,
       readTradeConfirmations: ledger.readTradeConfirmations,
+      // ADJ-02 RFQ + ADJ-03 issuance exercise wrappers (real ledger.ts implementations).
+      postRfq: ledger.postRfq,
+      listQuotes: ledger.listQuotes,
+      acceptQuote: ledger.acceptQuote,
+      openIssuance: ledger.openIssuance,
+      clearIssuance: ledger.clearIssuance,
+      payCoupon: ledger.payCoupon,
+      redeem: ledger.redeem,
     },
     math: {
       computeClearing: auction.computeClearing,
@@ -617,6 +647,8 @@ const main = async (): Promise<void> => {
     roundSeconds,
     proposeClearing: agent.proposeClearing,
     parseOrder: agent.parseOrder,
+    // ADJ-01: the competing-solvers racer (same boot agent, module-private key).
+    proposeCompeting: agent.proposeCompeting,
     streamRationale: agent.streamRationale,
     composeBrief,
     // TRUST-03: serve the settle-time decision proof bundle read-only.

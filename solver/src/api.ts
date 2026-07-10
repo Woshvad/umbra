@@ -23,8 +23,8 @@
 import express, { type Express, type Request, type Response, type NextFunction } from 'express'
 import cors from 'cors'
 import { z } from 'zod'
-import type { OrderView, Allocation, ClearingResult } from './auction.js'
-import type { AgentResult } from './agent.js'
+import type { OrderView, Allocation, ClearingResult, Side } from './auction.js'
+import type { AgentResult, SolverConfig, CompetingResult } from './agent.js'
 import type { ProofBundle } from './proof.js'
 // OPS-01 observability (telemetry.ts): request-path spans + named metric instruments. Both
 // degrade to no-ops when initTelemetry() has not run (tests), so importing them is inert.
@@ -254,6 +254,70 @@ export interface AppDeps {
   // settlement. round.opened (index.ts open seam) + round.sealed (clock.ts close seam) fire off
   // the SAME instance, wired in main(). The per-subscription secret is never echoed/logged.
   webhooks?: Webhooks
+
+  // ── ADJ-01 competing solvers (agent.proposeCompeting) ─────────────────────────────
+  // Race N solver configs over the round's sealed batch; the deterministic §8 recompute is
+  // the REFEREE and the ONLY thing that settles. Returns { winner, leaderboard, entries,
+  // deterministic }. This is an ADVISORY / NARRATIVE leaderboard — no settlement path
+  // consults the winner (AI strictly off the settlement path). Keyless-degrades (all entries
+  // verified:false, winner null); NEVER throws the Anthropic key.
+  proposeCompeting: (views: OrderView[], configs: SolverConfig[]) => Promise<CompetingResult>
+
+  // ── ADJ-02 RFQ orchestration (ledger.ts postRfq / listQuotes / acceptQuote) ───────
+  // post an RfqRequest, list the requester-visible firm signed quotes, and accept the best —
+  // settling a 1×1 batch through the on-ledger AcceptQuote → settleBatch DvP. Secret-free
+  // (party/contract ids + scalars only; the operator token stays module-private in ledger.ts).
+  postRfq: (
+    requester: string,
+    side: Side,
+    quantity: number,
+    dealers?: string[],
+  ) => Promise<{ rfqId: string; requester: string; side: Side; quantity: number }>
+  listQuotes: (rfqCid: string) => Promise<{ contractId: string; dealer: string; price: number; quantity: number }[]>
+  acceptQuote: (
+    rfqCid: string,
+    quoteCid: string,
+  ) => Promise<{
+    rfqId: string
+    quoteCid: string
+    requester: string
+    dealer: string
+    side: Side
+    quantity: number
+    price: number
+    cashAmount: number
+    settled: true
+  }>
+
+  // ── ADJ-03 issuance orchestration (ledger.ts openIssuance / clearIssuance / coupon / redeem) ──
+  // Clear a primary tranche at ONE uniform price (mint Holdings), pay a pro-rata coupon, and
+  // redeem principal at maturity. clearIssuance reuses the SAME §8 the on-ledger ClearIssuance
+  // re-verifies (over-mint guarded on-ledger). Secret-free scalar summaries.
+  openIssuance: (
+    issuer: string,
+    bondInstrument: string,
+    cashInstrument: string,
+    trancheSize: number,
+    reservePrice?: number,
+    bids?: { desk: string; quantity: number; limit: number }[],
+  ) => Promise<{ issuanceId: string; issuer: string; bondInstrument: string; trancheSize: number }>
+  clearIssuance: (
+    issuanceCid: string,
+  ) => Promise<{
+    issuanceId: string
+    clearingPrice: number
+    totalIssued: number
+    winners: { desk: string; filledQty: number }[]
+  }>
+  payCoupon: (
+    issuanceCid: string,
+    period: number,
+    couponPerUnit: number,
+  ) => Promise<{ issuanceId: string; period: number; couponPerUnit: number; holders: number; totalPaid: number }>
+  redeem: (
+    issuanceCid: string,
+    principalPerUnit: number,
+  ) => Promise<{ issuanceId: string; principalPerUnit: number; holders: number; totalRepaid: number }>
 }
 
 // WOW-07: the guest /join bootstrap returned by GET /guest/bootstrap. Party id + join
@@ -369,6 +433,71 @@ const webhookRegisterBody = z
       )
       .min(1)
       .max(5),
+  })
+  .strict()
+
+// ── zod schemas for the ADJ-01/02/03 endpoints (competing / RFQ / issuance) ──────────
+// Every new body is `.strict()` (unexpected fields rejected) with size caps (ASVS V5). A
+// malformed body → a sanitized 400 INVALID_BODY; the raw env/headers are never echoed.
+
+// ADJ-01 competing solvers: the roundId whose sealed batch is raced + the solver entrants.
+const solverConfigSchema = z
+  .object({
+    id: z.string().min(1).max(64),
+    model: z.string().min(1).max(64),
+    temperature: z.number().min(0).max(2),
+    systemPrompt: z.string().max(4096).optional(),
+  })
+  .strict()
+const competingBody = z
+  .object({
+    roundId: z.string().min(1),
+    configs: z.array(solverConfigSchema).min(1).max(8),
+  })
+  .strict()
+
+// ADJ-02 RFQ: post a request; accept a quote by its ContractId.
+const rfqPostBody = z
+  .object({
+    requester: z.string().min(1),
+    side: z.enum(['Buy', 'Sell']),
+    quantity: z.number().int().positive(),
+    dealers: z.array(z.string().min(1)).max(16).optional(),
+  })
+  .strict()
+const rfqAcceptBody = z
+  .object({
+    quoteCid: z.string().min(1),
+  })
+  .strict()
+
+// ADJ-03 issuance: open + clear a tranche; pay a coupon; redeem principal.
+const issuanceBidSchema = z
+  .object({
+    desk: z.string().min(1),
+    quantity: z.number().int().positive(),
+    limit: z.number().positive(),
+  })
+  .strict()
+const issuanceOpenBody = z
+  .object({
+    issuer: z.string().min(1),
+    bondInstrument: z.string().min(1).max(64),
+    cashInstrument: z.string().min(1).max(64),
+    trancheSize: z.number().int().positive(),
+    reservePrice: z.number().nonnegative().optional(),
+    bids: z.array(issuanceBidSchema).max(64).optional(),
+  })
+  .strict()
+const couponBody = z
+  .object({
+    period: z.number().int().nonnegative(),
+    couponPerUnit: z.number().positive(),
+  })
+  .strict()
+const redeemBody = z
+  .object({
+    principalPerUnit: z.number().positive(),
   })
   .strict()
 
@@ -1206,6 +1335,131 @@ export const createApp = (deps: AppDeps): Express => {
         throw new ApiError(404, 'SUBSCRIPTION_NOT_FOUND', `webhook subscription ${id} not found`)
       }
       res.json({ id, unregistered: true })
+    }),
+  )
+
+  // ══ ADJ-01/02/03 competing / RFQ / issuance endpoints (ADDITIVE — off the §11/settle path) ══
+  // Every body is zod-`.strict()`-validated and every response rides the SAME secret-safe
+  // envelope — no operator token / ANTHROPIC_API_KEY ever crosses out (secret-swept in tests).
+  // The five §11 endpoints + /settle stay byte-compatible; the §4 golden stays $100.00.
+
+  // POST /competing — ADJ-01 competing-solvers leaderboard. Races the round's sealed batch
+  // across N solver configs; returns { winner, leaderboard, deterministic }. The leaderboard is
+  // a NARRATIVE / ADVISORY panel — NO settlement path consults the winner. The deterministic §8
+  // block is the ONLY thing that settles (AI strictly off the settlement path). Keyless-degrades.
+  app.post(
+    '/competing',
+    wrap(async (req, res) => {
+      const parsed = competingBody.safeParse(req.body ?? {})
+      if (!parsed.success) {
+        const issue = parsed.error.issues[0]
+        const path = issue?.path.join('.') || '(body)'
+        throw new ApiError(400, 'INVALID_BODY', `invalid request body: ${path} — ${issue?.message ?? 'invalid'}`)
+      }
+      const sealed = await deps.readSealedOrders(parsed.data.roundId)
+      const views: OrderView[] = sealed.map((s) => s.view)
+      const result = await deps.proposeCompeting(views, parsed.data.configs)
+      // ADVISORY leaderboard: `deterministic` carries the authoritative §8 numbers that actually
+      // settle; `winner`/`leaderboard` are narrative-only and never fed back into settlement.
+      res.json({
+        roundId: parsed.data.roundId,
+        winner: result.winner,
+        leaderboard: result.leaderboard,
+        deterministic: result.deterministic,
+      })
+    }),
+  )
+
+  // POST /rfq — ADJ-02 post an RfqRequest to an invited dealer set (zod-validated).
+  app.post(
+    '/rfq',
+    wrap(async (req, res) => {
+      const parsed = rfqPostBody.safeParse(req.body ?? {})
+      if (!parsed.success) {
+        const issue = parsed.error.issues[0]
+        const path = issue?.path.join('.') || '(body)'
+        throw new ApiError(400, 'INVALID_BODY', `invalid request body: ${path} — ${issue?.message ?? 'invalid'}`)
+      }
+      const { requester, side, quantity, dealers } = parsed.data
+      const posted = await deps.postRfq(requester, side, quantity, dealers)
+      res.status(201).json(posted)
+    }),
+  )
+
+  // GET /rfq/:id/quotes — ADJ-02 list the requester-visible firm signed quotes.
+  app.get(
+    '/rfq/:id/quotes',
+    wrap(async (req, res) => {
+      const quotes = await deps.listQuotes(req.params.id)
+      res.json({ rfqId: req.params.id, quotes })
+    }),
+  )
+
+  // POST /rfq/:id/accept — ADJ-02 accept the (best) quote → settle the 1×1 batch via the
+  // on-ledger AcceptQuote → settleBatch DvP. Returns the secret-free settle summary.
+  app.post(
+    '/rfq/:id/accept',
+    wrap(async (req, res) => {
+      const parsed = rfqAcceptBody.safeParse(req.body ?? {})
+      if (!parsed.success) {
+        const issue = parsed.error.issues[0]
+        const path = issue?.path.join('.') || '(body)'
+        throw new ApiError(400, 'INVALID_BODY', `invalid request body: ${path} — ${issue?.message ?? 'invalid'}`)
+      }
+      const summary = await deps.acceptQuote(req.params.id, parsed.data.quoteCid)
+      res.json(summary)
+    }),
+  )
+
+  // POST /issuance — ADJ-03 open + clear a primary tranche at ONE uniform price (mint Holdings).
+  app.post(
+    '/issuance',
+    wrap(async (req, res) => {
+      const parsed = issuanceOpenBody.safeParse(req.body ?? {})
+      if (!parsed.success) {
+        const issue = parsed.error.issues[0]
+        const path = issue?.path.join('.') || '(body)'
+        throw new ApiError(400, 'INVALID_BODY', `invalid request body: ${path} — ${issue?.message ?? 'invalid'}`)
+      }
+      const { issuer, bondInstrument, cashInstrument, trancheSize, reservePrice, bids } = parsed.data
+      const opened = await deps.openIssuance(issuer, bondInstrument, cashInstrument, trancheSize, reservePrice, bids)
+      const cleared = await deps.clearIssuance(opened.issuanceId)
+      res.status(201).json({
+        issuanceId: cleared.issuanceId,
+        clearingPrice: cleared.clearingPrice, // the SINGLE uniform issuance price
+        totalIssued: cleared.totalIssued,
+        winners: cleared.winners,
+      })
+    }),
+  )
+
+  // POST /issuance/:id/coupon — ADJ-03 pay the deterministic pro-rata coupon to current holders.
+  app.post(
+    '/issuance/:id/coupon',
+    wrap(async (req, res) => {
+      const parsed = couponBody.safeParse(req.body ?? {})
+      if (!parsed.success) {
+        const issue = parsed.error.issues[0]
+        const path = issue?.path.join('.') || '(body)'
+        throw new ApiError(400, 'INVALID_BODY', `invalid request body: ${path} — ${issue?.message ?? 'invalid'}`)
+      }
+      const paid = await deps.payCoupon(req.params.id, parsed.data.period, parsed.data.couponPerUnit)
+      res.json(paid)
+    }),
+  )
+
+  // POST /issuance/:id/redeem — ADJ-03 repay principal pro-rata + retire the bond Holdings.
+  app.post(
+    '/issuance/:id/redeem',
+    wrap(async (req, res) => {
+      const parsed = redeemBody.safeParse(req.body ?? {})
+      if (!parsed.success) {
+        const issue = parsed.error.issues[0]
+        const path = issue?.path.join('.') || '(body)'
+        throw new ApiError(400, 'INVALID_BODY', `invalid request body: ${path} — ${issue?.message ?? 'invalid'}`)
+      }
+      const redeemed = await deps.redeem(req.params.id, parsed.data.principalPerUnit)
+      res.json(redeemed)
     }),
   )
 

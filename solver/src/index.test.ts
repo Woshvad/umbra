@@ -58,6 +58,17 @@ const streamRationale = vi.fn(
 )
 const composeBrief = vi.fn((): string => 'brief')
 
+// ADJ-01: buildDeps threads the agent's competing-solvers racer; the boot-wiring proofs
+// below assert it lands on AppDeps (drivable via /competing), so a deterministic stub suffices.
+const proposeCompeting = vi.fn(
+  async (): Promise<import('./agent.js').CompetingResult> => ({
+    winner: null,
+    leaderboard: [],
+    entries: [],
+    deterministic: { clearingPrice: 100, allocations: [], matchedVolume: 0, surplus: 0 },
+  }),
+)
+
 // A ledger port whose every function is a spy; defaults are inert.
 const makeLedger = (overrides: Partial<LedgerPort> = {}): LedgerPort => ({
   openRound: vi.fn(
@@ -75,6 +86,25 @@ const makeLedger = (overrides: Partial<LedgerPort> = {}): LedgerPort => ({
   settle: vi.fn(async (): Promise<SettleResult> => ({ clearingPrice: 100, allocations: [] })),
   tamperClear: vi.fn(async (): Promise<{ rejected: true; error: string }> => ({ rejected: true, error: 'rejected' })),
   readTradeConfirmations: vi.fn(async () => []),
+  // ADJ-02 RFQ + ADJ-03 issuance exercise wrappers — inert secret-free spies (boot-wiring path).
+  postRfq: vi.fn(async (requester: string, side: 'Buy' | 'Sell', quantity: number) => ({ rfqId: 'rfq-1', requester, side, quantity })),
+  listQuotes: vi.fn(async () => []),
+  acceptQuote: vi.fn(async (rfqCid: string, quoteCid: string) => ({
+    rfqId: rfqCid, quoteCid, requester: 'bankA::x', dealer: 'bankB::x',
+    side: 'Buy' as const, quantity: 10, price: 100, cashAmount: 1000, settled: true as const,
+  })),
+  openIssuance: vi.fn(async (issuer: string, bondInstrument: string, _cash: string, trancheSize: number) => ({
+    issuanceId: 'iss-1', issuer, bondInstrument, trancheSize,
+  })),
+  clearIssuance: vi.fn(async (issuanceCid: string) => ({
+    issuanceId: `${issuanceCid}-cleared`, clearingPrice: 100, totalIssued: 100, winners: [],
+  })),
+  payCoupon: vi.fn(async (issuanceCid: string, period: number, couponPerUnit: number) => ({
+    issuanceId: issuanceCid, period, couponPerUnit, holders: 0, totalPaid: 0,
+  })),
+  redeem: vi.fn(async (issuanceCid: string, principalPerUnit: number) => ({
+    issuanceId: issuanceCid, principalPerUnit, holders: 0, totalRepaid: 0,
+  })),
   ...overrides,
 })
 
@@ -144,7 +174,7 @@ describe('solver boot wiring (buildDeps)', () => {
     )
     const clock = makeClock(openRoundClock)
 
-    const deps = buildDeps({ ledger, math, clock, openRoundClock, roundSeconds: ROUND_SECONDS, proposeClearing, parseOrder, streamRationale, composeBrief })
+    const deps = buildDeps({ ledger, math, clock, openRoundClock, roundSeconds: ROUND_SECONDS, proposeClearing, parseOrder, proposeCompeting, streamRationale, composeBrief })
     const app = createApp(deps)
     const started = await listen(app)
     server = started.server
@@ -176,13 +206,58 @@ describe('solver boot wiring (buildDeps)', () => {
     )
     const clock = makeClock(openRoundClock)
 
-    const deps = buildDeps({ ledger, math, clock, openRoundClock, roundSeconds: ROUND_SECONDS, proposeClearing, parseOrder, streamRationale, composeBrief })
+    const deps = buildDeps({ ledger, math, clock, openRoundClock, roundSeconds: ROUND_SECONDS, proposeClearing, parseOrder, proposeCompeting, streamRationale, composeBrief })
     const started = await listen(createApp(deps))
     server = started.server
 
     const res = await fetch(`${started.base}/round/R2/close`, { method: 'POST' })
     expect(res.status).toBe(200)
     expect(clock.forceClose).toHaveBeenCalledWith('R2')
+  })
+
+  // ── ADJ-01/02/03: buildDeps threads proposeCompeting + the RFQ/issuance ledger wrappers ──
+  it('buildDeps threads proposeCompeting + the RFQ/issuance wrappers onto AppDeps', async () => {
+    const ledger = makeLedger({
+      readSealedOrders: vi.fn(async (): Promise<SealedOrder[]> => []),
+    })
+    const openRoundClock = vi.fn((roundId: string): RoundState => ({ roundId, status: 'Open', openedAt: 0, deadline: 0 }))
+    const clock = makeClock(openRoundClock)
+
+    const deps = buildDeps({ ledger, math, clock, openRoundClock, roundSeconds: ROUND_SECONDS, proposeClearing, parseOrder, proposeCompeting, streamRationale, composeBrief })
+    const started = await listen(createApp(deps))
+    server = started.server
+
+    // ADJ-01: POST /competing reaches the injected proposeCompeting.
+    const competing = await fetch(`${started.base}/competing`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ roundId: 'R2', configs: [{ id: 'a', model: 'claude-haiku-4-5', temperature: 0 }] }),
+    })
+    expect(competing.status).toBe(200)
+    expect(proposeCompeting).toHaveBeenCalledTimes(1)
+
+    // ADJ-02: POST /rfq + POST /rfq/:id/accept reach the injected ledger wrappers.
+    const rfq = await fetch(`${started.base}/rfq`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ requester: 'bankA::x', side: 'Buy', quantity: 10 }),
+    })
+    expect(rfq.status).toBe(201)
+    expect(ledger.postRfq).toHaveBeenCalledWith('bankA::x', 'Buy', 10, undefined)
+
+    const accept = await fetch(`${started.base}/rfq/rfq-1/accept`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ quoteCid: 'q1' }),
+    })
+    expect(accept.status).toBe(200)
+    expect(ledger.acceptQuote).toHaveBeenCalledWith('rfq-1', 'q1')
+
+    // ADJ-03: POST /issuance drives openIssuance + clearIssuance.
+    const issuance = await fetch(`${started.base}/issuance`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ issuer: 'issuer::x', bondInstrument: 'BOND2', cashInstrument: 'USDCx', trancheSize: 100 }),
+    })
+    expect(issuance.status).toBe(201)
+    expect(ledger.openIssuance).toHaveBeenCalledTimes(1)
+    expect(ledger.clearIssuance).toHaveBeenCalledWith('iss-1')
   })
 
   // ── OPS-04: round.opened fires off the open seam (buildDeps openRound wrapper) ─────
@@ -206,6 +281,7 @@ describe('solver boot wiring (buildDeps)', () => {
       roundSeconds: ROUND_SECONDS,
       proposeClearing,
       parseOrder,
+      proposeCompeting,
       streamRationale,
       composeBrief,
       webhooks,
@@ -252,6 +328,7 @@ describe('solver boot wiring (buildDeps)', () => {
       roundSeconds: ROUND_SECONDS,
       proposeClearing,
       parseOrder,
+      proposeCompeting,
       streamRationale,
       composeBrief,
       webhooks,
@@ -316,6 +393,7 @@ describe('solver boot wiring (buildDeps)', () => {
       roundSeconds: ROUND_SECONDS,
       proposeClearing: agent.proposeClearing,
       parseOrder: agent.parseOrder,
+      proposeCompeting: agent.proposeCompeting,
       streamRationale: agent.streamRationale,
       composeBrief,
     })

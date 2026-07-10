@@ -379,10 +379,15 @@ template Round
         -- Build the gross DvP Instructions (sellers deliver bond to buyers; buyers
         -- pay `filledQty * p*` cash to sellers) from the verified allocation.
         let legs = buildGrossInstructions priceDec allocations bondInstrument cashInstrument
-        -- Per-instrument conservation, on-ledger, fail-loud — Σ delivered == Σ
-        -- received for every instrument. Asserted on BOTH the gross legs and the
-        -- multilaterally-netted legs (netLegs default-on transform), so the netted
-        -- projection used for the topology/receipts is proven conserving too.
+        -- Per-instrument WELL-FORMEDNESS screen, on-ledger, fail-loud (see
+        -- `conservationOk`): asserts every leg is balanced-transfer shaped
+        -- (non-negative amount, no self-leg) on BOTH the gross legs and the
+        -- multilaterally-netted legs (netLegs default-on transform). NOTE: the
+        -- summed-net-is-zero term is structurally implied for transfer legs, so this
+        -- does NOT by itself prove the amounts are economically balanced — the
+        -- amounts are pinned by the §8 recompute + `buildGrossInstructions` (derived
+        -- from the verified allocation) and by `moveThread`'s over-draw abort, and the
+        -- numeric before/after conservation is proven in `test_netting_conserves`.
         assertMsg "settlement batch violates per-instrument conservation"
           (conservationOk legs [bondInstrument, cashInstrument]
              && conservationOk (netLegs operator legs) [bondInstrument, cashInstrument])

@@ -108,16 +108,21 @@ netLegs custodian legs =
                else []
   in concat [ oneLeg p i | p <- parties, i <- insts ]
 
--- Per-instrument conservation predicate — the fail-loud gate 11-05's `Round.Clear`
--- rewrite will `assertMsg` on the built legs. A batch is conserving iff, for every
--- instrument, every party's net summed over ALL parties is zero (no value created
--- or destroyed), AND every leg is well-formed (non-negative amount, no self-leg).
--- Note: for the balanced-transfer `Instruction` shape each leg is a
--- sender→receiver move, so the summed-net-is-zero part is structurally implied;
--- the discriminating power here is the well-formedness screen plus catching any
--- future one-sided/asymmetric leg. The SUBSTANTIVE numeric conservation is
--- additionally proven on-ledger by before/after `Holding` totals in
--- `test_netting_conserves`.
+-- Per-instrument WELL-FORMEDNESS screen — `assertMsg`ed on the built legs in
+-- 11-05's `Round.Clear`. HONEST SCOPE (do not over-read this as a numeric-imbalance
+-- detector): the only DISCRIMINATING checks are `amount >= 0` (no negative leg) and
+-- `sender /= receiver` (no self-leg). The per-instrument `instrumentConserves` term
+-- below sums every party's net over ALL parties; but for the balanced-transfer
+-- `Instruction` shape each leg contributes `+amount` to its receiver and `-amount`
+-- to its sender, so that sum is STRUCTURALLY always 0.0 regardless of whether the
+-- batch is economically balanced — it proves the leg list is balanced-transfer
+-- shaped (would only fire on a future one-sided/asymmetric leg), NOT that the amounts
+-- are correct. The SUBSTANTIVE numeric conservation (that no value is created or
+-- destroyed) is NOT proven here; it is proven on-ledger by before/after `Holding`
+-- totals in `test_netting_conserves`, and the amounts themselves are pinned upstream
+-- by the §8 recompute + `buildGrossInstructions` deriving them from the verified
+-- allocation, with `moveThread`'s `Split` aborting any over-draw. This predicate is a
+-- defense-in-depth well-formedness layer, not a standalone value-conservation gate.
 conservationOk : [Instruction] -> [InstrumentId] -> Bool
 conservationOk legs instruments =
   all (\l -> l.amount >= 0.0) legs

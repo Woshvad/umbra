@@ -1,0 +1,34 @@
+# Umbra — dev-TLS reverse proxy in front of Keycloak (IDEN-01/02).
+#
+# `tls internal` makes Caddy issue a locally-trusted self-signed cert (no ACME, no
+# public DNS) — the one-line dev-cert path. A real cert (Let's Encrypt / org CA) is UAT.
+#
+# The realm's OIDC issuer + JWKS surface through here:
+#   issuer  : https://keycloak.umbra.dev:8443/realms/umbra
+#   JWKS    : https://keycloak.umbra.dev:8443/realms/umbra/protocol/openid-connect/certs
+#   token   : https://keycloak.umbra.dev:8443/realms/umbra/protocol/openid-connect/token
+#
+# Point the solver/web .env at these:
+#   OIDC_ISSUER=https://keycloak.umbra.dev:8443/realms/umbra
+#   OIDC_JWKS_URL=https://keycloak.umbra.dev:8443/realms/umbra/protocol/openid-connect/certs
+#   VITE_OIDC_AUTHORITY=https://keycloak.umbra.dev:8443/realms/umbra
+#
+# Add a hosts entry so the name resolves locally:
+#   127.0.0.1  keycloak.umbra.dev
+
+keycloak.umbra.dev:8443 {
+	tls internal
+
+	# Forward the original scheme/host/port so Keycloak builds correct issuer URLs.
+	reverse_proxy keycloak:8080 {
+		header_up X-Forwarded-Proto https
+		header_up X-Forwarded-Host {host}
+		header_up X-Forwarded-Port 8443
+	}
+
+	encode gzip
+	log {
+		output stdout
+		format console
+	}
+}

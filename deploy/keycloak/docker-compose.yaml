@@ -1,0 +1,99 @@
+# Umbra — Keycloak OIDC issuer + isolated Postgres + Caddy dev-TLS proxy (IDEN-01/02)
+#
+# Boots the `umbra` realm (deploy/keycloak/umbra-realm.json) behind a self-signed
+# dev-TLS reverse proxy. This is the DevNet/prod identity path; the LocalNet
+# `unsafe-jwt-hmac-256` dev loop is UNCHANGED and needs none of this.
+#
+# PORTS are deliberately OFF the LocalNet stack (:3975/:2975/:4975 Canton, :55432
+# LocalNet Postgres, :5173 web, :4100 solver, :7575 dev JSON API) to avoid collisions:
+#   - Caddy dev-TLS ...... host :8443  (https://keycloak.umbra.dev:8443)
+#   - Keycloak (direct) .. host :8081  (debug only; the realm is served THROUGH Caddy)
+#   - Keycloak Postgres .. host :55433 (isolated volume kc-postgres-data)
+#
+# SECRETS: all creds come from `.env` (see .env.example) — NEVER committed. Run at UAT:
+#   cp .env.example .env   # then fill real values
+#   docker compose up -d
+#
+# LIVE token exchange + live MFA are UAT (needs this stack booted + a Canton participant
+# pointed at the JWKS URL). This file's SHAPE is asserted offline (realm.test.mjs + YAML parse).
+
+services:
+  kc-postgres:
+    image: postgres:15
+    container_name: umbra-kc-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: ${KC_DB_USERNAME:-keycloak}
+      POSTGRES_PASSWORD: ${KC_DB_PASSWORD:?set KC_DB_PASSWORD in .env}
+    volumes:
+      - kc-postgres-data:/var/lib/postgresql/data
+    ports:
+      # Isolated host port (LocalNet Postgres holds :55432) — mirrors the repo's
+      # per-network Postgres isolation precedent (scripts/localnet).
+      - "55433:5432"
+    networks:
+      - umbra-idp
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${KC_DB_USERNAME:-keycloak} -d keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.1
+    container_name: umbra-keycloak
+    restart: unless-stopped
+    depends_on:
+      kc-postgres:
+        condition: service_healthy
+    command: ["start", "--import-realm"]
+    environment:
+      # DB
+      KC_DB: postgres
+      KC_DB_URL_HOST: kc-postgres
+      KC_DB_URL_DATABASE: keycloak
+      KC_DB_USERNAME: ${KC_DB_USERNAME:-keycloak}
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD:?set KC_DB_PASSWORD in .env}
+      # Bootstrap admin (Keycloak 26.x renamed KEYCLOAK_ADMIN -> KC_BOOTSTRAP_ADMIN_*)
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?set KC_BOOTSTRAP_ADMIN_PASSWORD in .env}
+      # TLS terminates at Caddy; Keycloak runs HTTP behind the proxy and trusts X-Forwarded-*.
+      KC_HOSTNAME: ${KC_HOSTNAME:-https://keycloak.umbra.dev:8443}
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+    volumes:
+      # The committed realm export is imported on first boot (--import-realm).
+      - ./umbra-realm.json:/opt/keycloak/data/import/umbra-realm.json:ro
+    ports:
+      - "8081:8080"
+    networks:
+      - umbra-idp
+
+  caddy:
+    image: caddy:2
+    container_name: umbra-caddy
+    restart: unless-stopped
+    depends_on:
+      - keycloak
+    ports:
+      # Dev-TLS edge — https://keycloak.umbra.dev:8443 (add a hosts entry mapping the
+      # name to 127.0.0.1). :8443 avoids colliding with anything on 443/80.
+      - "8443:8443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - umbra-idp
+
+networks:
+  umbra-idp:
+    driver: bridge
+
+volumes:
+  kc-postgres-data:
+  caddy-data:
+  caddy-config:

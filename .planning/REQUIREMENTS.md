@@ -150,7 +150,7 @@ Scoped for milestone v2.0. Grounded in the **current** stack (Daml 3.4.11 + Cant
 - [x] **OPS-02**: Secrets (ANTHROPIC_API_KEY, party tokens) move from `.env` into a vault with rotation; a public status page reports venue/round health
 - [x] **OPS-03**: Idempotency keys on order submission (a retry never double-submits) under a round-lifecycle state machine enforcing legal transitions
 - [x] **OPS-04**: Signed, retried webhooks for round-lifecycle events (round.opened/sealed/cleared/settled, fill.posted) and a sandbox round fixed at the $100.00 fixture
-- [ ] **OPS-05**: A FIX order-entry gateway so institutional desks submit sealed bids from their existing OMS
+- [x] **OPS-05**: A FIX order-entry gateway so institutional desks submit sealed bids from their existing OMS
 
 ### Adjacent (ADJ)
 

@@ -114,11 +114,21 @@ export const hostingMap = async (
     parties,
   }))
 
-  // demo-real ⇔ every hosted party lives on the SAME single participant. Zero hosted
-  // parties (nothing probed / ledger down) collapses to demo-real (nothing to
-  // over-claim). ≥2 distinct hosting participants ⇒ genuinely distributed.
-  const hostingParticipants = new Set(Object.values(perParty).flat())
-  const demoReal = hostingParticipants.size <= 1
+  // demo-real ⇔ every hosted party's CANONICAL (first) hosting participant is the SAME
+  // single participant. We collapse each party to ONE canonical participant BEFORE counting
+  // so a co-hosted party — which `perParty` explicitly allows to resolve isLocal:true on >1
+  // participant (e.g. the WOW-07 guest) — cannot fabricate a "distributed" signal on the
+  // single-operator LocalNet (T-11-03-OVERCLAIM). Using the flattened union instead would
+  // flip demoReal to false the moment ANY single party appeared on two participants, dropping
+  // the HARD honesty badge. Zero hosted parties (nothing probed / ledger down) collapses to
+  // demo-real (nothing to over-claim); ≥2 distinct canonical participants ⇒ genuinely
+  // distributed (desks each on their own node — the xnode money shot).
+  const canonicalParticipants = new Set(
+    Object.values(perParty)
+      .map((ids) => ids[0])
+      .filter((id): id is string => id !== undefined),
+  )
+  const demoReal = canonicalParticipants.size <= 1
 
   return {
     nodes,

@@ -1,10 +1,11 @@
 ---
 phase: 11
 slug: settlement-institutional-grade
-status: draft
+status: approved
 shadcn_initialized: false
 preset: none
 created: 2026-07-10
+reviewed_at: 2026-07-10
 ---
 
 # Phase 11 — UI Design Contract

@@ -27,6 +27,10 @@ import { computeClearing, matchedAt } from './auction.js'
 // IDEN-01 dual-mode: the OIDC (DevNet/prod) client-credentials token acquisition. Only
 // invoked when OIDC_ISSUER is set; the dev LocalNet path never touches it. The OIDC
 // client secret lives ONLY inside auth.ts (never in this module, never logged).
+// NOTE (LOW-03): only `acquireToken` is on the request path here. auth.ts also exports
+// `verifyToken`, but it is deliberately NOT called in this client — the PARTICIPANT is the
+// authoritative token verifier; `verifyToken` is offline-testable defense-in-depth
+// (exercised by auth.test.ts), not an active verification step in the solver's request flow.
 import { acquireToken } from './auth.js'
 
 export type RoundStatus = 'Open' | 'Closed' | 'Cleared' | 'Settled'

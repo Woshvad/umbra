@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Progress
 status: executing
-stopped_at: Phase 13 planned — 14 plans/6 waves, plan-checker passed
-last_updated: "2026-07-10T18:23:47.149Z"
+stopped_at: Completed 13-02-PLAN.md
+last_updated: "2026-07-10T18:34:45.485Z"
 last_activity: 2026-07-10 -- Phase 13 execution started
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 54
-  completed_plans: 41
-  percent: 76
+  completed_plans: 42
+  percent: 78
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 ## Current Position
 
 Phase: 13 (platform-baseline-adjacent-track-b-ongoing) — EXECUTING
-Plan: 2 of 14
+Plan: 3 of 14
 Status: Ready to execute
 Prev: Phase 11 built (settlement on CN Token Standard CIP-0056; §4 $100.00; verified 4/4, security 42/42, UI 20/24; live items → UAT).
 Next (NOT in this run): Phase 13 — Platform Baseline & Adjacent (Track B). Milestone v2.0 at 5/6 phases.
@@ -93,6 +93,7 @@ Last activity: 2026-07-10 -- Phase 13 execution started
 | Phase 10 P09 | 20 | 2 tasks | 5 files |
 | Phase 10 P10 | 18 min | 2 tasks | 5 files |
 | Phase 13 P01 | 18min | 3 tasks | 7 files |
+| Phase 13 P02 | 6min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -160,6 +161,8 @@ Recent decisions affecting current work:
 - [Phase 10]: [10-10 / VIZ-02]: Time Machine view 06 replays each party's exact per-stage view from AUTHENTIC per-party ACS-at-offset reads (each desk's OWN token; offset from getStageOffsets) — reuses PrivacyView's redaction motif. Honest grammar: T1 `LEDGER EVENT @ {offset}` / `bg-redact` NOT VISIBLE / dashed-red RECONSTRUCTED. OPERATOR column is RECONSTRUCTED-by-construction (no operator token in the browser) + redacted at COMMITTED/TIMELOCKED (venue-blind, CRYP-02); each bank column shows a 3-subject matrix so BankB visibly renders BankA/BankC as NOT VISIBLE. Pure DOM-free core (bankCell/operatorCell/ordersFromAcs) unit-tested; vitest include broadened to .tsx (node-env, no jsdom). web build + 63 vitest green; §4 untouched. Live scrub across a real run deferred to end-of-phase human-verify. Phase 10 COMPLETE (10/10).
 - [Phase ?]: [13-01 / OPS-01]: solver telemetry.ts + logger.ts + alerts/umbra-rules.yml ship OPS-01 — OTLP-or-console OTel with ConsoleSpanExporter/ConsoleMetricExporter fallback when OTEL_EXPORTER_OTLP_ENDPOINT unset, withSpan round.id + ledger.* CLIENT spans, five instruments via lazy Proxy, zero-dep secret-redacting JSON logger; 165 solver tests green, tsc clean, fixture 100.00 intact.
 - [Phase ?]: [13-01 / DEVIATION]: NodeSDK exports zero spans on sdk-node@0.220/sdk-trace@2.9 (verified both export paths) -> manual BasicTracerProvider+MeterProvider wiring (RESEARCH alternative) + AsyncLocalStorageContextManager; added context-async-hooks@2.9.0 (same CNCF org); OTel deps exact-pinned.
+- [Phase ?]: OPS-02: SecretsProvider env default preserves .env byte-for-byte; vault backend is opt-in KV v2 raw fetch (no node-vault SDK)
+- [Phase ?]: OPS-02: /status + /status.html are token-free aggregate-only (allow-list construction + order-sweep + secret-sweep tests); endpoint wiring deferred to 13-07
 
 ### Pending Todos
 
@@ -185,6 +188,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-10T18:23:09.277Z
-Stopped at: Phase 13 planned — 14 plans/6 waves, plan-checker passed
-Resume file: .planning/phases/13-platform-baseline-adjacent-track-b-ongoing/13-01-PLAN.md
+Last session: 2026-07-10T18:34:45.460Z
+Stopped at: Completed 13-02-PLAN.md
+Resume file: None

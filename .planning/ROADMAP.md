@@ -448,7 +448,7 @@ Plans:
 **Wave 1** *(pure standalone modules + RFQ Daml — parallel)*
 
 - [x] 13-01-PLAN.md — OPS-01 observability modules: OTel install (dep-legitimacy checkpoint) + telemetry.ts + secret-redacting logger.ts + alerts/umbra-rules.yml [OPS-01]
-- [ ] 13-02-PLAN.md — OPS-02 secrets.ts (SecretsProvider env|vault) + status.ts (S1 token-free /status + /status.html) + dev Vault compose + rotate script + runbook [OPS-02]
+- [x] 13-02-PLAN.md — OPS-02 secrets.ts (SecretsProvider env|vault) + status.ts (S1 token-free /status + /status.html) + dev Vault compose + rotate script + runbook [OPS-02]
 - [ ] 13-03-PLAN.md — OPS-03 idempotency.ts middleware + fsm.ts round-lifecycle guard (Sealed display alias) [OPS-03]
 - [ ] 13-04-PLAN.md — OPS-04 webhooks.ts (HMAC sign/retry/log) + sandbox.ts (§4 fixture asserts $100.00) [OPS-04]
 - [ ] 13-05-PLAN.md — OPS-05 fix.ts hand-rolled FIX 4.4 subset (framing/parse/build/session, known-good vector) [OPS-05]
@@ -491,4 +491,4 @@ Build waves run in numeric order 8 → 9 → 10 → 11. Track A (Phase 12) runs 
 | 10. Cryptographic Privacy | 10/10 | Built · live UAT pending | 2026-07-10 |
 | 11. Settlement & Institutional Grade | 11/11 | Built · live UAT pending | 2026-07-10 |
 | 12. Real On-Chain (Canton DevNet) | 5/5 | Built · live UAT + external SV gate pending | 2026-07-10 |
-| 13. Platform Baseline & Adjacent | 1/14 | In Progress|  |
+| 13. Platform Baseline & Adjacent | 2/14 | In Progress|  |

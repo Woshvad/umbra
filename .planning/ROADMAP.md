@@ -381,7 +381,6 @@ Plans:
   3. Only whitelisted, eligibility-checked (accreditation/jurisdiction/sanctions) desk parties can create an `Order` or hold the bond/cash asset; an ineligible party is rejected on-ledger (COMP-01).
   4. A guest joins as a 4th desk via QR/mobile and sees only their own fill; the three-node topology view shows orders resident on separate participants and the atomic cross-node settle (WOW-07, VIZ-03).
 
-
 **Plans**: 11 plans (6 waves)
 Plans:
 
@@ -448,7 +447,7 @@ Plans:
 
 **Wave 1** *(pure standalone modules + RFQ Daml — parallel)*
 
-- [ ] 13-01-PLAN.md — OPS-01 observability modules: OTel install (dep-legitimacy checkpoint) + telemetry.ts + secret-redacting logger.ts + alerts/umbra-rules.yml [OPS-01]
+- [x] 13-01-PLAN.md — OPS-01 observability modules: OTel install (dep-legitimacy checkpoint) + telemetry.ts + secret-redacting logger.ts + alerts/umbra-rules.yml [OPS-01]
 - [ ] 13-02-PLAN.md — OPS-02 secrets.ts (SecretsProvider env|vault) + status.ts (S1 token-free /status + /status.html) + dev Vault compose + rotate script + runbook [OPS-02]
 - [ ] 13-03-PLAN.md — OPS-03 idempotency.ts middleware + fsm.ts round-lifecycle guard (Sealed display alias) [OPS-03]
 - [ ] 13-04-PLAN.md — OPS-04 webhooks.ts (HMAC sign/retry/log) + sandbox.ts (§4 fixture asserts $100.00) [OPS-04]
@@ -492,4 +491,4 @@ Build waves run in numeric order 8 → 9 → 10 → 11. Track A (Phase 12) runs 
 | 10. Cryptographic Privacy | 10/10 | Built · live UAT pending | 2026-07-10 |
 | 11. Settlement & Institutional Grade | 11/11 | Built · live UAT pending | 2026-07-10 |
 | 12. Real On-Chain (Canton DevNet) | 5/5 | Built · live UAT + external SV gate pending | 2026-07-10 |
-| 13. Platform Baseline & Adjacent | 0/14 | Planned (6 waves) | — |
+| 13. Platform Baseline & Adjacent | 1/14 | In Progress|  |

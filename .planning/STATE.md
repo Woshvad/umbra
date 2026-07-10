@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Progress
-status: building
-stopped_at: Completed Phases 11 & 12 (requested --to 12) — both built · live UAT pending; Phase 13 remains
-last_updated: "2026-07-10T12:00:00.000Z"
-last_activity: 2026-07-10 -- Phase 12 built (Real On-Chain / DevNet — on-ledger four-eyes ClearingApproval, OIDC dual-mode Keycloak+jose+PKCE, Splice DevNet compose + ops + runbook + SV-sponsor checklist); §4 still clears $100.00. Requested run (Phases 11–12) COMPLETE — stopped per --to 12; Phase 13 (Platform Baseline & Adjacent) not started.
+status: executing
+stopped_at: Phase 13 planned — 14 plans/6 waves, plan-checker passed
+last_updated: "2026-07-10T18:23:47.149Z"
+last_activity: 2026-07-10 -- Phase 13 execution started
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 40
-  completed_plans: 40
-  percent: 83
+  total_plans: 54
+  completed_plans: 41
+  percent: 76
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-25)
 
 **Core value:** The privacy money shot — three desks submit sealed orders blind to each other, an AI solver clears them at one uniform price ($100.00 on the §4 fixture), and the whole batch settles atomically in a single Canton transaction.
-**Current focus:** Phases 11 & 12 COMPLETE (requested --to 12) — stopped; Phase 13 remains for a future run
+**Current focus:** Phase 13 — platform-baseline-adjacent-track-b-ongoing
 
 ## Current Position
 
-Phase: 12 (real-on-chain-canton-devnet) — BUILT · live UAT + external SV gate pending. Requested run (Phases 11–12) COMPLETE.
-Plan: 5 of 5 executed + all gates passed — 12-01 four-eyes ClearingApproval gate (§4 clears $100.00 WITH approval; +4 four-eyes tests incl. distinct-party) · 12-02 OIDC dual-mode (solver client-credentials + jose JWKS verify; web PKCE; dev-HMAC preserved) · 12-03 Keycloak realm + Caddy TLS + Canton jwt-jwks config · 12-04 Splice DevNet compose + devnet-deploy + ops + RUNBOOK + SV-SPONSOR-CHECKLIST · 12-05 Compliance approve/reject UI.
-Status: Verified (5/5 code+config deliverables, human_needed for live) · code-review 0 blocker (2 HIGH four-eyes-bypass + 3 MED + 3 LOW — ALL fixed) · security PASS (13/13 threats, 0 high/critical). daml test exit 0 (§4 $100.00 / A=10·B=8·C=2 with four-eyes + negatives), solver 151/151, web 85/85, realm 8/8, devnet 9/9, bundle secret-scan 0. Live/external items → 12-UAT.md (SV sponsorship = external business gate; live token-exchange/§4-on-real-Canton/ops = UAT). Plans 12-01..05 were authored inline during a classifier outage; the plan-checker pass was folded into code-review/verify/security.
+Phase: 13 (platform-baseline-adjacent-track-b-ongoing) — EXECUTING
+Plan: 2 of 14
+Status: Ready to execute
 Prev: Phase 11 built (settlement on CN Token Standard CIP-0056; §4 $100.00; verified 4/4, security 42/42, UI 20/24; live items → UAT).
 Next (NOT in this run): Phase 13 — Platform Baseline & Adjacent (Track B). Milestone v2.0 at 5/6 phases.
-Last activity: 2026-07-10 -- Phases 11–12 built + all gates green; stopped per requested --to 12.
+Last activity: 2026-07-10 -- Phase 13 execution started
 
 ## Performance Metrics
 
@@ -92,6 +92,7 @@ Last activity: 2026-07-10 -- Phases 11–12 built + all gates green; stopped per
 | Phase 10 P08 | 35min | 2 tasks | 1 files |
 | Phase 10 P09 | 20 | 2 tasks | 5 files |
 | Phase 10 P10 | 18 min | 2 tasks | 5 files |
+| Phase 13 P01 | 18min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -157,6 +158,8 @@ Recent decisions affecting current work:
 - [Phase 10]: [10-07 / CRYP-01,CRYP-02,CRYP-03,VIZ-02]: web/src/solver.ts gains 7 typed Phase-10 crypto client fns (timelockEncrypt/Decrypt, generateProof/verifyProof/anchorProof/tamperProof, getStageOffsets) + envelope-safe types mirroring solver/src/api.ts EXACTLY (verify→{verified}, verify/anchor POST the {vkey,publicSignals,proof} envelope, tamper carries verified:false); all off the single SOLVER_BASE_URL via the shipped call<T>() — no :4000, no auth header, no operator token/ANTHROPIC_API_KEY in the bundle. verify(off-ledger,T3) vs anchor(on-ledger hash,T1) kept DISTINCT for honest-labeling. New cryptoUrls.test.ts (11) uses stubbed-fetch route asserts + a vite ?raw comment-stripped source scan (NOT node:fs — app tsc has no @types/node). web build + 48 vitest green; tsc clean. Shared-seam plan: view components untouched so 10-08/09/10 stay conflict-free. — Mirror the authoritative api.ts wire shapes over the plan's approximate type sketch so the client actually decodes solver responses.
 - [Phase ?]: 10-08: client-side commitment mirrors on-ledger commitOf(serializeOrder ‖ salt) (SubtleCrypto SHA-256, roundBankers-2 half-even) so a live reveal re-check matches; commit/reveal on desk ctx, timelock on credential-free solver — no operator token in the browser
 - [Phase 10]: [10-10 / VIZ-02]: Time Machine view 06 replays each party's exact per-stage view from AUTHENTIC per-party ACS-at-offset reads (each desk's OWN token; offset from getStageOffsets) — reuses PrivacyView's redaction motif. Honest grammar: T1 `LEDGER EVENT @ {offset}` / `bg-redact` NOT VISIBLE / dashed-red RECONSTRUCTED. OPERATOR column is RECONSTRUCTED-by-construction (no operator token in the browser) + redacted at COMMITTED/TIMELOCKED (venue-blind, CRYP-02); each bank column shows a 3-subject matrix so BankB visibly renders BankA/BankC as NOT VISIBLE. Pure DOM-free core (bankCell/operatorCell/ordersFromAcs) unit-tested; vitest include broadened to .tsx (node-env, no jsdom). web build + 63 vitest green; §4 untouched. Live scrub across a real run deferred to end-of-phase human-verify. Phase 10 COMPLETE (10/10).
+- [Phase ?]: [13-01 / OPS-01]: solver telemetry.ts + logger.ts + alerts/umbra-rules.yml ship OPS-01 — OTLP-or-console OTel with ConsoleSpanExporter/ConsoleMetricExporter fallback when OTEL_EXPORTER_OTLP_ENDPOINT unset, withSpan round.id + ledger.* CLIENT spans, five instruments via lazy Proxy, zero-dep secret-redacting JSON logger; 165 solver tests green, tsc clean, fixture 100.00 intact.
+- [Phase ?]: [13-01 / DEVIATION]: NodeSDK exports zero spans on sdk-node@0.220/sdk-trace@2.9 (verified both export paths) -> manual BasicTracerProvider+MeterProvider wiring (RESEARCH alternative) + AsyncLocalStorageContextManager; added context-async-hooks@2.9.0 (same CNCF org); OTel deps exact-pinned.
 
 ### Pending Todos
 
@@ -182,6 +185,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-09T23:13:33.173Z
-Stopped at: Completed 10-09-PLAN.md
-Resume file: None
+Last session: 2026-07-10T18:23:09.277Z
+Stopped at: Phase 13 planned — 14 plans/6 waves, plan-checker passed
+Resume file: .planning/phases/13-platform-baseline-adjacent-track-b-ongoing/13-01-PLAN.md

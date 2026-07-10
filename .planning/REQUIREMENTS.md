@@ -146,7 +146,7 @@ Scoped for milestone v2.0. Grounded in the **current** stack (Daml 3.4.11 + Cant
 
 ### Platform Baseline (OPS)
 
-- [ ] **OPS-01**: Observability — OpenTelemetry tracing across solver → JSON Ledger API v2 → Canton, structured logs, metrics, and alerting
+- [x] **OPS-01**: Observability — OpenTelemetry tracing across solver → JSON Ledger API v2 → Canton, structured logs, metrics, and alerting
 - [ ] **OPS-02**: Secrets (ANTHROPIC_API_KEY, party tokens) move from `.env` into a vault with rotation; a public status page reports venue/round health
 - [ ] **OPS-03**: Idempotency keys on order submission (a retry never double-submits) under a round-lifecycle state machine enforcing legal transitions
 - [ ] **OPS-04**: Signed, retried webhooks for round-lifecycle events (round.opened/sealed/cleared/settled, fill.posted) and a sandbox round fixed at the $100.00 fixture

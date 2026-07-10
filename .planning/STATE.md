@@ -4,13 +4,13 @@ milestone: v2.0
 milestone_name: Progress
 status: executing
 stopped_at: Completed 13-04-PLAN.md
-last_updated: "2026-07-10T19:05:56.711Z"
+last_updated: "2026-07-10T19:22:00.182Z"
 last_activity: 2026-07-10 -- Phase 13 execution started
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 54
-  completed_plans: 45
+  completed_plans: 46
   percent: 83
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-25)
 ## Current Position
 
 Phase: 13 (platform-baseline-adjacent-track-b-ongoing) — EXECUTING
-Plan: 6 of 14
+Plan: 7 of 14
 Status: Ready to execute
 Prev: Phase 11 built (settlement on CN Token Standard CIP-0056; §4 $100.00; verified 4/4, security 42/42, UI 20/24; live items → UAT).
 Next (NOT in this run): Phase 13 — Platform Baseline & Adjacent (Track B). Milestone v2.0 at 5/6 phases.
@@ -97,6 +97,7 @@ Last activity: 2026-07-10 -- Phase 13 execution started
 | Phase 13 P03 | 8min | 2 tasks | 4 files |
 | Phase 13 P04 | 6min | 2 tasks | 4 files |
 | Phase 13 P05 | 4min | 1 tasks | 2 files |
+| Phase 13 P06 | 12min | 2 tasks tasks | 2 files files |
 
 ## Accumulated Context
 
@@ -168,6 +169,7 @@ Recent decisions affecting current work:
 - [Phase ?]: OPS-02: /status + /status.html are token-free aggregate-only (allow-list construction + order-sweep + secret-sweep tests); endpoint wiring deferred to 13-07
 - [Phase ?]: OPS-04 webhook secret is per-subscription and module-private; register() returns no secret; delivery log carries Error-name/HTTP-status only (secret-sweep enforced)
 - [Phase ?]: Sandbox round is the byte-unchanged §4 fixture with an assertSandboxClears drift guard ($100.00 / A=10 B=8 C=2); auction.ts untouched
+- [Phase 13]: [13-06 / ADJ-02]: Keyless Umbra.Rfq module — RfqRequest (signatory operator,requester; observer=invited dealers) + FIRM Quote (signatory operator,dealer; observer requester). AcceptQuote (controller requester) builds a 1×1 [Instruction] batch and calls settleBatch operator — the SAME atomic DvP path as Round.Clear, no parallel mechanism. Body runs under RfqRequest signatory authority (operator ∈ signatories) so operator-custody Holding choices are authorized; tests co-submit submitMulti [requester,operator] [] for read-visibility of operator-custodied holdings. 4 scenarios (firm/accept-best/conservation/privacy) green; §4 golden still 00.00; Clearing.daml + Round.Clear byte-unchanged. web/daml.js regen deferred to 13-08.
 
 ### Pending Todos
 
@@ -193,6 +195,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-10T19:05:15.285Z
+Last session: 2026-07-10T19:20:42.565Z
 Stopped at: Completed 13-04-PLAN.md
 Resume file: None

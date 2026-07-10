@@ -155,7 +155,7 @@ Scoped for milestone v2.0. Grounded in the **current** stack (Daml 3.4.11 + Cant
 ### Adjacent (ADJ)
 
 - [ ] **ADJ-01**: Competing AI solvers — N solver instances/configs ranked by matched volume / surplus, refereed by the deterministic recompute (spec §19 STR-03)
-- [ ] **ADJ-02**: An RFQ side-mode for illiquid single bonds — request a signed firm quote, settled via the same atomic Canton DvP path
+- [x] **ADJ-02**: An RFQ side-mode for illiquid single bonds — request a signed firm quote, settled via the same atomic Canton DvP path
 - [ ] **ADJ-03**: On-chain primary bond issuance (uniform-price EasyAuction model) and a post-settlement coupon/redemption lifecycle module
 
 > **External dependencies** (scheduled in Track B, not code deliverables): a cryptographer's review (gates CRYP-* for real value), a KYC/AML vendor (backs COMP-01), and a SOC 2 engagement. **Known limitation:** true 3-desk privacy needs 3 real institutions each running their own validator; a single-operator DevNet node is "demo-real."

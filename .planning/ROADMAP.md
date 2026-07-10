@@ -452,7 +452,7 @@ Plans:
 - [x] 13-03-PLAN.md — OPS-03 idempotency.ts middleware + fsm.ts round-lifecycle guard (Sealed display alias) [OPS-03]
 - [x] 13-04-PLAN.md — OPS-04 webhooks.ts (HMAC sign/retry/log) + sandbox.ts (§4 fixture asserts $100.00) [OPS-04]
 - [x] 13-05-PLAN.md — OPS-05 fix.ts hand-rolled FIX 4.4 subset (framing/parse/build/session, known-good vector) [OPS-05]
-- [ ] 13-06-PLAN.md — ADJ-02 Rfq.daml keyless RfqRequest+firm Quote+AcceptQuote (settleBatch) + Tests.daml RFQ scenarios [ADJ-02]
+- [x] 13-06-PLAN.md — ADJ-02 Rfq.daml keyless RfqRequest+firm Quote+AcceptQuote (settleBatch) + Tests.daml RFQ scenarios [ADJ-02]
 
 **Wave 2** *(blocked on Wave 1)*
 
@@ -491,4 +491,4 @@ Build waves run in numeric order 8 → 9 → 10 → 11. Track A (Phase 12) runs 
 | 10. Cryptographic Privacy | 10/10 | Built · live UAT pending | 2026-07-10 |
 | 11. Settlement & Institutional Grade | 11/11 | Built · live UAT pending | 2026-07-10 |
 | 12. Real On-Chain (Canton DevNet) | 5/5 | Built · live UAT + external SV gate pending | 2026-07-10 |
-| 13. Platform Baseline & Adjacent | 5/14 | In Progress|  |
+| 13. Platform Baseline & Adjacent | 6/14 | In Progress|  |

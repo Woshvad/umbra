@@ -23,6 +23,7 @@ import Umbra.Auction
   )
 import Umbra.Roles (Venue, SubmitOrder(..), CommitOrder(..), AnchorProof(..))
 import Umbra.Clearing
+import Umbra.Compliance (DeskEligibility(..), isEligible)
 
 -- LEDG-02 — the §4 seed is the single correctness reference. Assert that after
 -- `initialize` the operator sees exactly the 5 §4 Assets with the right
@@ -839,3 +840,58 @@ test_commit_reveal_clears_at_100 = do
   fillOf bankA === 10
   fillOf bankB === 8
   fillOf bankC === 2
+
+-- COMP-01 (11-02) — DeskEligibility POSITIVE lifecycle. The operator (acting as its
+-- own Compliance role for the MVP stub) issues an eligibility credential for bankA,
+-- proves it is retrievable by (operator, desk) and that `isEligible` is True; and
+-- proves an ineligible credential (accredited = False) yields `isEligible == False`.
+--
+-- This is the positive proof only. The on-ledger REJECTION negative tests (an
+-- ineligible desk's submit / holding-receipt failing via assertMsg) are 11-06 — they
+-- need the `assertDeskEligible` gate wired into SubmitOrder/CommitOrder/holding
+-- issuance in 11-05. (The planned `queryContractKey`-by-key retrieval is a keyless
+-- `query`+filter here: contract keys are unsupported on Daml 3.4 / Canton LF 2.1 —
+-- see Compliance.daml's ENVIRONMENTAL DEVIATION note.)
+test_eligibility_issue : Script ()
+test_eligibility_issue = do
+  Parties{operator, bankA, bankC} <- allocateAll
+
+  -- Issue an ELIGIBLE credential for bankA (operator == compliance, MVP stub).
+  eligCid <- submit operator do
+    createCmd DeskEligibility with
+      operator
+      compliance = operator
+      desk = bankA
+      accredited = True
+      jurisdiction = "US"
+      sanctionsClear = True
+
+  -- Retrievable by (operator, desk) — the keyless equivalent of a key lookup:
+  -- query the operator's visible credentials and find the one for bankA.
+  creds <- query @DeskEligibility operator
+  let mine = [ e | (_, e) <- creds, e.operator == operator, e.desk == bankA ]
+  case mine of
+    [cred] -> do
+      assertMsg "issued credential must be eligible" (isEligible cred)
+      cred.jurisdiction === "US"
+    _ -> abort "expected exactly one DeskEligibility for (operator, bankA)"
+
+  -- queryContractId round-trips the exact issued contract, and it is eligible.
+  fetched <- queryContractId operator eligCid
+  case fetched of
+    Some c -> assertMsg "fetched credential must be eligible" (isEligible c)
+    None   -> abort "issued DeskEligibility not retrievable by cid"
+
+  -- An INELIGIBLE credential (accredited = False) yields isEligible == False.
+  _ <- submit operator do
+    createCmd DeskEligibility with
+      operator
+      compliance = operator
+      desk = bankC
+      accredited = False
+      jurisdiction = "US"
+      sanctionsClear = True
+  bankCcreds <- query @DeskEligibility operator
+  case [ e | (_, e) <- bankCcreds, e.desk == bankC ] of
+    [c] -> assertMsg "accredited=False must be ineligible" (not (isEligible c))
+    _   -> abort "expected exactly one DeskEligibility for bankC"

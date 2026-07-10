@@ -24,6 +24,12 @@ import Umbra.Auction
 import Umbra.Roles (Venue, SubmitOrder(..), CommitOrder(..), AnchorProof(..))
 import Umbra.Clearing
 import Umbra.Compliance (DeskEligibility(..), isEligible)
+import Umbra.Instrument (InstrumentId(..))
+import Umbra.Holding (Holding(..))
+import Umbra.Settlement
+  ( Instruction(..)
+  , buildGrossInstructions, netLegs, conservationOk, settleBatch
+  )
 
 -- LEDG-02 — the §4 seed is the single correctness reference. Assert that after
 -- `initialize` the operator sees exactly the 5 §4 Assets with the right
@@ -895,3 +901,126 @@ test_eligibility_issue = do
   case [ e | (_, e) <- bankCcreds, e.desk == bankC ] of
     [c] -> assertMsg "accredited=False must be ineligible" (not (isEligible c))
     _   -> abort "expected exactly one DeskEligibility for bankC"
+
+-- Test-only harness: a nonconsuming operator choice that drives `settleBatch` from
+-- a Daml Script (Script cannot `submit` a raw Update — it needs a template choice).
+-- In production the caller is `Round.Clear` (11-05), which runs the same
+-- `settleBatch` under sole operator authority. NOT a production template — it only
+-- exists so the standalone Batch/Instruction layer can be exercised on-ledger here.
+template SettleHarness
+  with
+    operator : Party
+  where
+    signatory operator
+    nonconsuming choice RunSettle : ()
+      with
+        instructions : [Instruction]
+        sources : [(Party, InstrumentId, ContractId Holding)]
+      controller operator
+      do settleBatch operator instructions sources
+
+-- DFIN-02 / DFIN-03 — the pure Batch/Instruction settlement layer proven on
+-- synthetic Holdings, INDEPENDENT of Round.Clear (that wiring is 11-05). A
+-- 2-buyer × 2-seller batch at ONE uniform price p*=100 (A buys 6, D buys 4; B
+-- sells 7, C sells 3):
+--   (a) buildGrossInstructions → netLegs both conserve (conservationOk True);
+--   (b) netLegs yields EXACTLY one net Instruction per (party, instrument);
+--   (c) settleBatch settles every gross Holding transfer in ONE atomic Update,
+--       conserving each instrument's total and preserving every desk's economics
+--       (no fill zeroed, no cash/asset leaked — Pitfall 5);
+--   (d) an under-funded seller batch rolls back ENTIRELY (all-or-nothing, Pitfall
+--       "Non-atomic settle").
+-- Uses a token-agnostic USDCx-labeled cash instrument (DFIN-03) — nothing here is
+-- hardcoded to the string "USDCx" beyond the instrument id.
+test_netting_conserves : Script ()
+test_netting_conserves = do
+  operator <- allocatePartyByHint (PartyIdHint "operator")
+  bankA <- allocatePartyByHint (PartyIdHint "bankA")   -- buyer
+  bankB <- allocatePartyByHint (PartyIdHint "bankB")   -- seller
+  bankC <- allocatePartyByHint (PartyIdHint "bankC")   -- seller
+  bankD <- allocatePartyByHint (PartyIdHint "bankD")   -- buyer
+
+  let bond  = InstrumentId with issuer = operator; id = "BONDX"
+      cash  = InstrumentId with issuer = operator; id = "USDCx"
+      insts = [bond, cash]
+      price = 100.0
+
+  -- 2×2 verified allocation at one uniform price.
+  let allocs =
+        [ Allocation with desk = bankA; side = Buy;  filledQty = 6
+        , Allocation with desk = bankD; side = Buy;  filledQty = 4
+        , Allocation with desk = bankB; side = Sell; filledQty = 7
+        , Allocation with desk = bankC; side = Sell; filledQty = 3
+        ]
+
+  -- (a) Pure builders: gross legs, netted legs, per-instrument conservation.
+  let gross = buildGrossInstructions price allocs bond cash
+      net   = netLegs operator gross
+  assertMsg "gross batch conserves per instrument"  (conservationOk gross insts)
+  assertMsg "netted batch conserves per instrument" (conservationOk net insts)
+
+  -- (b) Netting produces EXACTLY one net leg per (party, instrument) with non-zero
+  --     net: A bond+6/cash−600, D bond+4/cash−400, B bond−7/cash+700, C bond−3/
+  --     cash+300 → 8 net legs, one per (desk, instrument).
+  length net === 8
+  let legsTouching party inst =
+        [ l | l <- net, l.instrument == inst, (l.sender == party || l.receiver == party) ]
+  forA_ [bankA, bankB, bankC, bankD] $ \p ->
+    forA_ insts $ \i ->
+      assertMsg "exactly one net leg per (party, instrument)" (length (legsTouching p i) == 1)
+
+  -- Mint synthetic operator-custody source Holdings: buyers fund their cash legs,
+  -- sellers fund their bond legs (EXACT amounts, so totals are unambiguous).
+  let mint owner inst amt = submit operator do
+        createCmd Holding with operator; owner; instrument = inst; amount = amt; lock = None
+  aCash <- mint bankA cash 600.0
+  dCash <- mint bankD cash 400.0
+  bBond <- mint bankB bond 7.0
+  cBond <- mint bankC bond 3.0
+  let sources = [ (bankA, cash, aCash), (bankD, cash, dCash)
+                , (bankB, bond, bBond), (bankC, bond, cBond) ]
+
+  -- Snapshot instrument totals + per-desk positions BEFORE settling.
+  before <- query @Holding operator
+  let totalOf hs inst = sum [ h.amount | (_, h) <- hs, h.instrument == inst ]
+      balOf hs owner inst = sum [ h.amount | (_, h) <- hs, h.owner == owner, h.instrument == inst ]
+  let bondTotal0 = totalOf before bond
+      cashTotal0 = totalOf before cash
+  bondTotal0 === 10.0    -- 7 (B) + 3 (C)
+  cashTotal0 === 1000.0  -- 600 (A) + 400 (D)
+
+  -- (c) settleBatch the GROSS legs in ONE transaction under operator authority.
+  harness <- submit operator do createCmd SettleHarness with operator
+  submit operator do
+    exerciseCmd harness RunSettle with instructions = gross; sources
+
+  -- Conservation: each instrument's global total is unchanged (no value made/lost).
+  after <- query @Holding operator
+  totalOf after bond === 10.0
+  totalOf after cash === 1000.0
+  -- Economics preserved: each desk's net position matches its allocation.
+  balOf after bankA bond === 6.0   -- A bought 6
+  balOf after bankD bond === 4.0   -- D bought 4
+  balOf after bankB cash === 700.0 -- B sold 7 @ 100
+  balOf after bankC cash === 300.0 -- C sold 3 @ 100
+  -- Buyers' cash + sellers' bond are fully consumed (nothing stranded/leaked).
+  balOf after bankA cash === 0.0
+  balOf after bankD cash === 0.0
+  balOf after bankB bond === 0.0
+  balOf after bankC bond === 0.0
+
+  -- (d) Atomicity: a FRESH batch whose seller B is short the BONDX (5 < the 7 it
+  --     must deliver) makes a leg's Split throw → the whole RunSettle rolls back,
+  --     leaving the entire Holding ACS byte-identical.
+  aCash2 <- mint bankA cash 600.0
+  dCash2 <- mint bankD cash 400.0
+  bBond2 <- mint bankB bond 5.0    -- underfunded
+  cBond2 <- mint bankC bond 3.0
+  let sources2 = [ (bankA, cash, aCash2), (bankD, cash, dCash2)
+                 , (bankB, bond, bBond2), (bankC, bond, cBond2) ]
+  beforeFail <- query @Holding operator
+  let snap hs = sort [ (show h.owner, h.instrument.id, h.amount) | (_, h) <- hs ]
+  submitMustFail operator do
+    exerciseCmd harness RunSettle with instructions = gross; sources = sources2
+  afterFail <- query @Holding operator
+  snap afterFail === snap beforeFail

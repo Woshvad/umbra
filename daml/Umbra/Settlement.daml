@@ -22,7 +22,7 @@ module Umbra.Settlement where
 
 import DA.Action (foldlA)
 import DA.Foldable (forA_)
-import DA.List (sortOn, dedup, lookup)
+import DA.List (sortOn, dedup)
 import Umbra.Instrument (InstrumentId)
 import Umbra.Holding (Holding(..), Split(..), Reassign(..))
 import Umbra.Clearing (Allocation(..), Side(..))

@@ -1,7 +1,12 @@
 // Desk identity metadata — the comp's column codes/roles mapped onto the real
 // per-boot desk parties (UI-SPEC "Per-Party Identity", lines 311-318). The browser
-// holds ONLY the three desk tokens (web/src/tokens.json); the operator's privileged
+// holds ONLY the desk tokens (web/src/tokens.json); the operator's privileged
 // token never enters this bundle (D6 / threat T-03-06).
+//
+// HONEST DELIVERY MODEL (D6 dev-token): tokens.json is gitignored (never committed to
+// source), but this `import` makes Vite BUNDLE the desk tokens into the shipped client JS —
+// they are browser-readable DEV-scoped tokens (each actAs/readAs its own desk only), not a
+// server-side-held secret. Real per-party auth is OIDC (Phase 12).
 import tokensJson from './tokens.json'
 import { JSON_API_URL } from './config'
 import type { DeskKey } from './ledgerContexts'

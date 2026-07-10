@@ -3,8 +3,11 @@
 // submits ONE sealed bid on its OWN scoped token, seeing ONLY its own fill.
 //
 // Structural per-party privacy (identical to A/B/C): the whole body mounts inside
-// `ctxD.DamlLedger` carrying the guest's own bankD token (from the gitignored tokens.json,
-// minted by guest-onboard.mjs — NEVER embedded in the QR or web source). Every hook streams
+// `ctxD.DamlLedger` carrying the guest's own bankD token. The token is minted by
+// guest-onboard.mjs into the gitignored tokens.json (never committed to source) and is
+// BUNDLED into the shipped client JS by Vite (a browser-readable DEV-scoped token, actAs/readAs
+// bankD only — the same D6 dev-token model as A/B/C; real guest auth is OIDC in Phase 12). It is
+// NEVER embedded in the QR (the QR carries only the /join URL + roundId). Every hook streams
 // only the guest's own contracts; a rival desk's Order / Holding / TradeConfirmation
 // genuinely never reaches this view. No operator/venue token anywhere (threat T-11-10-PRIV).
 //

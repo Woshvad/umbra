@@ -19,8 +19,12 @@
 // SECURITY (V2/V4 / T-11-03-QR): the scoped guest token is written ONLY into
 // web/src/tokens.json (the D6 boundary the desks already use) — it is NEVER printed to
 // stdout (so it can never be copied into a QR) and NEVER embedded in any URL. The QR the
-// operator shows carries only the /join URL + roundId; the token is delivered server-side
-// to the /join page via tokens.json.
+// operator shows carries only the /join URL + roundId. HONEST DELIVERY MODEL: tokens.json is
+// gitignored (never committed to source), but desks.ts `import`s it, so Vite BUNDLES the
+// scoped token into the shipped client JS — it is a browser-readable DEV token (the same D6
+// dev-token model as bankA/B/C, scoped actAs/readAs bankD only), NOT a server-side-delivered
+// secret. Real guest auth is OIDC (Phase 12). This is why /join carries the HARD
+// `DEV SCOPED TOKEN … REAL GUEST AUTH IS OIDC (PHASE 12)` label.
 //
 // Usage:  node scripts/localnet/guest-onboard.mjs
 // Idempotent: if tokens.json already carries a bankD entry the script skips (exit 0).

@@ -21,14 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-25)
 
 **Core value:** The privacy money shot — three desks submit sealed orders blind to each other, an AI solver clears them at one uniform price ($100.00 on the §4 fixture), and the whole batch settles atomically in a single Canton transaction.
-**Current focus:** Phase 12 — real-on-chain (Canton DevNet) — next
+**Current focus:** Phase 12 — real-on-chain (Canton DevNet) — EXECUTED, running quality gates
 
 ## Current Position
 
-Phase: 11 (settlement-institutional-grade) — BUILT · live UAT pending
-Plan: 11 of 11 complete
-Status: Verified (4/4 criteria code-verified) · code-review 0 blocker/high · security passed (42/42) · UI 20/24 (3 advisory warnings fixed). Live 3-node/QR-on-phone/live-settle items → UAT.
-Last activity: 2026-07-10 -- Phase 11 built (settlement stack on CN Token Standard CIP-0056; §4 still clears $100.00 / A=10·B=8·C=2). Next: Phase 12 (Real On-Chain / DevNet).
+Phase: 12 (real-on-chain-canton-devnet) — EXECUTED (5/5 plans), quality gates in progress
+Plan: 5 of 5 executed — 12-01 four-eyes ClearingApproval gate (§4 clears $100.00 WITH approval; +3 negative tests) · 12-02 OIDC dual-mode (solver client-credentials + jose JWKS verify; web PKCE; dev-HMAC preserved) · 12-03 Keycloak realm + Caddy TLS + Canton jwt-jwks config · 12-04 Splice DevNet compose + devnet-deploy + ops + RUNBOOK + SV-SPONSOR-CHECKLIST · 12-05 Compliance approve/reject UI. daml test green, solver 150/150, web 85/85.
+Status: Executing the Phase-12 gates (code-review → verify → security). Live/external items (SV-sponsored DevNet connection, live §4-on-real-Canton, live OIDC token exchange + MFA, unattended live ops) → UAT/external gate, honestly labeled — never faked. Plans 12-01..05 were authored inline (classifier outage blocked the gsd-planner); a plan-checker pass is folded into the gates.
+Prev: Phase 11 built (settlement on CN Token Standard CIP-0056; §4 clears $100.00; verified 4/4, security 42/42, UI 20/24; live items → UAT).
+Last activity: 2026-07-10 -- Phase 12 executed (5/5); four-eyes + OIDC dual-mode + DevNet/ops artifacts; §4 still clears $100.00.
 
 ## Performance Metrics
 

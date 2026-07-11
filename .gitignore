@@ -2,6 +2,10 @@
 .env
 .env.local
 .env.*.local
+# DevNet/prod ledger profiles hold real endpoints + OIDC client secrets — never commit.
+# (The committed *.example templates document the shape without secrets.)
+.env.devnet
+.env.prod
 
 # --- Daml build artifacts ---
 .daml/

@@ -165,6 +165,15 @@ describe('self backend — on-ledger verify/settle', () => {
     })
   })
 
+  it('LO-02 — verify REJECTS a declared value that does not match the charged price (amount_too_low)', async () => {
+    const fac = createFacilitator({ backend: 'self', ledger: stubLedger([holding()]) })
+    // The Holding is a valid fee source, but the payer declares value '1' ≠ the '100' price.
+    await expect(fac.verify(reqs(), payment({ value: '1' }), PAYER)).resolves.toEqual({
+      valid: false,
+      reason: 'amount_too_low',
+    })
+  })
+
   it('settle calls moveFee(cid, price, payTo) and returns its txRef', async () => {
     const moveFee = vi.fn(async () => 'umbra-x402-cid-settled')
     const fac = createFacilitator({ backend: 'self', ledger: stubLedger([holding()], moveFee) })

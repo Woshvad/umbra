@@ -95,6 +95,12 @@ const selfFacilitator = (ledger: FacilitatorLedger, cashInstrument: string): Fac
     if (h.instrumentId !== cashInstrument) {
       return { valid: false, reason: X402_REASON.wrong_instrument }
     }
+    // LO-02: the payer's declared `value` MUST equal the charged price (atomic units). Otherwise
+    // `value` is decorative — a client that declares a different amount is silently charged the
+    // full price. Compare atomic-unit STRINGS (never reconstructed floats — LO-03 discipline).
+    if (p.value.trim() !== requirements.maxAmountRequired.trim()) {
+      return { valid: false, reason: X402_REASON.amount_too_low }
+    }
     const need = fromAtomic(requirements.maxAmountRequired)
     if (!(h.amount >= need)) {
       return { valid: false, reason: X402_REASON.amount_too_low }

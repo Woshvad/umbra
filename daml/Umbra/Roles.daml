@@ -8,6 +8,18 @@ import Umbra.Auction
 import Umbra.Holding (Holding(..))
 import Umbra.Instrument (InstrumentId)
 import Umbra.Compliance (DeskEligibility, assertDeskEligible)
+-- FIX 1 (BLOCKER, privacy): the settlement body moved here from a consuming Round.Clear
+-- into the NONCONSUMING Venue.SettleRound below (desks-as-Round-observers must never
+-- witness the settlement args). These are the imports that body needs — the ones
+-- Umbra.Auction used to carry. `ClearResult`, the `TradeConfirmation` template, the
+-- `Order` template + its `Retire`, the `Round` template + its `MarkSettled` flip, the
+-- `RoundStatus` constructors, and the `tca*` receipt helpers all arrive via the
+-- unqualified `import Umbra.Auction` above.
+import Umbra.Settlement (buildGrossInstructions, netLegs, conservationOk, settleBatch)
+import Umbra.Approval (ClearingApproval, assertClearingApproved)
+import Umbra.Clearing (computeClearing, OrderView(..), Allocation(..), Side(..), OrderType(..))
+import DA.Foldable (forA_)
+import DA.List (sortOn, dedup)
 
 template Venue
   with
@@ -72,8 +84,12 @@ template Venue
         -- Integrity: the bond must be the desk's OWN cash Holding (token-agnostic —
         -- the instrument must equal the round's cash InstrumentId, no hardcoded "USDCx").
         bond <- fetch bondCid
-        assertMsg "bond must be the desk's own cash holding"
-          (bond.owner == desk && bond.instrument == cashInstrument)
+        -- FIX 4 (LOW): also require operator custody. Only a Holding the operator
+        -- custodies can actually be seized by `OrderCommitment.ForfeitBond` (a
+        -- controller-operator Reassign), so a bond custodied by anyone else would be an
+        -- un-seizable, worthless pledge.
+        assertMsg "bond must be the desk's own operator-custodied cash holding"
+          (bond.owner == desk && bond.instrument == cashInstrument && bond.operator == operator)
         create OrderCommitment with
           operator; desk; roundId; commitment; bondCid
 
@@ -108,3 +124,145 @@ template Venue
       controller operator
       do
         create ProofAnchor with operator; roundId; proofHash; vkeyHash
+
+    -- FIX 1 (BLOCKER, the privacy keystone) — ATOMIC SETTLEMENT, relocated from the old
+    -- consuming `Round.Clear` to this NONCONSUMING Venue choice so desks (Round observers)
+    -- never witness the settlement args. A nonconsuming exercise does NOT inform the
+    -- Venue's observers (the exact idiom SubmitOrder/CommitOrder/IssueHolding rely on), so
+    -- `allocations` (every rival's side+fill) and the buyer/seller party lists stay private
+    -- to the operator. The body is the former `Round.Clear` body VERBATIM (§8 re-verify +
+    -- four-eyes gate + Batch DvP + per-desk TradeConfirmations), reading the round's
+    -- `roundId`/`symbol` off the fetched `Round` and flipping it via `MarkSettled` instead
+    -- of recreating it here. Runs under sole operator authority (Venue signatory operator +
+    -- controller operator; every Holding choice is controller operator, so authority flows).
+    --
+    -- Option-B (D7): a choice body cannot query the ACS, so the caller passes every
+    -- ContractId it operates on (the Round, orderCids, buyer cash + seller bond Holdings,
+    -- the four-eyes approval).
+    nonconsuming choice SettleRound : ClearResult
+      with
+        roundCid       : ContractId Round                 -- the round being settled (fetched below)
+        clearingPrice  : Decimal
+        allocations    : [Allocation]                     -- solver output, verified on-ledger
+        orderCids      : [ContractId Order]               -- the round's sealed orders
+        buyerCashCids  : [(Party, ContractId Holding)]    -- each buyer's cash Holding to debit
+        sellerBondCids : [(Party, ContractId Holding)]    -- each seller's bond Holding to deliver
+        cashInstrument : InstrumentId                     -- DFIN-03: pluggable cash instrument (no hardcoded "USDCx")
+        bondInstrument : InstrumentId                     -- DFIN-03: the tokenized bond instrument
+        referencePrice : Decimal                          -- AUCT-04: labeled benchmark STUB (config, passed in)
+        approvalCid    : ContractId ClearingApproval      -- IDEN-03 four-eyes credential (compliance-signed)
+      controller operator
+      do
+        -- 0. Fetch the round + lifecycle guard (only a Closed/Cleared round is settleable).
+        --    Fetching under operator authority also binds `round.operator == operator`
+        --    (Round signatory operator), so a foreign operator's round is unreachable here.
+        round <- fetch roundCid
+        assertMsg "round not settleable (must be Closed or Cleared)"
+          (round.status == Closed || round.status == Cleared)
+
+        -- 1. RE-VERIFY — the security keystone (CLEAR-05 + SETL-04). Fetch the sealed
+        --    orders, rebuild OrderViews, recompute §8, and assert the proposal matches.
+        orders <- mapA fetch orderCids
+        -- FIX 2 (HIGH): bind the re-verified book to THIS round. Without this, a foreign /
+        --    cross-round / duplicated order set could be re-verified against a §8 recompute
+        --    of ITSELF and settle a book that is not the round's. Every order must belong to
+        --    this round + operator, and no cid may be repeated.
+        forA_ orders (\o ->
+          assertMsg "order not in this round"
+            (o.roundId == round.roundId && o.operator == operator))
+        -- dedup on the ContractIds themselves (ContractId has Ord); `show` on a
+        -- ContractId is an opaque placeholder in the ledger interpreter, so it must NOT
+        -- be used as the dedup key (it would collapse distinct cids).
+        assertMsg "duplicate order cids in the settle book"
+          (length (dedup orderCids) == length orderCids)
+        let views = [ OrderView with
+                        desk      = o.desk
+                        side      = o.side
+                        quantity  = o.quantity
+                        limit     = o.limit
+                        orderType = o.orderType
+                        minQty    = o.minQty
+                        firmIf    = o.firmIf
+                    | o <- orders ]
+        let (pStarExpected, allocsExpected) = computeClearing views
+        assertMsg "clearingPrice does not match recomputed §8 p*"
+          (roundBankers 2 clearingPrice == roundBankers 2 pStarExpected)
+        -- Order-independent (multiset) allocation equality via a stable sort key.
+        let allocKey a = (show a.desk, show a.side, a.filledQty)
+        assertMsg "allocations do not match recomputed §8"
+          (sortOn allocKey allocations == sortOn allocKey allocsExpected)
+        -- Defense-in-depth conservation: Σ buy fills == Σ sell fills.
+        let totalBuy  = sum [ a.filledQty | a <- allocations, a.side == Buy ]
+        let totalSell = sum [ a.filledQty | a <- allocations, a.side == Sell ]
+        assertMsg "fills not conserved (Σbuy /= Σsell)" (totalBuy == totalSell)
+
+        -- 2. FOUR-EYES GATE (IDEN-03) then Batch DvP (SETL-01; DFIN-01/02/03), all in this
+        --    ONE transaction under sole operator authority. Any failing leg rolls the whole
+        --    transaction back (atomicity, SETL-03).
+        let priceDec = roundBankers 2 clearingPrice
+        -- Fetch the compliance-signed `ClearingApproval` (Option-B cid) and assert it
+        -- authorizes THIS operator/round at EXACTLY the recomputed price. A missing /
+        -- wrong-price / wrong-round / operator-self-made approval aborts here, ON-LEDGER,
+        -- before any Batch DvP leg is built.
+        appr <- fetch approvalCid
+        assertClearingApproved operator round.roundId priceDec appr
+        -- Build the gross DvP Instructions from the verified allocation, screen them for
+        -- per-instrument well-formedness (gross + netted), then settle every leg as a
+        -- Holding transfer in THIS transaction (settleBatch checks each source's
+        -- custodian/owner/instrument and aborts on any over-draw).
+        let legs = buildGrossInstructions priceDec allocations bondInstrument cashInstrument
+        assertMsg "settlement batch violates per-instrument conservation"
+          (conservationOk legs [bondInstrument, cashInstrument]
+             && conservationOk (netLegs operator legs) [bondInstrument, cashInstrument])
+        let sources =
+              [ (owner, cashInstrument, cid) | (owner, cid) <- buyerCashCids ]
+                <> [ (owner, bondInstrument, cid) | (owner, cid) <- sellerBondCids ]
+        settleBatch operator legs sources
+
+        -- 3. Mark the Orders settled — Retire each (operator-only consuming choice; a bare
+        --    `archive` would need each desk's authority the operator does not carry).
+        forA_ orderCids (`exercise` Retire)
+
+        -- 4. Per-desk TradeConfirmation (observer = that desk only). One per participating
+        --    desk; the surplusVsLimit >= 0 assert is the on-ledger AUCT-04 best-ex proof.
+        confs <- forA allocations $ \a -> do
+          -- AUCT-04: find this desk+side's own order view for its limit / order type.
+          let mView = case [ v | v <- views, v.desk == a.desk, v.side == a.side ] of
+                (v :: _) -> Some v
+                []       -> None
+              -- A Noncompetitive order carries no meaningful limit → ownLimit None, surplus 0.
+              ownLimitOpt = case mView of
+                Some v -> if v.orderType == Noncompetitive then None else Some v.limit
+                None   -> None
+              surplus = case ownLimitOpt of
+                Some l -> tcaSurplusVsLimit a.side l priceDec a.filledQty
+                None   -> 0.0
+              bpLimit = case ownLimitOpt of
+                Some l -> tcaImprovementVsLimitBp l priceDec
+                None   -> 0.0
+              bpRef = tcaImprovementVsReferenceBp a.side priceDec referencePrice
+          -- THE on-ledger AUCT-04 proof: execution is at least as good as this desk's limit.
+          assertMsg "execution at least as good as limit (surplusVsLimit >= 0)" (surplus >= 0.0)
+          create TradeConfirmation with
+            operator
+            desk          = a.desk
+            roundId       = round.roundId
+            symbol        = round.symbol
+            side          = a.side
+            filledQty     = a.filledQty
+            clearingPrice = priceDec
+            cashMoved     = intToDecimal a.filledQty * priceDec
+            ownLimit                 = ownLimitOpt
+            referencePrice
+            surplusVsLimit           = surplus
+            improvementVsLimitBp     = bpLimit
+            improvementVsReferenceBp = bpRef
+
+        -- 5. Flip the Round to Settled via its operator-only `MarkSettled` (the ONLY thing
+        --    desks witness — a bare status transition) and return the verified result.
+        _settled <- exercise roundCid MarkSettled
+        pure ClearResult with
+          roundId       = round.roundId
+          clearingPrice = priceDec
+          totalMatched  = totalBuy
+          confirmations = confs

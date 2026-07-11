@@ -587,14 +587,20 @@ export const settle = async (
   //    recomputed price (mirrors the orderCids gather). Round.Clear fetches + asserts it.
   const approvalCid = await gatherApprovalCid(roundId, clearingPrice)
 
-  // 6. Re-query the CURRENT Round cid, then exercise the token-agnostic Clear. The
-  //    on-ledger guard (status == Closed || Cleared) rejects a non-settleable round.
+  // 6. Re-query the CURRENT Round cid + the Venue cid, then exercise the token-agnostic
+  //    settlement. FIX 1 (BLOCKER, privacy): settlement moved from the consuming
+  //    `Round.Clear` to the NONCONSUMING `Venue.SettleRound` so desks (Round observers)
+  //    never witness the allocation/party args; the Round cid is passed IN as `roundCid`.
+  //    The on-ledger guard (round.status == Closed || Cleared) rejects a non-settleable round.
   const round = await queryRound(roundId)
   if (!round) throw new Error(`round ${roundId} not found`)
+  const venue = (await queryByEntity('Venue'))[0]
+  if (!venue) throw new Error(`no Venue found (settlement targets Venue.SettleRound)`)
   // OPS-01: the ledger-API v2 exercise is a CLIENT span (ledger.* → SpanKind.CLIENT),
   // round.id-correlated — honestly labelled a client call, not an in-participant span.
   await withSpan('ledger.exercise.clear', roundId, () =>
-    exerciseChoice('Umbra.Auction:Round', round.contractId, 'Clear', {
+    exerciseChoice('Umbra.Roles:Venue', venue.contractId, 'SettleRound', {
+      roundCid: round.contractId,
       clearingPrice,
       allocations: allocations.map((a) => ({ desk: a.desk, side: a.side, filledQty: a.filledQty })),
       orderCids,
@@ -602,7 +608,7 @@ export const settle = async (
       sellerBondCids,
       cashInstrument,
       bondInstrument,
-      approvalCid, // IDEN-03 four-eyes credential (compliance-signed; Round.Clear fetches + asserts it)
+      approvalCid, // IDEN-03 four-eyes credential (compliance-signed; SettleRound fetches + asserts it)
       referencePrice: REFERENCE_PRICE_STUB, // AUCT-04 labeled benchmark stub (drives only the SIGNED vs-reference bp)
     }),
   )
@@ -673,11 +679,12 @@ const gatherHoldingCids = (
 
 // ── WOW-02: tamperClear — the DEDICATED "break the AI" demo seam ──────────────────
 // A demo-only path that gathers the EXACT SAME ContractIds as settle() but submits a
-// deliberately WRONG proposal to the on-ledger `Round.Clear`. The choice's recompute-
-// and-assert backstop (Auction.daml 183/187/192) rejects the whole atomic transaction;
-// `submitAndWait` throws with the verbatim ledger body; tamperClear CATCHES it and
-// resolves `{ rejected:true, error }` — it NEVER throws and NEVER settles (an atomic
-// rejected Clear changes nothing on-ledger). The verbatim rejection is the credibility:
+// deliberately WRONG proposal to the on-ledger `Venue.SettleRound` (FIX 1: settlement
+// moved off the consuming `Round.Clear`). The choice's recompute-and-assert backstop
+// (Umbra.Roles SettleRound) rejects the whole atomic transaction; `submitAndWait` throws
+// with the verbatim ledger body; tamperClear CATCHES it and resolves `{ rejected:true,
+// error }` — it NEVER throws and NEVER settles (an atomic rejected SettleRound changes
+// nothing on-ledger). The verbatim rejection is the credibility:
 // it proves the LEDGER, not the AI, is the backstop.
 //
 // SAFETY (T-08-04-TAMPER, hard constraint): this is a SEPARATE function from settle()
@@ -711,13 +718,17 @@ export const tamperClear = async (
 
   const round = await queryRound(roundId)
   if (!round) throw new Error(`round ${roundId} not found`)
+  // FIX 1 (BLOCKER): settlement now lives on the NONCONSUMING `Venue.SettleRound`; the
+  // tamper path exercises the SAME choice so the on-ledger REJECT it proves is identical.
+  const venue = (await queryByEntity('Venue'))[0]
+  if (!venue) throw new Error(`no Venue found (settlement targets Venue.SettleRound)`)
 
-  // IDEN-03 / LOW-02: do NOT mint a real ClearingApproval for the tamper path. Round.Clear
-  // runs the §8 recompute-and-assert BEFORE it fetches the four-eyes approval
-  // (Auction.daml), so a tampered price/allocation is rejected before `approvalCid` is ever
-  // dereferenced. Passing a placeholder keeps the demo's backstop (the §8 assert) exactly as
-  // credible while avoiding a dangling ClearingApprovalRequest+ClearingApproval accumulating
-  // on the round with every tamper run.
+  // IDEN-03 / LOW-02: do NOT mint a real ClearingApproval for the tamper path. SettleRound
+  // runs the §8 recompute-and-assert BEFORE it fetches the four-eyes approval (Umbra.Roles),
+  // so a tampered price/allocation is rejected before `approvalCid` is ever dereferenced.
+  // Passing a placeholder keeps the demo's backstop (the §8 assert) exactly as credible while
+  // avoiding a dangling ClearingApprovalRequest+ClearingApproval accumulating on the round
+  // with every tamper run.
   const approvalCid = 'tamper-no-approval-needed-section8-rejects-first'
 
   // Perturb ONLY numeric values (Pitfall 3): a still-valid Decimal price one dollar off
@@ -730,7 +741,8 @@ export const tamperClear = async (
       : allocations
 
   try {
-    await exerciseChoice('Umbra.Auction:Round', round.contractId, 'Clear', {
+    await exerciseChoice('Umbra.Roles:Venue', venue.contractId, 'SettleRound', {
+      roundCid: round.contractId,
       clearingPrice: badPrice,
       allocations: badAllocs.map((a) => ({ desk: a.desk, side: a.side, filledQty: a.filledQty })),
       orderCids,
@@ -753,7 +765,7 @@ export const tamperClear = async (
   // allocation. Reporting `rejected: true` here (the old behavior) would mask the exact
   // backstop regression WOW-02 exists to detect. Throw loudly so `rejected` can NEVER be a
   // lie — the caller surfaces a real error instead of a fake "REJECTED" (WR-05).
-  throw new Error('SAFETY REGRESSION: on-ledger Round.Clear ACCEPTED a tampered proposal')
+  throw new Error('SAFETY REGRESSION: on-ledger Venue.SettleRound ACCEPTED a tampered proposal')
 }
 
 // ── CRYP-01: commit-reveal operator-plane primitives (ADDITIVE) ───────────────────

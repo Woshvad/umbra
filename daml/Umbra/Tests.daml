@@ -16,11 +16,13 @@ import Umbra.Setup
 import Umbra.Auction
   ( Side(..), Allocation(..)
   , Order, Round(..), RoundStatus(..), TradeConfirmation, RoundStats(..)
-  , CloseRound(..), Clear(..)
+  , CloseRound(..)
   , OrderCommitment(..), RevealOrder(..), ForfeitBond(..), ProofAnchor(..)
   , commitOf, serializeOrder
   )
-import Umbra.Roles (Venue(..), SubmitOrder(..), CommitOrder(..), IssueHolding(..), AnchorProof(..))
+-- FIX 1 (BLOCKER): settlement moved from the consuming Round.Clear to the NONCONSUMING
+-- Venue.SettleRound — the tests now drive `venueCid SettleRound with roundCid = ...`.
+import Umbra.Roles (Venue(..), SubmitOrder(..), CommitOrder(..), IssueHolding(..), AnchorProof(..), SettleRound(..))
 import Umbra.Clearing
 import Umbra.Compliance (DeskEligibility(..), isEligible)
 -- IDEN-03 (12-01): the four-eyes clearing-approval templates + gate. The tests
@@ -345,6 +347,7 @@ test_conditional_drops = do
 -- migrated (DFIN-01): `buyerCashCids` is the generalized N-buyer list Clear takes.
 data SeedResult = SeedResult with
     parties        : Parties
+    venueCid       : ContractId Venue          -- FIX 1: settle now targets Venue.SettleRound
     roundCid       : ContractId Round
     orderCids      : [ContractId Order]
     buyerCashCids  : [(Party, ContractId Holding)]
@@ -430,6 +433,7 @@ seedAndClose bondForB = do
         None     -> findHoldingCid bankB holdings bond
   pure SeedResult with
     parties        = p
+    venueCid
     roundCid
     orderCids      = [oa, ob, oc]
     buyerCashCids  = [(bankA, buyerCashCid)]
@@ -508,7 +512,8 @@ test_four_eyes_requires_distinct_party = do
     createCmd ClearingApproval with
       operator; compliance = operator; roundId = "R1"; clearingPrice = 100.0
   submitMustFail operator do
-    exerciseCmd roundCid Clear with
+    exerciseCmd venueCid SettleRound with
+      roundCid
       clearingPrice  = 100.0
       allocations    = canonicalAllocs bankA bankB bankC
       orderCids
@@ -533,7 +538,8 @@ test_settled_balances = do
   -- IDEN-03: thread the compliance-signed four-eyes approval @100.0.
   approvalCid <- withCanonicalApproval operator
   _ <- submit operator do
-    exerciseCmd roundCid Clear with
+    exerciseCmd venueCid SettleRound with
+      roundCid
       clearingPrice  = 100.0
       allocations    = canonicalAllocs bankA bankB bankC
       orderCids
@@ -584,7 +590,8 @@ test_surplus_nonneg = do
   -- Drive the REAL Clear with the verified §4 allocation @100.0 + the reference stub.
   approvalCid <- withCanonicalApproval operator
   _ <- submit operator do
-    exerciseCmd roundCid Clear with
+    exerciseCmd venueCid SettleRound with
+      roundCid
       clearingPrice  = 100.0
       allocations    = canonicalAllocs bankA bankB bankC
       orderCids
@@ -620,7 +627,8 @@ test_atomicity = do
   approvalCid <- withCanonicalApproval operator
   -- B holds only 5.0 BONDX but must deliver 8 → the Split throws → rollback.
   submitMustFail operator do
-    exerciseCmd roundCid Clear with
+    exerciseCmd venueCid SettleRound with
+      roundCid
       clearingPrice  = 100.0
       allocations    = canonicalAllocs bankA bankB bankC
       orderCids
@@ -653,7 +661,8 @@ test_clear_rejects_bad_allocation = do
   -- (which runs BEFORE the four-eyes gate), not by a missing approval.
   approvalCid <- withCanonicalApproval operator
   submitMustFail operator do
-    exerciseCmd roundCid Clear with
+    exerciseCmd venueCid SettleRound with
+      roundCid
       clearingPrice  = 100.0
       allocations    = badAllocs
       orderCids
@@ -666,7 +675,8 @@ test_clear_rejects_bad_allocation = do
   -- Wrong price: correct §4 fills but clearingPrice = 99.0 (not the recomputed
   -- p* = 100.0). REJECTED by the price half of the recompute-and-assert.
   submitMustFail operator do
-    exerciseCmd roundCid Clear with
+    exerciseCmd venueCid SettleRound with
+      roundCid
       clearingPrice  = 99.0
       allocations    = canonicalAllocs bankA bankB bankC
       orderCids
@@ -766,7 +776,8 @@ test_privacy_confirmations = do
   -- settle with the verified §4 allocation @100.0 (operator authority)
   approvalCid <- withCanonicalApproval operator
   _ <- submit operator do
-    exerciseCmd roundCid Clear with
+    exerciseCmd venueCid SettleRound with
+      roundCid
       clearingPrice  = 100.0
       allocations    = canonicalAllocs bankA bankB bankC
       orderCids
@@ -955,7 +966,8 @@ test_commit_reveal_clears_at_100 = do
   -- verified §4 allocation @100.0 and the Option-B ContractIds.
   approvalCid <- withCanonicalApproval operator
   result <- submit operator do
-    exerciseCmd roundCid Clear with
+    exerciseCmd venueCid SettleRound with
+      roundCid
       clearingPrice  = 100.0
       allocations    = canonicalAllocs bankA bankB bankC
       orderCids
@@ -1187,7 +1199,8 @@ test_multibuyer_golden = do
   -- Drive the REAL, generalized Round.Clear (recompute-§8-and-assert + Batch DvP).
   approvalCid <- withCanonicalApproval operator
   result <- submit operator do
-    exerciseCmd roundCid Clear with
+    exerciseCmd venueCid SettleRound with
+      roundCid
       clearingPrice  = 100.0
       allocations
       orderCids
@@ -1243,7 +1256,8 @@ test_cash_instrument_agnostic = do
 
   approvalCid <- withCanonicalApproval operator
   result <- submit operator do
-    exerciseCmd roundCid Clear with
+    exerciseCmd venueCid SettleRound with
+      roundCid
       clearingPrice  = 100.0
       allocations
       orderCids
@@ -1383,7 +1397,8 @@ test_privacy_guest_fill = do
   -- Settle the 2×2 batch via the real Round.Clear.
   approvalCid <- withCanonicalApproval operator
   _ <- submit operator do
-    exerciseCmd roundCid Clear with
+    exerciseCmd venueCid SettleRound with
+      roundCid
       clearingPrice  = 100.0
       allocations
       orderCids
@@ -1428,7 +1443,8 @@ test_four_eyes_clears_at_100 = do
     (operator /= compliance)
   approvalCid <- approveClearing operator compliance "R1" 100.0
   result <- submit operator do
-    exerciseCmd roundCid Clear with
+    exerciseCmd venueCid SettleRound with
+      roundCid
       clearingPrice  = 100.0
       allocations    = canonicalAllocs bankA bankB bankC
       orderCids
@@ -1471,7 +1487,8 @@ test_settle_without_approval_rejected = do
   -- Archive the approval (requires BOTH signatories) → the cid no longer resolves.
   submitMulti [operator, compliance] [] do archiveCmd approvalCid
   submitMustFail operator do
-    exerciseCmd roundCid Clear with
+    exerciseCmd venueCid SettleRound with
+      roundCid
       clearingPrice  = 100.0
       allocations    = canonicalAllocs bankA bankB bankC
       orderCids
@@ -1494,7 +1511,8 @@ test_settle_wrong_approval_rejected = do
   -- (a) WRONG PRICE: compliance approved 99.0, but §4 clears at 100.0.
   wrongPriceCid <- approveClearing operator compliance "R1" 99.0
   submitMustFail operator do
-    exerciseCmd roundCid Clear with
+    exerciseCmd venueCid SettleRound with
+      roundCid
       clearingPrice  = 100.0
       allocations    = canonicalAllocs bankA bankB bankC
       orderCids
@@ -1507,7 +1525,8 @@ test_settle_wrong_approval_rejected = do
   -- (b) WRONG ROUND: correct price 100.0 but the approval is scoped to another round.
   wrongRoundCid <- approveClearing operator compliance "R-OTHER" 100.0
   submitMustFail operator do
-    exerciseCmd roundCid Clear with
+    exerciseCmd venueCid SettleRound with
+      roundCid
       clearingPrice  = 100.0
       allocations    = canonicalAllocs bankA bankB bankC
       orderCids

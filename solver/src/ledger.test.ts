@@ -82,11 +82,12 @@ const mockFetch = vi.fn(async (url: unknown, opts?: any) => {
           if (req) {
             acs.push(umbra('#umbra:Umbra.Approval:ClearingApproval', { ...req.createArgument }))
           }
-        } else if (choice === 'Clear') {
-          // Emulate the on-ledger recompute-and-assert backstop (Auction.daml 183/187/192)
-          // for the §4 fixture (correct clear = price 100, A=10 Buy / B=8 Sell / C=2 Sell).
-          // The assert ORDER is faithful: price → allocation → conservation. The verbatim
-          // body is what submitAndWait surfaces (WOW-02); a tampered Clear NEVER mutates acs.
+        } else if (choice === 'SettleRound') {
+          // FIX 1: settlement moved to the NONCONSUMING Venue.SettleRound. Emulate the same
+          // on-ledger recompute-and-assert backstop for the §4 fixture (correct clear = price
+          // 100, A=10 Buy / B=8 Sell / C=2 Sell). The assert ORDER is faithful: price →
+          // allocation → conservation. The verbatim body is what submitAndWait surfaces
+          // (WOW-02); a tampered SettleRound NEVER mutates acs.
           const arg = choiceArgument as {
             clearingPrice: number
             allocations: { desk: string; side: string; filledQty: number }[]
@@ -202,6 +203,8 @@ const seedSection4World = (roundId: string): void => {
     umbra('#umbra:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'bankB::test', instrument: bond, amount: '20.0', lock: null }, 'holding-B-bond'),
     umbra('#umbra:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'bankC::test', instrument: bond, amount: '15.0', lock: null }, 'holding-C-bond'),
     umbra('#umbra:Umbra.Auction:Round', { operator: 'operator::test', roundId, symbol: 'BONDX', desks: ['bankA::test', 'bankB::test', 'bankC::test'], openedAt: '2026-07-09T00:00:00Z', windowSeconds: '60', status: 'Closed' }, 'round-0'),
+    // FIX 1: settlement now targets Venue.SettleRound, so settle()/tamperClear() query the Venue cid.
+    umbra('#umbra:Umbra.Roles:Venue', { operator: 'operator::test', desks: ['bankA::test', 'bankB::test', 'bankC::test'] }, 'venue-0'),
   )
 }
 

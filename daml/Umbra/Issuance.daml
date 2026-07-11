@@ -126,6 +126,14 @@ template IssuanceRound
           case lookup a.desk winnerCashCids of
             None      -> abort ("ClearIssuance: no cash source for winner " <> show a.desk)
             Some cid  -> do
+              -- FIX 5 (LOW): DvP integrity — assert the passed cash source really belongs
+              -- to this winner and is operator-custodied in the round's cash instrument,
+              -- mirroring the settleBatch/Coupon/Redeem source checks. Without this, an
+              -- operator could charge an UNBOUND Holding (a different owner/instrument),
+              -- silently draining the wrong party while the mint still "settles".
+              h <- fetch cid
+              assertMsg "winner cash source mismatch"
+                (h.owner == a.desk && h.operator == operator && h.instrument == cashInstrument)
               _ <- moveExactHolding cid cashDue issuer
               pure ()
         clearedRound <- create this with cleared = True

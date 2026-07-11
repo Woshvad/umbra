@@ -47,9 +47,12 @@ down-localnet: ## Stop solver + web AND the Canton LocalNet (state kept)
 	node scripts/localnet/down.mjs --localnet
 
 # ── Deploy / seed ────────────────────────────────────────────────────────────
-.PHONY: deploy seed xnode
-deploy: ## Upload DAR to all participants + allocate parties/users/tokens
+.PHONY: deploy seed xnode compliance
+deploy: ## Upload DAR to all participants + allocate parties/users/tokens + four-eyes compliance
 	node scripts/localnet/deploy.mjs
+	node scripts/localnet/provision-compliance.mjs
+compliance: ## (Re)provision the DISTINCT four-eyes compliance authority (scripts/.compliance-token)
+	node scripts/localnet/provision-compliance.mjs
 seed: ## Seed the canonical §4 Round R1 (single-node) + privacy proof
 	node scripts/localnet/seed.mjs
 xnode: ## Distribute desks across nodes + seed R1 cross-node + write the browser config

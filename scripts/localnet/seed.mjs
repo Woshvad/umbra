@@ -24,12 +24,24 @@ const moduleEntity = (templateId) => templateId.split(':').slice(1).join(':') //
 console.log(`seeding §4 fixture on ${PARTICIPANT}\n`)
 
 // 1. CLEAN — archive/retire any pre-existing umbra contracts for a deterministic seed.
+//    Some credentials cannot be archived under operator authority ALONE: the two-party
+//    `ClearingApproval` is signed by operator AND the DISTINCT four-eyes compliance
+//    authority (IDEN-03), and four-eyes forbids any single party holding both. Skip
+//    those gracefully rather than hard-failing the reseed — a stale, round+price-scoped
+//    approval is harmless (the settle path re-verifies round+price on a fresh approval).
 const existing = await queryAcs(op)
+let cleaned = 0
+let skipped = 0
 for (const c of existing) {
   const choice = entityOf(c.templateId) === 'Order' ? 'Retire' : 'Archive'
-  await exercise(moduleEntity(c.templateId), c.contractId, choice, {}, op)
+  try {
+    await exercise(moduleEntity(c.templateId), c.contractId, choice, {}, op)
+    cleaned++
+  } catch {
+    skipped++ // multi-authority credential (e.g. ClearingApproval) — operator can't solo-archive.
+  }
 }
-console.log(`✓ cleaned ${existing.length} pre-existing umbra contract(s)`)
+console.log(`✓ cleaned ${cleaned} pre-existing umbra contract(s)${skipped ? ` (skipped ${skipped} multi-authority credential(s))` : ''}`)
 
 // 2. Venue.
 await create('Umbra.Roles:Venue', { operator: op, desks }, op)

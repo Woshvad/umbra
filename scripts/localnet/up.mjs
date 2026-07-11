@@ -122,6 +122,11 @@ if (RESEED || !(await r1Exists())) {
   // config + R1 always match.
   console.log('▸ deploy (DAR vet on all participants + parties/users/tokens)')
   node('deploy.mjs')
+  // Four-eyes (IDEN-03): provision the DISTINCT compliance authority the settle path
+  // requires (scripts/.compliance-token). Without it the on-ledger ClearingApproval gate
+  // aborts and no round can settle — so the one-command bring-up must set it up too.
+  console.log('▸ provision four-eyes compliance authority (scripts/.compliance-token)')
+  node('provision-compliance.mjs')
   console.log(`▸ seed §4 Round R1 (${XNODE ? 'cross-node' : 'single-node'})`)
   node(XNODE ? 'xnode-up.mjs' : 'seed.mjs')
 } else {

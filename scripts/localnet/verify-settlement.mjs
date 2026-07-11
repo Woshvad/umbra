@@ -10,13 +10,15 @@ const op = parties.operator
 const sum = (xs) => xs.reduce((a, b) => a + b, 0)
 const nameOf = (p) => p.split('::')[0]
 
-// Balances: sum every Asset (split across many contracts after DvP) per owner+symbol.
-const assets = (await queryAcs(op)).filter((c) => entityOf(c.templateId) === 'Asset')
+// Balances: sum every Holding (split across many contracts after DvP) per owner+instrument.
+// The §4 settle path rides token-agnostic `Holding` (DFIN-01), NOT the retired `Asset`:
+// symbol → instrument.id, quantity → amount.
+const holdings = (await queryAcs(op)).filter((c) => entityOf(c.templateId) === 'Holding')
 const bal = (owner, symbol) =>
   sum(
-    assets
-      .filter((c) => c.createArgument.owner === owner && c.createArgument.symbol === symbol)
-      .map((c) => Number(c.createArgument.quantity)),
+    holdings
+      .filter((c) => c.createArgument.owner === owner && c.createArgument.instrument.id === symbol)
+      .map((c) => Number(c.createArgument.amount)),
   )
 
 const expected = [
@@ -35,8 +37,8 @@ for (const [hint, sym, want] of expected) {
   balOk &&= ok
   console.log(`  ${hint} ${sym}: ${got}  (expect ${want}) ${ok ? '✓' : '✗'}`)
 }
-const totBond = sum(assets.filter((c) => c.createArgument.symbol === 'BONDX').map((c) => Number(c.createArgument.quantity)))
-const totCash = sum(assets.filter((c) => c.createArgument.symbol === 'USDCx').map((c) => Number(c.createArgument.quantity)))
+const totBond = sum(holdings.filter((c) => c.createArgument.instrument.id === 'BONDX').map((c) => Number(c.createArgument.amount)))
+const totCash = sum(holdings.filter((c) => c.createArgument.instrument.id === 'USDCx').map((c) => Number(c.createArgument.amount)))
 const consOk = Math.abs(totBond - 35) < 1e-9 && Math.abs(totCash - 7000) < 1e-9
 console.log(`  conservation: ${totBond} BONDX / ${totCash} USDCx  (expect 35 / 7000) ${consOk ? '✓' : '✗'}`)
 

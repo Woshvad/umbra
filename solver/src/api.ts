@@ -30,7 +30,7 @@ import type { ProofBundle } from './proof.js'
 // degrade to no-ops when initTelemetry() has not run (tests), so importing them is inert.
 import { withSpan, instruments } from './telemetry.js'
 // OPS-02 public status (status.ts): the pure aggregate builder + the token-free brand page.
-import { buildStatus, renderStatusHtml, type Health, type RoundPhase, type StatusInput } from './status.js'
+import { buildStatus, renderStatusHtml, CURRENT_BUILD, type Health, type RoundPhase, type StatusInput } from './status.js'
 // OPS-03 reliability: the idempotency middleware (dedupe mutating POSTs) + the FSM guard
 // (reject illegal lifecycle transitions with 409). transition() throws an ApiError-shaped
 // error the secret-safe middleware serializes identically to a native ApiError.
@@ -45,7 +45,7 @@ import type { RoundStatus } from './clock.js'
 // fires round.cleared/round.settled/fill.posted off the settle seam (FIRE-AND-FORGET — never
 // blocking/branching the legal path) and exposes register/unregister endpoints. The
 // per-subscription secret stays module-private inside webhooks.ts and is NEVER echoed.
-import { createWebhooks, type Webhooks, type WebhookEvent } from './webhooks.js'
+import { createWebhooks, WebhookLimitError, type Webhooks, type WebhookEvent } from './webhooks.js'
 // OPS-04 sandbox.ts — the deterministic §4 fixture ($100.00, fills A=10/B=8/C=2), a stable
 // API contract for integrators, ISOLATED from real rounds. POST /sandbox/round reuses
 // assertSandboxClears, which re-runs the §8 clear and THROWS on any drift from $100.00.
@@ -144,6 +144,9 @@ export interface AppDeps {
   streamRationale: (
     views: OrderView[],
     handlers: { onDelta: (delta: string) => void; onDone: () => void; onError: () => void },
+    // WR-03: an optional teardown hook — the agent hands back an abort() the SSE route calls on
+    // client disconnect so the upstream Anthropic stream is torn down (not just the local writes).
+    onAbort?: (abort: () => void) => void,
   ) => Promise<void>
   // WOW-04: compose the shareable post-round NL brief. PURE over numbers + the verified
   // rationale — secret-free and cannot drift the clearing (the §4 fixture stays $100.00).
@@ -591,7 +594,7 @@ const buildIndicative = (deps: AppDeps, views: OrderView[]): IndicativeBlock => 
 }
 
 // OPS-02: the build/version string surfaced by the public /status page (aggregate, non-secret).
-const STATUS_BUILD = process.env.UMBRA_BUILD ?? 'phase-13'
+const STATUS_BUILD = process.env.UMBRA_BUILD ?? CURRENT_BUILD
 
 export const createApp = (deps: AppDeps): Express => {
   const app = express()
@@ -633,6 +636,13 @@ export const createApp = (deps: AppDeps): Express => {
   // set at settle. Both feed ONLY the aggregate /status surface — never any per-order data.
   const bootAt = Date.now()
   let lastClear: { price: number; at: string } | undefined
+
+  // Per-round in-flight settle guard (concurrent-settle race): the double-settle check reads the
+  // ledger status then acts, so two concurrent /settle can BOTH read 'Closed' and proceed — the
+  // loser hitting an opaque 500 from the ledger's double-clear. A round is reserved here before
+  // deps.settle and released in `finally`, so a concurrent request gets a clean 409 ALREADY_SETTLING.
+  // Single-instance only (mirrors the idempotency in-flight guard); the Postgres swap is multi-node.
+  const settling = new Set<string>()
 
   const uptimeSeconds = (): number => Math.floor((Date.now() - bootAt) / 1000)
 
@@ -821,15 +831,17 @@ export const createApp = (deps: AppDeps): Express => {
     '/round/:id/close',
     wrap(async (req, res) => {
       const { id } = req.params
-      // OPS-03 FSM guard: the only legal edge into Closed is Open→Closed. A re-close of an
-      // already-Closed round stays idempotent (the clock's forceClose is a no-op), but
-      // closing a Cleared/Settled round is an illegal edge → 409 ILLEGAL_TRANSITION.
+      // OPS-03 FSM guard: the only legal edge into Closed is Open→Closed. Closing a
+      // Cleared/Settled round is an illegal edge → 409 ILLEGAL_TRANSITION.
       const round = await deps.queryRound(id)
       if (round && round.status !== 'Closed') {
         transition(round.status as RoundStatus, 'Closed')
       }
-      await deps.closeRound(id)
-      res.json({ roundId: id, status: 'Closed' })
+      // A re-close of an already-Closed round stays idempotent — no repeat on-ledger CloseRound.
+      // Otherwise the on-ledger close is AUTHORITATIVE: return the status deps.closeRound actually
+      // reports (never a hardcoded literal) so a round the clock map forgot still closes on-ledger.
+      const status = round?.status === 'Closed' ? 'Closed' : await deps.closeRound(id)
+      res.json({ roundId: id, status })
     }),
   )
 
@@ -888,8 +900,13 @@ export const createApp = (deps: AppDeps): Express => {
     // now half-closed socket. `aborted` gates every write below so no delta lands on a dead
     // connection and the handler stops driving output for a client that has gone away.
     let aborted = false
+    // WR-03: the agent hands back an abort() below; on client disconnect we both stop writing to
+    // the half-closed socket (via `aborted`) AND tear down the upstream Anthropic stream so it
+    // isn't left running for a client that has gone away.
+    let abortUpstream: () => void = () => {}
     req.on('close', () => {
       aborted = true
+      abortUpstream()
     })
 
     void (async () => {
@@ -924,14 +941,20 @@ export const createApp = (deps: AppDeps): Express => {
         res.end()
       }
 
-      await deps.streamRationale(views, {
-        onDelta: (delta) => {
-          if (aborted || closed) return
-          res.write(`data: ${JSON.stringify(delta)}\n\n`)
+      await deps.streamRationale(
+        views,
+        {
+          onDelta: (delta) => {
+            if (aborted || closed) return
+            res.write(`data: ${JSON.stringify(delta)}\n\n`)
+          },
+          onDone: finishDone,
+          onError: finishFallback,
         },
-        onDone: finishDone,
-        onError: finishFallback,
-      })
+        (abort) => {
+          abortUpstream = abort
+        },
+      )
     })().catch(() => {
       // Guard the IIFE (WR-03): a throw from streamRationale or the fallback's
       // computeClearing (contractually shouldn't happen) must not become an unhandled
@@ -959,55 +982,68 @@ export const createApp = (deps: AppDeps): Express => {
       // settle-before-close (Open) is an illegal edge → 409 ILLEGAL_TRANSITION (before any
       // ledger work). Cleared/Settled were already rejected above; this catches the Open case.
       transition(round.status as RoundStatus, 'Cleared')
-      // OPS-01: span-wrap the settle path (round.id-correlated) + record its latency.
-      const settleStart = Date.now()
-      const result = await withSpan('round.settle', id, () => deps.settle(id))
-      instruments.settleLatencyMs.record(Date.now() - settleStart)
-      // OPS-02: record the last clear for the aggregate /status surface (public uniform price).
-      lastClear = { price: result.clearingPrice, at: new Date().toISOString() }
-      // matchedVolume is always set by the live settle path (Round.Clear's totalMatched);
-      // if a deps impl omits it, reconstruct from the verified Buy-side allocations.
-      // NEVER read the sealed book here — Round.Clear RETIRED those orders, so a recompute
-      // on the now-empty book would yield 0 (the same trap the GET post-settle branch avoids).
-      const matchedVolume =
-        result.matchedVolume ??
-        result.allocations.filter((a) => a.side === 'Buy').reduce((sum, a) => sum + a.filledQty, 0)
-      // OPS-04 lifecycle emits off the settle seam — FIRE-AND-FORGET, aggregate/round data
-      // only (NEVER a sealed order's limit / order content). round.cleared + round.settled
-      // carry the public uniform price + matched volume; fill.posted fires ONCE PER
-      // TradeConfirmation (Open Question 1). The confirmation read + fan-out run entirely off
-      // the request path so a webhook can never block or fail the byte-unchanged /settle reply.
-      emitSafe('round.cleared', { roundId: id, clearingPrice: result.clearingPrice, matchedVolume })
-      emitSafe('round.settled', {
-        roundId: id,
-        clearingPrice: result.clearingPrice,
-        matchedVolume,
-        txConfirmations: result.txConfirmations ?? 1,
-      })
-      void Promise.resolve()
-        .then(async () => {
-          const confs = await deps.readTradeConfirmations(id)
-          for (const c of confs) {
-            // The per-desk fill receipt — desk id + side + filled qty + the PUBLIC clearing
-            // price. This is the SETTLED fill, never the sealed order's private limit.
-            emitSafe('fill.posted', {
-              roundId: id,
-              desk: c.desk,
-              side: c.side,
-              filledQty: c.filledQty,
-              clearingPrice: c.clearingPrice,
-            })
-          }
+      // Concurrent-settle guard: reserve the round BEFORE settling; a second concurrent /settle
+      // that read the same 'Closed' status is refused a clean 409 ALREADY_SETTLING instead of
+      // racing into deps.settle and getting an opaque 500 from the ledger's double-clear.
+      if (settling.has(id)) {
+        throw new ApiError(409, 'ALREADY_SETTLING', `round ${id} is already being settled`)
+      }
+      settling.add(id)
+      try {
+        // OPS-01: span-wrap the settle path (round.id-correlated) + record its latency.
+        const settleStart = Date.now()
+        const result = await withSpan('round.settle', id, () => deps.settle(id))
+        instruments.settleLatencyMs.record(Date.now() - settleStart)
+        // OPS-02: record the last clear for the aggregate /status surface (public uniform price).
+        lastClear = { price: result.clearingPrice, at: new Date().toISOString() }
+        // matchedVolume is always set by the live settle path (Round.Clear's totalMatched);
+        // if a deps impl omits it, reconstruct from the verified Buy-side allocations.
+        // NEVER read the sealed book here — Round.Clear RETIRED those orders, so a recompute
+        // on the now-empty book would yield 0 (the same trap the GET post-settle branch avoids).
+        const matchedVolume =
+          result.matchedVolume ??
+          result.allocations.filter((a) => a.side === 'Buy').reduce((sum, a) => sum + a.filledQty, 0)
+        // OPS-04 lifecycle emits off the settle seam — FIRE-AND-FORGET, aggregate/round data
+        // only (NEVER a sealed order's limit / order content). round.cleared + round.settled
+        // carry the public uniform price + matched volume; fill.posted fires ONCE PER
+        // TradeConfirmation (Open Question 1). The confirmation read + fan-out run entirely off
+        // the request path so a webhook can never block or fail the byte-unchanged /settle reply.
+        emitSafe('round.cleared', { roundId: id, clearingPrice: result.clearingPrice, matchedVolume })
+        emitSafe('round.settled', {
+          roundId: id,
+          clearingPrice: result.clearingPrice,
+          matchedVolume,
+          txConfirmations: result.txConfirmations ?? 1,
         })
-        .catch(() => undefined)
-      res.json({
-        roundId: id,
-        status: 'Settled',
-        clearingPrice: result.clearingPrice,
-        matchedVolume,
-        allocations: result.allocations,
-        txConfirmations: result.txConfirmations ?? 1,
-      })
+        void Promise.resolve()
+          .then(async () => {
+            const confs = await deps.readTradeConfirmations(id)
+            for (const c of confs) {
+              // The per-desk fill receipt — desk id + side + filled qty + the PUBLIC clearing
+              // price. This is the SETTLED fill, never the sealed order's private limit.
+              emitSafe('fill.posted', {
+                roundId: id,
+                desk: c.desk,
+                side: c.side,
+                filledQty: c.filledQty,
+                clearingPrice: c.clearingPrice,
+              })
+            }
+          })
+          .catch(() => undefined)
+        res.json({
+          roundId: id,
+          status: 'Settled',
+          clearingPrice: result.clearingPrice,
+          matchedVolume,
+          allocations: result.allocations,
+          txConfirmations: result.txConfirmations ?? 1,
+        })
+      } finally {
+        // Release the reservation once the settle attempt finalizes (success or throw). On success
+        // the round is now Settled on-ledger, so a later /settle 409s via the ALREADY_SETTLED guard.
+        settling.delete(id)
+      }
     }),
   )
 
@@ -1330,6 +1366,10 @@ export const createApp = (deps: AppDeps): Express => {
   // unregisters it. These sit behind the SAME operator boundary as the §11 mutating
   // endpoints. The per-subscription HMAC secret is stored MODULE-PRIVATE inside webhooks.ts
   // and is NEVER echoed — the register response carries only { id, url, events } (T-13-26).
+  // AUTH GAP (noted): like every other §11 mutating route, these carry NO in-process operator
+  // auth gate today (single-operator demo behind the operator boundary). Until one exists, the
+  // DoS surface is bounded by webhooks.ts's registry cap (register → 429 past the ceiling) and
+  // the rotating delivery log — an unauthenticated flood cannot grow memory without limit.
 
   // POST /webhooks — register a lifecycle subscription (zod-validated, secret NEVER echoed).
   app.post(
@@ -1342,7 +1382,16 @@ export const createApp = (deps: AppDeps): Express => {
         throw new ApiError(400, 'INVALID_BODY', `invalid request body: ${path} — ${issue?.message ?? 'invalid'}`)
       }
       // register() stores the secret privately and returns a secret-free handle { id, url, events }.
-      const sub = webhooks.register(parsed.data)
+      // Past the registry cap it throws WebhookLimitError → a bounded 429 (never an opaque 500).
+      let sub
+      try {
+        sub = webhooks.register(parsed.data)
+      } catch (err) {
+        if (err instanceof WebhookLimitError) {
+          throw new ApiError(429, 'WEBHOOK_LIMIT', 'webhook subscription limit reached')
+        }
+        throw err
+      }
       res.status(201).json(sub)
     }),
   )

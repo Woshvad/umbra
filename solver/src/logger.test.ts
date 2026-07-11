@@ -100,6 +100,26 @@ describe('redact', () => {
     expect(redact(42)).toBe(42)
     expect(redact(null)).toBe(null)
   })
+
+  it('secret-hygiene: redacts compound "…secret" keys (clientSecret / OIDC_CLIENT_SECRET / LOCALNET_JWT_SECRET)', () => {
+    const out = redact({
+      clientSecret: SECRET,
+      OIDC_CLIENT_SECRET: SECRET,
+      LOCALNET_JWT_SECRET: SECRET,
+      // whole-key 'secret' already redacted (EXACT_SECRET) — still must redact
+      secret: SECRET,
+      // benign key that merely CONTAINS 'secret' as a prefix component must NOT over-redact
+      secretsCount: 3,
+    }) as Record<string, unknown>
+
+    expect(out.clientSecret).toBe('[REDACTED]')
+    expect(out.OIDC_CLIENT_SECRET).toBe('[REDACTED]')
+    expect(out.LOCALNET_JWT_SECRET).toBe('[REDACTED]')
+    expect(out.secret).toBe('[REDACTED]')
+    // 'secretsCount' → components [secrets, count]; 'secret' is not the final component → keep
+    expect(out.secretsCount).toBe(3)
+    expect(JSON.stringify(out)).not.toContain(SECRET)
+  })
 })
 
 describe('log', () => {

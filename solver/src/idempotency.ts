@@ -44,6 +44,11 @@ export interface IdempotencyOptions {
   ttlMs?: number
   // Clock injection for deterministic TTL tests. Defaults to Date.now.
   now?: () => number
+  // T-13-08 DoS bound: the HARD maximum number of live entries. The store is otherwise
+  // append-only + only lazily TTL-checked on a same-key read, so a stream of UNIQUE keys grows
+  // it without limit → OOM. Before each write we opportunistically sweep TTL-expired entries and
+  // evict the oldest (Map insertion order) so size can never exceed this cap. Default 10_000.
+  maxEntries?: number
 }
 
 export interface Idempotency {
@@ -53,6 +58,9 @@ export interface Idempotency {
 }
 
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000
+// The default hard cap on live store entries (T-13-08 DoS bound). Generous for the single-
+// operator demo; the documented Postgres swap is the multi-instance path.
+const DEFAULT_MAX_ENTRIES = 10_000
 
 // Canonicalize an arbitrary JSON value: sort object keys recursively so the hash is
 // stable under key reordering (arrays keep order — position is semantically meaningful).
@@ -82,6 +90,24 @@ export const idempotencyMiddleware = (
 ): RequestHandler => {
   const ttlMs = opts?.ttlMs ?? DEFAULT_TTL_MS
   const now = opts?.now ?? Date.now
+  const maxEntries = opts?.maxEntries ?? DEFAULT_MAX_ENTRIES
+
+  // T-13-08 DoS bound: before inserting a new entry, opportunistically sweep TTL-expired
+  // entries, then (if still at capacity) evict the OLDEST entries (Map preserves insertion
+  // order) until there is room. Keeps `store.size <= maxEntries` under any volume of unique
+  // Idempotency-Keys so the store can never grow unbounded (OOM). O(size) only when at cap.
+  const boundStore = (): void => {
+    if (store.size < maxEntries) return
+    const cutoff = now() - ttlMs
+    for (const [k, v] of store) {
+      if (v.at <= cutoff) store.delete(k)
+    }
+    while (store.size >= maxEntries) {
+      const oldest = store.keys().next().value
+      if (oldest === undefined) break
+      store.delete(oldest)
+    }
+  }
 
   // ME-01: an in-flight guard (per-middleware-instance) keyed the SAME as the store. A
   // storeKey is reserved here the moment the first request passes into the handler and
@@ -159,6 +185,7 @@ export const idempotencyMiddleware = (
       // (Stripe-style semantics), so a retry under the same key re-executes the handler.
       // (A deterministic 4xx recomputes to the same result, so it need not be cached.)
       if (res.statusCode < 400) {
+        boundStore() // T-13-08: sweep/evict so the store never exceeds maxEntries before insert.
         store.set(storeKey, { bodyHash, status: res.statusCode, body, at: now() })
       }
       // ME-01: release the in-flight reservation as the response finalizes (the 'finish'/

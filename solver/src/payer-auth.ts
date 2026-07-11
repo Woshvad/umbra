@@ -76,16 +76,21 @@ export const createPayerAuthenticator = (cfg: PayerAuthConfig): PayerAuthenticat
   return async (req: Request): Promise<string | null> => {
     const token = bearerOf(req)
     if (!token) return null
-    // Dev HS256 path first (cheap, no network).
-    let sub = verifyDevPartyToken(token, devSecret)?.sub
-    // OIDC RS256 fallback (verified via JWKS in auth.ts).
-    if (!sub && cfg.verifyOidc) {
+    let sub: string | undefined
+    // AUTH-BYPASS FIX: a SINGLE trust root. When an OIDC verifier is configured we verify via
+    // OIDC ONLY and NEVER consult the dev HS256 path — otherwise a token forged with the public
+    // default dev secret ('unsafe') would authenticate as any party and bypass OIDC entirely.
+    // The dev HS256 path is used ONLY when there is no OIDC verifier (dev LocalNet).
+    if (cfg.verifyOidc) {
       try {
         const { payload } = await cfg.verifyOidc(token)
         sub = typeof payload?.sub === 'string' ? payload.sub : undefined
       } catch {
         return null
       }
+    } else {
+      // Dev LocalNet only: verify the unsafe-HS256 dev party token with the server-side secret.
+      sub = verifyDevPartyToken(token, devSecret)?.sub
     }
     if (!sub) return null
     return cfg.subjectToParty(sub) ?? null

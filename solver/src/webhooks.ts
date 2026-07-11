@@ -89,6 +89,15 @@ export interface DeliveryRecord {
   lastError: string | null // Error NAME or `HTTP <status>` only — never a secret
 }
 
+// Thrown by register() when the subscription registry is at capacity (DoS bound). Carries a
+// distinct name so the api.ts route can map it to a 429 rather than an opaque 500.
+export class WebhookLimitError extends Error {
+  constructor() {
+    super('webhook subscription registry is at capacity')
+    this.name = 'WebhookLimitError'
+  }
+}
+
 // ── Injectable deps (tests drive fetch/wait/random with no network or real sleep) ──
 export interface WebhooksDeps {
   fetch?: typeof fetch
@@ -98,6 +107,12 @@ export interface WebhooksDeps {
   baseDelayMs?: number
   maxAttempts?: number
   replayWindowMs?: number
+  // T-13 DoS bounds: the subscription registry and the delivery log are otherwise unbounded
+  // Maps and POST /webhooks is unauthenticated + uncapped (see api.ts). `maxSubscriptions`
+  // rejects a register past the ceiling (→ WebhookLimitError → 429); `maxDeliveryLog` rotates
+  // the delivery log by evicting the oldest record so it can never grow without limit.
+  maxSubscriptions?: number
+  maxDeliveryLog?: number
 }
 
 export interface Webhooks {
@@ -127,10 +142,15 @@ export const createWebhooks = (deps: WebhooksDeps = {}): Webhooks => {
   const now = deps.now ?? Date.now
   const baseDelayMs = deps.baseDelayMs ?? 500
   const maxAttempts = deps.maxAttempts ?? 5
+  // DoS bounds (see WebhooksDeps): a hostile/unauthenticated POST /webhooks flood must not be
+  // able to grow either Map without limit. Defaults are generous for the single-operator demo.
+  const maxSubscriptions = deps.maxSubscriptions ?? 1000
+  const maxDeliveryLog = deps.maxDeliveryLog ?? 5000
 
   // PRIVATE registry — the secret lives here and is never exposed outside this closure.
   const subs = new Map<string, WebhookSubscriptionInput>()
-  // In-memory delivery log (documented Postgres swap; resets on restart).
+  // In-memory delivery log (documented Postgres swap; resets on restart). Bounded to
+  // maxDeliveryLog by evicting the oldest record (Map preserves insertion order).
   const log = new Map<string, DeliveryRecord>()
 
   // Deliver one event to one subscription, retrying with exponential backoff + jitter.
@@ -153,6 +173,13 @@ export const createWebhooks = (deps: WebhooksDeps = {}): Webhooks => {
       status: 'pending',
       attempts: 0,
       lastError: null,
+    }
+    // Bound the delivery log: evict the OLDEST record(s) before inserting so it can never exceed
+    // maxDeliveryLog (the newest, actively-mutated record is always retained).
+    while (log.size >= maxDeliveryLog) {
+      const oldest = log.keys().next().value
+      if (oldest === undefined) break
+      log.delete(oldest)
     }
     log.set(deliveryId, record)
 
@@ -194,6 +221,9 @@ export const createWebhooks = (deps: WebhooksDeps = {}): Webhooks => {
 
   return {
     register(input): WebhookSubscription {
+      // DoS bound: reject a register past the ceiling (api.ts maps WebhookLimitError → 429)
+      // rather than letting an unauthenticated POST /webhooks flood grow the registry unbounded.
+      if (subs.size >= maxSubscriptions) throw new WebhookLimitError()
       const id = randomUUID()
       // Store the full input (incl. secret) PRIVATELY; return a secret-free handle.
       subs.set(id, { url: input.url, secret: input.secret, events: [...input.events] })

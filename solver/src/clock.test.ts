@@ -130,6 +130,45 @@ describe('in-memory round clock', () => {
     expect(clock.getState('R1')?.status).toBe('Closed')
   })
 
+  // ── crash-safety: a rejecting auto-close must NOT surface as an unhandled rejection ──
+  it('a rejecting auto-close is swallowed by a secret-free catch (never crashes the timer)', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    // closeRound rejects at window expiry (e.g. a transient ledger error). Without the timer's
+    // .catch this would be an unhandled promise rejection that crashes the process (Node 20).
+    const closeRound = vi.fn(async () => {
+      throw new Error('ledger unreachable at window expiry SECRET-DETAIL')
+    })
+    const clock = createClock({ closeRound })
+    clock.openRoundClock('R1', ROUND_SECONDS)
+
+    // Advancing past the window fires the timer; the rejecting close must NOT reject out of it
+    // (a bare `await` would throw here if the rejection escaped the timer's .catch).
+    await vi.advanceTimersByTimeAsync(ROUND_SECONDS * 1000)
+
+    expect(closeRound).toHaveBeenCalledTimes(1)
+    // A secret-free log fired (fixed string + err.name); the raw error text never leaked.
+    expect(errSpy).toHaveBeenCalled()
+    expect(JSON.stringify(errSpy.mock.calls)).not.toContain('SECRET-DETAIL')
+    errSpy.mockRestore()
+  })
+
+  // ── cancelTimer: cancels the armed timer with NO on-ledger call / no transition ──────
+  it('cancelTimer cancels the auto-close timer without calling closeRound or transitioning', async () => {
+    const closeRound = vi.fn(async () => undefined)
+    const clock = createClock({ closeRound })
+    clock.openRoundClock('R1', ROUND_SECONDS)
+
+    clock.cancelTimer('R1')
+    // The timer is cancelled: advancing past the window must NOT fire the auto-close.
+    await vi.advanceTimersByTimeAsync(ROUND_SECONDS * 2 * 1000)
+
+    expect(closeRound).not.toHaveBeenCalled()
+    // cancelTimer is status-neutral — the clock still reports the round as Open (ledger leads).
+    expect(clock.getState('R1')?.status).toBe('Open')
+    // A no-op on an unknown round.
+    expect(() => clock.cancelTimer('nope')).not.toThrow()
+  })
+
   it('rehydrate seeds map state from live rounds without starting a timer', async () => {
     const closeRound = vi.fn(async () => undefined)
     const clock = createClock({ closeRound })

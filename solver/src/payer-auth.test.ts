@@ -5,7 +5,7 @@
 // spoof a victim's `from` to seize the victim's Holding. Also proves the alg-confusion defense
 // and the fail-closed behavior (no bearer / unknown subject → null → the gate rejects).
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { createHmac } from 'node:crypto'
 import type { Request } from 'express'
 import { verifyDevPartyToken, createPayerAuthenticator } from './payer-auth.js'
@@ -58,5 +58,38 @@ describe('payer-auth (CR-01)', () => {
   it('authenticator returns null for a verified token whose subject is unmapped (fail-closed)', async () => {
     const auth = createPayerAuthenticator({ subjectToParty: () => null, devSecret: 'unsafe' })
     expect(await auth(reqWith(`Bearer ${mintDev('umbra-unknown', 'unsafe')}`))).toBeNull()
+  })
+
+  // ── AUTH-BYPASS regression (HIGH): OIDC mode consults ONLY the OIDC verifier ──────────
+  it('OIDC-configured authenticator REJECTS a token forged with the public default dev secret', async () => {
+    // When verifyOidc is configured the dev HS256 path must NEVER be consulted — otherwise a
+    // token minted with the public default secret ('unsafe') would authenticate as any party and
+    // bypass OIDC. The OIDC verifier here rejects the forged token, so the result is null.
+    const verifyOidc = vi.fn(async () => {
+      throw new Error('not a valid OIDC token')
+    })
+    const auth = createPayerAuthenticator({
+      subjectToParty: () => 'BankA::party',
+      devSecret: 'unsafe',
+      verifyOidc,
+    })
+    // A token that WOULD pass the dev HS256 check with the 'unsafe' secret …
+    const forged = mintDev('umbra-bankA', 'unsafe')
+    expect(await auth(reqWith(`Bearer ${forged}`))).toBeNull()
+    // … proving the OIDC path was consulted (and the dev path was NOT — it would have accepted it).
+    expect(verifyOidc).toHaveBeenCalledTimes(1)
+  })
+
+  it('OIDC-configured authenticator maps a subject that ONLY the OIDC verifier vouches for', async () => {
+    // The dev HS256 check would reject this (bad signature), but the OIDC verifier accepts it —
+    // confirming OIDC is the sole trust root in OIDC mode.
+    const verifyOidc = vi.fn(async () => ({ payload: { sub: 'umbra-bankB' } }))
+    const auth = createPayerAuthenticator({
+      subjectToParty: (s) => (s === 'umbra-bankB' ? 'BankB::party' : null),
+      devSecret: 'unsafe',
+      verifyOidc,
+    })
+    expect(await auth(reqWith('Bearer any.opaque.oidc-token'))).toBe('BankB::party')
+    expect(verifyOidc).toHaveBeenCalledTimes(1)
   })
 })

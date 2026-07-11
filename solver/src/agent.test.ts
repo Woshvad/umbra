@@ -163,6 +163,28 @@ describe('AI Solver Agent — verify-don\'t-trust gate', () => {
     expect(r.clearingPrice).toBe(100)
   })
 
+  it('trust-gate: a DUPLICATED desk|side allocation (dropping a real fill) is REJECTED → fallback', async () => {
+    // Right price + equal LENGTH (3) as the deterministic set, but BankB|Sell is repeated and
+    // BankC|Sell is dropped. The old map-from-deterministic predicate accepted this (false
+    // verified:true); true set-equality rejects a duplicate key → deterministic §4 wins.
+    const client = fakeClientReturning({
+      clearingPrice: 100,
+      allocations: [
+        { desk: 'BankA', side: 'Buy', filledQty: 10 },
+        { desk: 'BankB', side: 'Sell', filledQty: 8 },
+        { desk: 'BankB', side: 'Sell', filledQty: 8 }, // DUPLICATE key — BankC|Sell is missing
+      ],
+      rationale: 'duplicated key hides a dropped allocation',
+    })
+    const agent = createAgent({ client, computeClearing, matchedAt })
+    const r = await agent.proposeClearing(SECTION4_VIEWS)
+
+    expect(r.verified).toBe(false)
+    expect(r.source).toBe('deterministic-fallback')
+    expect(r.clearingPrice).toBe(100) // §4 canary HOLDS
+    expect(r.rationale).not.toContain('duplicated key') // generated neutral string, not the model's
+  })
+
   it('malformed: parsed_output missing clearingPrice → safeParse fails → fallback', async () => {
     const client = fakeClientReturning({
       allocations: [{ desk: 'BankA', side: 'Buy', filledQty: 10 }],
@@ -473,6 +495,82 @@ describe('AI Solver Agent — streamRationale (live rationale as text deltas)', 
 
     expect(deltas).toBe(0)
     expect(done).toBe(0)
+    expect(err).toBe(1)
+  })
+
+  it('deadline: a never-completing stream trips the timeout → onError + upstream aborted (no leak)', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const abortSpy = vi.fn()
+    // A stream whose finalMessage never settles (a hanging key); .abort() is the teardown seam.
+    const hangingStreamClient = () => {
+      const stream = {
+        on(_e: 'text', _cb: (d: string) => void) {
+          return stream
+        },
+        finalMessage: () =>
+          new Promise<unknown>(() => {
+            void SENTINEL_KEY /* never resolves */
+          }),
+        abort: abortSpy,
+      }
+      return { messages: { parse: vi.fn(async () => ({ parsed_output: null })), stream: vi.fn(() => stream) } }
+    }
+    const agent = createAgent({ client: hangingStreamClient(), computeClearing, matchedAt, timeoutMs: 20 })
+
+    let done = 0
+    let err = 0
+    // Resolves (never hangs) via the deadline; onError fires exactly once, onDone never.
+    await agent.streamRationale(SECTION4_VIEWS, {
+      onDelta: () => {},
+      onDone: () => {
+        done++
+      },
+      onError: () => {
+        err++
+      },
+    })
+
+    expect(err).toBe(1)
+    expect(done).toBe(0)
+    expect(abortSpy).toHaveBeenCalled() // the upstream stream was torn down on the deadline
+  })
+
+  it('abort hook: a client disconnect tears down the upstream stream (onAbort → stream.abort)', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    // Faithful to the real SDK: abort() aborts the request so finalMessage() rejects.
+    let rejectFinal: (e: unknown) => void = () => {}
+    const abortSpy = vi.fn(() => rejectFinal(new Error('aborted')))
+    const stream = {
+      on(_e: 'text', _cb: (d: string) => void) {
+        return stream
+      },
+      finalMessage: () =>
+        new Promise<unknown>((_resolve, reject) => {
+          rejectFinal = reject
+          void SENTINEL_KEY /* held open until the caller aborts */
+        }),
+      abort: abortSpy,
+    }
+    const client = { messages: { parse: vi.fn(async () => ({ parsed_output: null })), stream: vi.fn(() => stream) } }
+    // A long deadline so ONLY the explicit abort (not the timer) tears the stream down.
+    const agent = createAgent({ client, computeClearing, matchedAt, timeoutMs: 10_000 })
+
+    let abortFn: () => void = () => {}
+    let err = 0
+    const p = agent.streamRationale(
+      SECTION4_VIEWS,
+      { onDelta: () => {}, onDone: () => {}, onError: () => { err++ } },
+      (abort) => {
+        abortFn = abort
+      },
+    )
+    // Simulate the SSE route's req.on('close') → abort the upstream.
+    await new Promise((r) => setTimeout(r, 0))
+    abortFn()
+    await p // the abort rejects finalMessage → the single-shot fallback path resolves cleanly
+    expect(abortSpy).toHaveBeenCalledTimes(1)
     expect(err).toBe(1)
   })
 

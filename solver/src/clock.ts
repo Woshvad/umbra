@@ -55,6 +55,11 @@ export interface ClockDeps {
 export interface Clock {
   openRoundClock(roundId: string, windowSeconds: number): RoundState
   forceClose(roundId: string): Promise<void>
+  // Cancel a round's pending auto-close timer WITHOUT any on-ledger call or Open→Closed
+  // transition. Used by the authoritative on-ledger close path (index.ts buildDeps.closeRound)
+  // so a manual close can cancel the armed timer while the LEDGER — not the clock — remains
+  // the source of truth for the status. A no-op when the round has no timer / is absent.
+  cancelTimer(roundId: string): void
   getState(roundId: string): RoundState | undefined
   setStatus(roundId: string, status: RoundStatus): void
   rehydrate(
@@ -95,9 +100,16 @@ export const createClock = (deps: ClockDeps): Clock => {
     openRoundClock(roundId, windowSeconds): RoundState {
       const openedAt = Date.now()
       const deadline = openedAt + windowSeconds * 1000
-      // Auto-advance to Closed when the window expires (the timer drives close()).
+      // Auto-advance to Closed when the window expires (the timer drives close()). Attach a
+      // secret-free `.catch`: a rejected close() at window expiry (e.g. a transient ledger
+      // error) would otherwise be an UNHANDLED promise rejection that crashes the process
+      // (Node 20 default). Swallow it with a fixed string + err.name ONLY — never the raw
+      // error object / a token (SOLV-04 discipline).
       const timer = setTimeout(() => {
-        void close(roundId)
+        void close(roundId).catch((err) => {
+          // eslint-disable-next-line no-console
+          console.error('[clock] auto-close failed at window expiry', err instanceof Error ? err.name : 'unknown')
+        })
       }, windowSeconds * 1000)
       const state: RoundState = { roundId, status: 'Open', openedAt, deadline, timer }
       rounds.set(roundId, state)
@@ -107,6 +119,17 @@ export const createClock = (deps: ClockDeps): Clock => {
     // Force-close early: cancel the timer + close on-ledger. Idempotent.
     async forceClose(roundId): Promise<void> {
       await close(roundId)
+    },
+
+    // Cancel a pending auto-close timer only — no on-ledger call, no status transition. Lets
+    // the authoritative on-ledger close path stop a round's armed timer while the ledger stays
+    // the source of truth. A no-op when the round is absent or has no timer.
+    cancelTimer(roundId): void {
+      const state = rounds.get(roundId)
+      if (state?.timer) {
+        clearTimeout(state.timer)
+        state.timer = undefined
+      }
     },
 
     getState(roundId): RoundState | undefined {

@@ -114,6 +114,7 @@ const makeClock = (
 ): Clock => ({
   openRoundClock,
   forceClose: vi.fn(async () => undefined),
+  cancelTimer: vi.fn(),
   getState: vi.fn((roundId: string): RoundState => ({
     roundId,
     status: 'Closed',
@@ -199,8 +200,12 @@ describe('solver boot wiring (buildDeps)', () => {
     expect(openRoundClock).toHaveBeenCalledWith('R2', ROUND_SECONDS)
   })
 
-  it('POST /round/:id/close routes through clock.forceClose', async () => {
-    const ledger = makeLedger()
+  it('POST /round/:id/close closes ON-LEDGER (authoritative) and cancels the clock timer', async () => {
+    // The on-ledger close is now authoritative + independent of the in-memory clock map: the
+    // route calls ledger.closeRound directly (returning its REAL status) and uses the clock only
+    // to cancel the armed auto-close timer — so a round the clock map forgot still closes on-ledger
+    // (the previous bug: clock.forceClose returned early with no ledger close, stranding the round).
+    const ledger = makeLedger({ closeRound: vi.fn(async (): Promise<string> => 'Closed') })
     const openRoundClock = vi.fn(
       (roundId: string): RoundState => ({ roundId, status: 'Open', openedAt: 0, deadline: 0 }),
     )
@@ -211,8 +216,14 @@ describe('solver boot wiring (buildDeps)', () => {
     server = started.server
 
     const res = await fetch(`${started.base}/round/R2/close`, { method: 'POST' })
+    const body = await readJson(res)
     expect(res.status).toBe(200)
-    expect(clock.forceClose).toHaveBeenCalledWith('R2')
+    // The status is the REAL one ledger.closeRound reported (not a hardcoded literal).
+    expect(body.status).toBe('Closed')
+    expect(ledger.closeRound).toHaveBeenCalledWith('R2')
+    // The clock was used ONLY to cancel the timer — never routed through forceClose.
+    expect(clock.cancelTimer).toHaveBeenCalledWith('R2')
+    expect(clock.forceClose).not.toHaveBeenCalled()
   })
 
   // ── ADJ-01/02/03: buildDeps threads proposeCompeting + the RFQ/issuance ledger wrappers ──

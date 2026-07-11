@@ -23,6 +23,7 @@ import {
   verifySignature,
   isReplayFresh,
   createWebhooks,
+  WebhookLimitError,
   type WebhookEvent,
 } from './webhooks.js'
 
@@ -186,5 +187,36 @@ describe('webhooks — emit / retry / delivery log', () => {
     expect(blob).not.toContain(ANTHROPIC_SENTINEL)
     expect(blob).not.toContain(OPERATOR_SENTINEL)
     expect(blob).not.toContain('sk-ant-')
+  })
+})
+
+// ── DoS bounds (T-13): the registry + delivery log must never grow without limit ──────
+describe('webhooks — DoS bounds (subscription cap + rotating delivery log)', () => {
+  it('register past the subscription cap throws WebhookLimitError', () => {
+    const wh = createWebhooks({ maxSubscriptions: 2 })
+    wh.register({ url: 'https://a.example/hook', secret: SECRET, events: ['round.opened'] })
+    wh.register({ url: 'https://b.example/hook', secret: SECRET, events: ['round.opened'] })
+    // The third register is past the ceiling → rejected (api.ts maps this to a 429).
+    expect(() => wh.register({ url: 'https://c.example/hook', secret: SECRET, events: ['round.opened'] })).toThrow(
+      WebhookLimitError,
+    )
+  })
+
+  it('the delivery log is bounded — oldest records are evicted past maxDeliveryLog', async () => {
+    const fetchStub = vi.fn(async () => res(true, 200))
+    const wh = createWebhooks({
+      fetch: fetchStub as unknown as typeof fetch,
+      wait: async () => {},
+      maxDeliveryLog: 3,
+    })
+    wh.register({ url: 'https://sink.example/hook', secret: SECRET, events: ['round.settled'] })
+
+    // Emit far more than the cap; each emit records a delivery. The log must stay bounded.
+    for (let i = 0; i < 20; i++) {
+      await wh.emit('round.settled', { roundId: `R${i}`, clearingPrice: 100 })
+    }
+
+    expect(wh.deliveryLog().length).toBeLessThanOrEqual(3)
+    expect(wh.deliveryLog().length).toBe(3)
   })
 })

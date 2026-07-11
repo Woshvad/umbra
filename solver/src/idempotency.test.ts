@@ -252,6 +252,35 @@ describe('idempotency middleware', () => {
     expect(store.size).toBe(1) // only the SUCCESS response is now memoized
   })
 
+  it('T-13-08 DoS bound: the store stays bounded under many UNIQUE keys (oldest evicted)', async () => {
+    // A stream of unique Idempotency-Keys must not grow the store without limit. With a small
+    // maxEntries cap, firing far more unique-key POSTs keeps store.size <= cap (oldest evicted).
+    const MAX = 5
+    const { middleware, store } = createIdempotency({ maxEntries: MAX })
+    const base = await start((app) => {
+      app.use(middleware)
+      app.post('/round', (_req, res) => res.status(201).json({ ok: true }))
+    })
+
+    for (let i = 0; i < 50; i++) {
+      // A distinct key AND body each time → a fresh stored entry every request.
+      await fetch(`${base}/round`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': `k-${i}` },
+        body: JSON.stringify({ n: i }),
+      })
+    }
+
+    // Bounded: never exceeds the cap despite 50 unique keys.
+    expect(store.size).toBeLessThanOrEqual(MAX)
+    expect(store.size).toBe(MAX)
+    // The evicted entries are the OLDEST — only the most-recent keys survive (storeKey is
+    // namespaced `POST /round <key>`, so match the key suffix exactly).
+    const survivingKeys = [...store.keys()]
+    expect(survivingKeys.some((k) => k.endsWith(' k-49'))).toBe(true)
+    expect(survivingKeys.some((k) => k.endsWith(' k-0'))).toBe(false)
+  })
+
   it('secret-sweep: an Authorization sentinel never lands in the store', async () => {
     const SENTINEL = 'SENTINEL-BEARER-do-not-store-9f3c2a'
     const { middleware, store } = createIdempotency()

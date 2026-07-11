@@ -182,13 +182,18 @@ export const buildBatchMessage = (views: OrderView[]): string => {
 export const priceEqual = (a: number, b: number): boolean =>
   Math.round(a * 100) === Math.round(b * 100)
 
-// Order-insensitive allocation comparison: a SET keyed by `desk|side` → filledQty
-// (RESEARCH Pitfall 5; the model may emit any order, computeClearing emits buys-then-sells).
+// Order-insensitive allocation comparison: TRUE set equality keyed by `desk|side` → filledQty
+// (RESEARCH Pitfall 5; the model — the UNTRUSTED side, `a` — may emit any order, computeClearing
+// emits buys-then-sells). The map is built from the MODEL array `a` (not the deterministic `b`)
+// and we require `ma.size === a.length` so a DUPLICATED `desk|side` key cannot pass: previously,
+// building the map from `b` let the model repeat one key (silently dropping a real allocation)
+// while still matching every entry and equal-length → a false verified:true (trust-gate hole).
 const allocKey = (al: { desk: string; side: Side }): string => `${al.desk}|${al.side}`
 export const allocationsEqual = (a: Allocation[], b: Allocation[]): boolean => {
   if (a.length !== b.length) return false
-  const mb = new Map(b.map((x) => [allocKey(x), x.filledQty]))
-  return a.every((x) => mb.get(allocKey(x)) === x.filledQty)
+  const ma = new Map(a.map((x) => [allocKey(x), x.filledQty]))
+  if (ma.size !== a.length) return false // reject duplicate desk|side keys in the model output
+  return b.every((x) => ma.get(allocKey(x)) === x.filledQty)
 }
 
 // ── neutralRationale — the deterministic-fallback wording (no model, no secret) ───
@@ -433,6 +438,10 @@ const proposeCompetingWith = async (
 export interface AgentMessageStream {
   on: (event: 'text', cb: (delta: string) => void) => AgentMessageStream
   finalMessage: () => Promise<unknown>
+  // Real SDK MessageStream exposes `.abort()` to tear down the upstream request. Optional in the
+  // DI surface so a parse-only fake still satisfies the type; when present, the deadline race and
+  // the client-disconnect hook call it so a hanging/abandoned stream is torn down (no leak).
+  abort?: () => void
 }
 
 // The streamRationale callback contract. onError NEVER receives err.message / the
@@ -472,7 +481,11 @@ export const createAgent = (
   proposeClearing: (views: OrderView[]) => Promise<AgentResult>
   proposeCompeting: (views: OrderView[], configs: SolverConfig[]) => Promise<CompetingResult>
   parseOrder: (text: string) => Promise<ParsedOrder | null>
-  streamRationale: (views: OrderView[], handlers: StreamHandlers) => Promise<void>
+  streamRationale: (
+    views: OrderView[],
+    handlers: StreamHandlers,
+    onAbort?: (abort: () => void) => void,
+  ) => Promise<void>
 } => {
   const { computeClearing, matchedAt } = deps
   // Injected client overrides the module-private one (test fake / boot client).
@@ -574,24 +587,59 @@ export const createAgent = (
   // error (or a keyless / stream-less client) calls onError EXACTLY ONCE. It NEVER
   // throws into the caller and NEVER passes err.message / the prompt / the key to
   // onError — the SSE route turns onError into a fixed deterministic fallback frame.
-  const streamRationale = async (views: OrderView[], handlers: StreamHandlers): Promise<void> => {
+  const streamRationale = async (
+    views: OrderView[],
+    handlers: StreamHandlers,
+    onAbort?: (abort: () => void) => void,
+  ): Promise<void> => {
     // Keyless / no streaming capability → the single graceful fallback (mirrors the
     // keyless short-circuit in proposeClearing / parseOrder).
     if (!client || typeof client.messages.stream !== 'function') {
       handlers.onError()
       return
     }
+    // WR-03 / TRUST-02 teardown: the upstream stream must be abortable both on a client
+    // disconnect (the SSE route calls this hook from req.on('close')) and on the deadline below,
+    // so a hanging key or an abandoned EventSource can never keep the upstream request alive.
+    let stream: AgentMessageStream | undefined
+    let aborted = false
+    const abort = (): void => {
+      aborted = true
+      try {
+        stream?.abort?.()
+      } catch {
+        // teardown is best-effort — never throw out of the abort hook.
+      }
+    }
+    if (onAbort) onAbort(abort)
+
+    let deadline: ReturnType<typeof setTimeout> | undefined
     try {
       // Call through client.messages so the SDK stream keeps its `this` binding.
-      const stream = client.messages.stream({
+      stream = client.messages.stream({
         model: 'claude-haiku-4-5', // alias; pinned snapshot claude-haiku-4-5-20251001
         max_tokens: 512, // ample for a 2–3 sentence rationale
         temperature: 0, // deterministic narration
         system: SYSTEM_PROMPT, // §8 rules verbatim (same as proposeClearing)
         messages: [{ role: 'user', content: buildBatchMessage(views) }],
       })
+      // If the client disconnected before the stream was constructed, tear it down immediately.
+      if (aborted) stream.abort?.()
       stream.on('text', (delta) => handlers.onDelta(delta))
-      await stream.finalMessage()
+      // Deadline (Pitfall 2 / TRUST-02): race finalMessage against the timer. On expiry abort the
+      // upstream stream and reject → the SAME catch below → exactly one onError (never leaking the
+      // key/prompt). A fast successful stream clears the timer in finally and is never affected.
+      await new Promise<void>((resolve, reject) => {
+        deadline = setTimeout(() => {
+          try {
+            stream?.abort?.()
+          } catch {
+            /* best-effort */
+          }
+          reject(new AgentTimeoutError())
+        }, timeoutMs)
+        stream!.finalMessage().then(() => resolve(), reject)
+      })
       handlers.onDone()
     } catch (err) {
       // Log ONLY a fixed secret-free string + at most err.name (mirrors proposeClearing's
@@ -601,6 +649,8 @@ export const createAgent = (
         err instanceof Error ? err.name : 'unknown',
       )
       handlers.onError()
+    } finally {
+      if (deadline) clearTimeout(deadline)
     }
   }
 

@@ -741,8 +741,9 @@ describe('solver §11 HTTP API', () => {
     expect(text).toContain('data: "Cleared "')
     expect(text).toContain('data: "at 100.00."')
     expect(text).toContain('event: done')
-    // The stream was driven from the round's own sealed views.
-    expect(streamRationale).toHaveBeenCalledWith(SECTION4_VIEWS, expect.anything())
+    // The stream was driven from the round's own sealed views, and the route now passes the
+    // WR-03 abort hook (a function the disconnect handler calls to tear down the upstream stream).
+    expect(streamRationale).toHaveBeenCalledWith(SECTION4_VIEWS, expect.anything(), expect.any(Function))
   })
 
   it('GET /round/:id/rationale-stream error path → ONE deterministic fallback frame, no key', async () => {
@@ -854,6 +855,39 @@ describe('solver §11 HTTP API', () => {
     expect(Array.isArray(body.allocations)).toBe(true)
     expect(body.txConfirmations).toBe(1)
     expect(settle).toHaveBeenCalledWith('R1')
+  })
+
+  it('POST /settle concurrent-settle guard: two in-flight settles → one 200, one 409 ALREADY_SETTLING', async () => {
+    const { allocations } = computeClearing(SECTION4_VIEWS)
+    let settleCalls = 0
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    const settle = vi.fn(async (): Promise<SettleResult> => {
+      settleCalls += 1
+      await gate // hold the first settle in-flight until both requests have been dispatched
+      return { clearingPrice: 100, allocations, matchedVolume: 10, txConfirmations: 1 }
+    })
+    const deps = makeDeps({
+      queryRound: vi.fn(async (roundId: string) => ({ roundId, status: 'Closed' })),
+      settle,
+    })
+    const started = await listen(deps)
+    server = started.server
+
+    // Fire both before releasing the gate so the second arrives while the first is settling.
+    const p1 = fetch(`${started.base}/round/R1/settle`, { method: 'POST' })
+    const p2 = fetch(`${started.base}/round/R1/settle`, { method: 'POST' })
+    await new Promise((r) => setTimeout(r, 50))
+    release()
+    const [r1, r2] = await Promise.all([p1, p2])
+    const statuses = [r1.status, r2.status].sort()
+
+    // Exactly one settle executed (no double-clear); the concurrent one was refused cleanly.
+    expect(settleCalls).toBe(1)
+    expect(statuses).toEqual([200, 409])
+    const refused = r1.status === 409 ? r1 : r2
+    const refusedBody = await readJson(refused)
+    expect(refusedBody.error.code).toBe('ALREADY_SETTLING')
   })
 
   it('POST /settle derives matchedVolume from Buy-side allocations when the result omits it (never reads the retired book)', async () => {

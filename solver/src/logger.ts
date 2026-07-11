@@ -23,10 +23,12 @@ import { trace } from '@opentelemetry/api'
 //   • EXACT_SECRET — redacts only when it is the WHOLE key (authorization/cookie/secret/
 //     password/env) so `environment`/`eventId` pass through.
 //   • SUFFIX_SECRET — redacts when it is the FINAL word-component (camelCase / _-/ split),
-//     so `apiKey`/`operatorToken`/`ANTHROPIC_API_KEY`/`sessionKey`/`bearerToken` redact but
-//     `tokenCount` (token is a PREFIX) does not.
+//     so `apiKey`/`operatorToken`/`ANTHROPIC_API_KEY`/`sessionKey`/`bearerToken`/`clientSecret`/
+//     `OIDC_CLIENT_SECRET`/`LOCALNET_JWT_SECRET` redact but `tokenCount` (token is a PREFIX) does
+//     not. `secret` is a suffix component too (not only a whole-key EXACT match) so compound
+//     secret keys like `clientSecret` are caught (secret-hygiene fix).
 const EXACT_SECRET = new Set(['authorization', 'cookie', 'secret', 'password', 'env'])
-const SUFFIX_SECRET = new Set(['key', 'token'])
+const SUFFIX_SECRET = new Set(['key', 'token', 'secret'])
 
 // Split a key into lowercase word components on camelCase boundaries + non-alphanumeric
 // separators: `ANTHROPIC_API_KEY` → [anthropic, api, key]; `operatorToken` → [operator, token].

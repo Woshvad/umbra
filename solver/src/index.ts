@@ -20,7 +20,7 @@
 import { readFileSync } from 'node:fs'
 import { createApp, type AppDeps, type RoundView } from './api.js'
 import type { Clock, RoundStatus } from './clock.js'
-import type { Health } from './status.js'
+import { CURRENT_BUILD, type Health } from './status.js'
 import type { Webhooks } from './webhooks.js'
 // PAY-01: the x402 metered-access gate type (x402.ts). Type-only at the top so importing this
 // module for the boot-wiring unit test never evaluates x402/facilitator; main() dynamically
@@ -199,9 +199,9 @@ export const buildDeps = (args: BuildDepsArgs): AppDeps => {
     args.hostingMap ?? (async () => ({ nodes: [], perParty: {}, demoReal: true, caption: 'SAME PARTICIPANT (LOCALNET)' }))
   const onboardGuest: AppDeps['onboardGuest'] =
     args.onboardGuest ?? (async () => ({ party: '', joinUrl: '/join', roundId: '' }))
-  // OPS-04: FIRE-AND-FORGET webhook emit off the open seam — never block/branch the open path
-  // on a webhook (hard invariant). No-op when no emitter is injected (index.test default path).
-  const emitWebhook = (event: 'round.opened', data: Record<string, unknown>): void => {
+  // OPS-04: FIRE-AND-FORGET webhook emit off the open/close seams — never block/branch those
+  // paths on a webhook (hard invariant). No-op when no emitter is injected (index.test default).
+  const emitWebhook = (event: 'round.opened' | 'round.sealed', data: Record<string, unknown>): void => {
     if (!args.webhooks) return
     void Promise.resolve()
       .then(() => args.webhooks!.emit(event, data))
@@ -220,11 +220,21 @@ export const buildDeps = (args: BuildDepsArgs): AppDeps => {
     readSealedOrders: ledger.readSealedOrders,
     refreshStats: ledger.refreshStats,
     readTradeConfirmations: ledger.readTradeConfirmations,
-    // POST /round/:id/close → clock.forceClose (cancels the timer, calls ledger.closeRound).
+    // POST /round/:id/close → the on-ledger close is AUTHORITATIVE and INDEPENDENT of the
+    // in-memory clock map. Previously this routed through clock.forceClose, which returns EARLY
+    // (no on-ledger CloseRound) when the round is absent from the map — leaving the ledger Open
+    // while the API reported a hardcoded 'Closed', so the later settle 409'd. Now: cancel any
+    // armed auto-close timer via the clock, then call ledger.closeRound directly and return the
+    // REAL status it reports; keep the clock cache in step.
     closeRound: async (roundId): Promise<string> => {
-      await clock.forceClose(roundId)
-      const state = clock.getState(roundId)
-      return state?.status ?? 'Closed'
+      clock.cancelTimer(roundId)
+      const status = await ledger.closeRound(roundId)
+      clock.setStatus(roundId, status as RoundStatus)
+      // OPS-04 round.sealed — the manual-close counterpart of the clock's auto-close onClosed
+      // seam (the timer path fires round.sealed via createClock({ onClosed }); the timer here was
+      // just cancelled, so it cannot). Aggregate/round data only (roundId), FIRE-AND-FORGET.
+      emitWebhook('round.sealed', { roundId })
+      return status
     },
     settle: ledger.settle,
     // WOW-02: the dedicated tamper seam (never on the /settle path).
@@ -434,6 +444,16 @@ const main = async (): Promise<void> => {
       const { createPayerAuthenticator } = await import('./payer-auth.js')
       const subjectMap = buildSubjectToPartyMap(ledger.operatorParty)
       const oidcMode = Boolean(process.env.OIDC_ISSUER)
+      const devSecret = process.env.LOCALNET_JWT_SECRET ?? 'unsafe'
+      // CR-01 hardening (defense-in-depth): in OIDC mode the dev HS256 path is never consulted,
+      // but a default 'unsafe' dev secret (LOCALNET_JWT_SECRET unset) in a production OIDC
+      // deployment is a fail-open landmine. Refuse to boot rather than enable a self gate whose
+      // dev trust root is the public default secret. Secret-free fatal: names the env var only,
+      // never a value.
+      if (oidcMode && devSecret === 'unsafe') {
+        log('error', 'x402 self gate refused: OIDC mode requires LOCALNET_JWT_SECRET to be set (not the public default dev secret)')
+        throw new Error('x402 self gate misconfiguration: OIDC mode with an unset LOCALNET_JWT_SECRET')
+      }
       const verifyOidc = oidcMode
         ? async (token: string) => {
             const { verifyToken } = await import('./auth.js')
@@ -442,7 +462,7 @@ const main = async (): Promise<void> => {
         : undefined
       authenticatePayer = createPayerAuthenticator({
         subjectToParty: (sub) => subjectMap[sub] ?? null,
-        devSecret: process.env.LOCALNET_JWT_SECRET ?? 'unsafe',
+        devSecret,
         verifyOidc,
       })
     }
@@ -464,7 +484,7 @@ const main = async (): Promise<void> => {
   // order/desk/secret) + build/version. api.ts maps the status → display phase via the FSM
   // sealedAlias and adds uptime + the last clear. Live-ledger-optional (degrades cleanly).
   const statusSource = async (): Promise<{ health: Health; roundStatus: RoundStatus | null; build: string }> => {
-    const build = process.env.UMBRA_BUILD ?? 'phase-13'
+    const build = process.env.UMBRA_BUILD ?? CURRENT_BUILD
     try {
       const live = await ledger.queryAllRounds()
       const open = live.find((r) => r.status === 'Open')

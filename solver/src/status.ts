@@ -18,6 +18,12 @@
 export type Health = 'operational' | 'degraded' | 'offline'
 export type RoundPhase = 'Open' | 'Sealed' | 'Cleared' | 'Settled' | null
 
+// The current milestone build label surfaced by the token-free /status surface when no explicit
+// UMBRA_BUILD env is set (api.ts STATUS_BUILD + index.ts statusSource default). Bumped per
+// milestone — now v2.1 / Phase 14 (was the stale 'phase-13'). Aggregate/version string only —
+// never a token or private order data.
+export const CURRENT_BUILD = 'phase-14'
+
 export interface StatusInput {
   health: Health
   phase: RoundPhase // phase NAME only (never order contents); null = no active round

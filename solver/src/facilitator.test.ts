@@ -85,14 +85,36 @@ describe('self backend — on-ledger verify/settle', () => {
     expect(SELF_CUSTODY_LABEL).toContain('canton-cc')
   })
 
-  it('verify ACCEPTS a matching fee-source cid (owner + USDCx + unlocked + amount ≥ price)', async () => {
+  it('verify ACCEPTS a matching fee-source cid (owner===authenticated payer + USDCx + unlocked + amount ≥ price)', async () => {
     const fac = createFacilitator({ backend: 'self', ledger: stubLedger([holding()]) })
-    await expect(fac.verify(reqs(), payment())).resolves.toEqual({ valid: true })
+    // CR-01: the AUTHENTICATED caller (3rd arg) owns the Holding — the only path that verifies.
+    await expect(fac.verify(reqs(), payment(), PAYER)).resolves.toEqual({ valid: true })
+  })
+
+  it('CR-01 — verify REJECTS a spoofed `from`: a Holding not owned by the authenticated caller never moves', async () => {
+    // The VICTIM owns the fee source; the ATTACKER is the authenticated caller and spoofs from=victim.
+    const victim = 'Victim::desk'
+    const fac = createFacilitator({ backend: 'self', ledger: stubLedger([holding({ owner: victim })]) })
+    // Even though payload.from claims the victim AND the victim owns the cid, the authenticated
+    // caller is the attacker → owner !== authenticatedPayer → invalid_holding (no fund move).
+    await expect(fac.verify(reqs(), payment({ from: victim }), 'Attacker::desk')).resolves.toEqual({
+      valid: false,
+      reason: 'invalid_holding',
+    })
+  })
+
+  it('CR-01 — verify REJECTS when NO authenticated payer is supplied (fail-closed)', async () => {
+    const fac = createFacilitator({ backend: 'self', ledger: stubLedger([holding()]) })
+    // No 3rd arg → authenticatedPayer undefined → not a movable fee source even though owner===from.
+    await expect(fac.verify(reqs(), payment())).resolves.toEqual({
+      valid: false,
+      reason: 'invalid_holding',
+    })
   })
 
   it('verify REJECTS a missing cid → invalid_holding', async () => {
     const fac = createFacilitator({ backend: 'self', ledger: stubLedger([]) })
-    await expect(fac.verify(reqs(), payment())).resolves.toEqual({
+    await expect(fac.verify(reqs(), payment(), PAYER)).resolves.toEqual({
       valid: false,
       reason: 'invalid_holding',
     })
@@ -103,7 +125,8 @@ describe('self backend — on-ledger verify/settle', () => {
       backend: 'self',
       ledger: stubLedger([holding({ owner: 'BankB::desk' })]),
     })
-    await expect(fac.verify(reqs(), payment())).resolves.toEqual({
+    // Authenticated as PAYER (BankA) but the Holding is owned by BankB → not the caller's fee source.
+    await expect(fac.verify(reqs(), payment(), PAYER)).resolves.toEqual({
       valid: false,
       reason: 'invalid_holding',
     })
@@ -114,7 +137,7 @@ describe('self backend — on-ledger verify/settle', () => {
       backend: 'self',
       ledger: stubLedger([holding({ locked: true })]),
     })
-    await expect(fac.verify(reqs(), payment())).resolves.toEqual({
+    await expect(fac.verify(reqs(), payment(), PAYER)).resolves.toEqual({
       valid: false,
       reason: 'invalid_holding',
     })
@@ -125,7 +148,7 @@ describe('self backend — on-ledger verify/settle', () => {
       backend: 'self',
       ledger: stubLedger([holding({ instrumentId: 'BONDX' })]),
     })
-    await expect(fac.verify(reqs(), payment())).resolves.toEqual({
+    await expect(fac.verify(reqs(), payment(), PAYER)).resolves.toEqual({
       valid: false,
       reason: 'wrong_instrument',
     })
@@ -136,7 +159,7 @@ describe('self backend — on-ledger verify/settle', () => {
       backend: 'self',
       ledger: stubLedger([holding({ amount: 0.5 })]),
     })
-    await expect(fac.verify(reqs(), payment())).resolves.toEqual({
+    await expect(fac.verify(reqs(), payment(), PAYER)).resolves.toEqual({
       valid: false,
       reason: 'amount_too_low',
     })
@@ -303,7 +326,7 @@ describe('secret discipline', () => {
 describe('createFacilitator factory', () => {
   it('defaults to the self backend', async () => {
     const fac = createFacilitator({ ledger: stubLedger([holding()]) })
-    await expect(fac.verify(reqs(), payment())).resolves.toEqual({ valid: true })
+    await expect(fac.verify(reqs(), payment(), PAYER)).resolves.toEqual({ valid: true })
   })
 
   it('throws loud on an unrecognized backend value', () => {

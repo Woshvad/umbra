@@ -17,6 +17,7 @@
 // trigger ledger.ts's module-private credential resolution or open a Ledger. The
 // test drives buildDeps directly with injected spies.
 
+import { readFileSync } from 'node:fs'
 import { createApp, type AppDeps, type RoundView } from './api.js'
 import type { Clock, RoundStatus } from './clock.js'
 import type { Health } from './status.js'
@@ -30,6 +31,39 @@ import type { PaymentGate } from './x402.js'
 // timer; SOLVER_PORT is the :4100 bind.
 export const DEFAULT_ROUND_SECONDS = 60
 export const DEFAULT_SOLVER_PORT = 4100
+
+// CR-01: build the VERIFIED-token-subject → party map the `self` x402 payer authenticator uses.
+// Sources (later wins): (1) the deploy party map (daml/parties.json) under the `umbra-<hint>`
+// desk-user convention (matches scripts/localnet/seed.mjs + mint-jwt.mjs); (2) the operator user
+// (`ledger-api-user`) → operatorParty; (3) an explicit X402_PAYER_PARTY_MAP env JSON ({sub:party})
+// override. All values are PUBLIC party ids — never a secret. Best-effort: a missing/parse-failed
+// source is skipped (the authenticator then fails closed for any unmapped subject).
+export const buildSubjectToPartyMap = (operatorParty: string): Record<string, string> => {
+  const map: Record<string, string> = {}
+  try {
+    const raw = readFileSync(new URL('../../daml/parties.json', import.meta.url), 'utf8')
+    const parties = JSON.parse(raw) as Record<string, string>
+    for (const [hint, party] of Object.entries(parties)) {
+      if (hint !== 'operator' && typeof party === 'string') map[`umbra-${hint}`] = party
+    }
+  } catch {
+    // no party map on disk (e.g. OIDC deploy) — rely on the env override below.
+  }
+  // The dev operator token's subject is the Canton ledger-api user.
+  map['ledger-api-user'] = operatorParty
+  const override = process.env.X402_PAYER_PARTY_MAP
+  if (override) {
+    try {
+      const parsed = JSON.parse(override) as Record<string, string>
+      for (const [sub, party] of Object.entries(parsed)) {
+        if (typeof party === 'string') map[sub] = party
+      }
+    } catch {
+      // a malformed override is ignored (fail closed) rather than crashing boot.
+    }
+  }
+  return map
+}
 
 // The ledger functions index.ts needs to wire into the API + clock. The unit test
 // injects spies for these; main() supplies the real ledger.ts implementations.
@@ -372,24 +406,58 @@ const main = async (): Promise<void> => {
 
   // Construct the FacilitatorClient behind the Plan 01 interface, then the gate. `self` settles
   // on Umbra's own ledger in operator-custody USDCx via the INJECTED listHoldings/moveFee port;
-  // `canton-cc` speaks the FTP /verify+/settle contract for real $CC (live = UAT). The disabled
-  // default means an absent/false X402_ENABLED yields a pure no-op (createApp keeps it off too).
-  const { createFacilitator } = await import('./facilitator.js')
+  // `canton-cc` speaks the FTP /verify+/settle contract for real $CC (live = UAT).
   const { createX402Gate } = await import('./x402.js')
-  const facilitator = createFacilitator({
-    backend: x402Backend,
-    ledger: { listHoldings: ledger.listHoldings, moveFee: ledger.moveFee },
-    facilitatorUrl: x402FacilitatorUrl,
-    facilitatorKey: x402FacilitatorKey,
-  })
-  const x402 = createX402Gate({
-    facilitator,
-    enabled: x402Enabled,
-    network: x402Network,
-    asset: x402Asset,
-    price: x402Price,
-    payTo: x402PayTo,
-  })
+  let x402: PaymentGate
+  if (!x402Enabled) {
+    // MD-02: with metering OFF, build the DISABLED no-op gate DIRECTLY and skip createFacilitator
+    // entirely. Constructing the facilitator unconditionally made a `canton-cc`/typo backend crash
+    // the solver at boot even though the gate would never run — violating the default-OFF invariant.
+    x402 = createX402Gate({ enabled: false })
+  } else {
+    const { createFacilitator } = await import('./facilitator.js')
+    const facilitator = createFacilitator({
+      backend: x402Backend,
+      ledger: { listHoldings: ledger.listHoldings, moveFee: ledger.moveFee },
+      facilitatorUrl: x402FacilitatorUrl,
+      facilitatorKey: x402FacilitatorKey,
+    })
+
+    // CR-01: for the `self` backend authenticate the CALLER (its party token) and bind the fee
+    // payer to that verified identity — NEVER move funds on the unauthenticated claimed `from`.
+    // Reuse the existing dev-HS256 / OIDC token seam (no new JWT dep). The subject→party map is
+    // built best-effort from the deploy party map (`umbra-<hint>` desk-user convention, matching
+    // scripts/localnet/seed.mjs + mint-jwt.mjs) plus the operator user, and can be overridden /
+    // extended via X402_PAYER_PARTY_MAP (JSON of {sub: party}). Unknown subjects fail closed.
+    let authenticatePayer: import('./x402.js').PayerAuthenticator | undefined
+    if (x402Backend === 'self') {
+      const { createPayerAuthenticator } = await import('./payer-auth.js')
+      const subjectMap = buildSubjectToPartyMap(ledger.operatorParty)
+      const oidcMode = Boolean(process.env.OIDC_ISSUER)
+      const verifyOidc = oidcMode
+        ? async (token: string) => {
+            const { verifyToken } = await import('./auth.js')
+            return verifyToken(token)
+          }
+        : undefined
+      authenticatePayer = createPayerAuthenticator({
+        subjectToParty: (sub) => subjectMap[sub] ?? null,
+        devSecret: process.env.LOCALNET_JWT_SECRET ?? 'unsafe',
+        verifyOidc,
+      })
+    }
+
+    x402 = createX402Gate({
+      facilitator,
+      enabled: x402Enabled,
+      backend: x402Backend,
+      network: x402Network,
+      asset: x402Asset,
+      price: x402Price,
+      payTo: x402PayTo,
+      authenticatePayer,
+    })
+  }
 
   // OPS-02: the aggregate-only source for the token-free /status surface. Reports venue
   // health (degraded when the ledger is unreachable) + the CURRENT round's status (never an

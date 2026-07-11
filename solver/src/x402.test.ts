@@ -11,7 +11,7 @@
 // The load-bearing invariant proven here is Pitfall 1: with metering OFF the gate is a
 // byte-identical no-op, so the §4 money-shot demo is untouched.
 
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import express, { type Express } from 'express'
 import type { Server } from 'node:http'
 import {
@@ -352,6 +352,56 @@ describe('x402 gate middleware', () => {
     const replay = await fetch(`${base}/solve`, { headers: { 'X-PAYMENT': p } })
     expect(replay.status).toBe(402)
     expect((await body(replay)).error).toBe(X402_REASON.nonce_replayed)
+  })
+
+  it('CR-01 — self backend rejects a spoofed `from` with no valid token (unauthorized_payer) and NEVER settles', async () => {
+    const verify = vi.fn(async () => ({ valid: true })) // would pass if ever reached
+    const settle = vi.fn(async () => ({ settled: true, txRef: 'x' }))
+    const fac: FacilitatorClient = { verify, settle }
+    // authenticatePayer returns null (no valid victim token) → reject BEFORE verify/settle.
+    const gate = x402Gate(fac, baseOpts({ backend: 'self', authenticatePayer: () => null }))
+    const base = await start((app) => app.get('/solve', gate, (_req, res) => res.json({ ran: true })))
+    const xpay = constructSelfPayment({
+      from: 'Victim::desk', to: 'venue::1', value: '100', holdingCid: 'victim-cid',
+      network: 'canton:devnet', validBefore: futureTs(), nonce: 'n-cr01',
+    })
+    const r = await fetch(`${base}/solve`, { headers: { 'X-PAYMENT': xpay } })
+    expect(r.status).toBe(402)
+    expect((await body(r)).error).toBe(X402_REASON.unauthorized_payer)
+    expect(verify).not.toHaveBeenCalled()
+    expect(settle).not.toHaveBeenCalled() // the victim's funds are NEVER moved
+  })
+
+  it('CR-01 — self backend rejects a `from` that does not match the authenticated caller', async () => {
+    const settle = vi.fn(async () => ({ settled: true, txRef: 'x' }))
+    const fac: FacilitatorClient = { verify: async () => ({ valid: true }), settle }
+    // Authenticated as BankA, but the payload claims from=BankB → unauthorized_payer.
+    const gate = x402Gate(fac, baseOpts({ backend: 'self', authenticatePayer: () => 'BankA::desk' }))
+    const base = await start((app) => app.get('/solve', gate, (_req, res) => res.json({ ran: true })))
+    const xpay = constructSelfPayment({
+      from: 'BankB::desk', to: 'venue::1', value: '100', holdingCid: 'cid-x',
+      network: 'canton:devnet', validBefore: futureTs(), nonce: 'n-cr01b',
+    })
+    const r = await fetch(`${base}/solve`, { headers: { 'X-PAYMENT': xpay } })
+    expect(r.status).toBe(402)
+    expect((await body(r)).error).toBe(X402_REASON.unauthorized_payer)
+    expect(settle).not.toHaveBeenCalled()
+  })
+
+  it('CR-01 — self backend passes the AUTHENTICATED party (not the claimed from) to verify', async () => {
+    const verify = vi.fn(async () => ({ valid: true }))
+    const fac: FacilitatorClient = { verify, settle: async () => ({ settled: true, txRef: 'tx-ok' }) }
+    const gate = x402Gate(fac, baseOpts({ backend: 'self', authenticatePayer: () => 'BankA::desk' }))
+    const base = await start((app) => app.get('/solve', gate, (_req, res) => res.json({ ran: true })))
+    const xpay = constructSelfPayment({
+      from: 'BankA::desk', to: 'venue::1', value: '100', holdingCid: 'cid-ok',
+      network: 'canton:devnet', validBefore: futureTs(), nonce: 'n-cr01c',
+    })
+    const r = await fetch(`${base}/solve`, { headers: { 'X-PAYMENT': xpay } })
+    expect(r.status).toBe(200)
+    expect(verify).toHaveBeenCalledWith(expect.anything(), expect.anything(), 'BankA::desk')
+    const settlement = decodeHeader(r.headers.get('x-payment-response')!)
+    expect(settlement.payer).toBe('BankA::desk')
   })
 
   it('secret sweep — a facilitator/Authorization sentinel never lands in a 402 body or X-PAYMENT-RESPONSE', async () => {

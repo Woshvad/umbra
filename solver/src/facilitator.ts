@@ -74,20 +74,22 @@ export interface FacilitatorConfig {
 
 // ── self backend — on-ledger verify/settle ──────────────────────────────────────────
 // verify: resolve the presented holdingCid from the ledger and run the fee-source predicate.
-//   valid iff owner===payment.from AND instrumentId===cashInstrument AND !locked
-//   AND amount ≥ fromAtomic(requirements.maxAmountRequired).
+//   valid iff owner===AUTHENTICATED payer (CR-01 — NOT the unsigned claimed `from`) AND
+//   instrumentId===cashInstrument AND !locked AND amount ≥ fromAtomic(requirements.maxAmountRequired).
 //   Reject reasons (secret-free): invalid_holding (missing / wrong-owner / locked),
 //   wrong_instrument, amount_too_low.
 // settle: moveFee(presented cid, the price, requirements.payTo) → { settled:true, txRef }; a
 //   moveFee throw collapses to { settled:false, txRef:'' } so the gate cleanly re-advertises.
 const selfFacilitator = (ledger: FacilitatorLedger, cashInstrument: string): FacilitatorClient => ({
-  async verify(requirements, payment) {
+  async verify(requirements, payment, authenticatedPayer) {
     const p = payment.payload
     const holdings = await ledger.listHoldings()
     const h = holdings.find((x) => x.contractId === p.holdingCid)
-    // Missing / wrong-owner / locked all collapse to invalid_holding (T-14-06): the cid is
-    // not an authorized, movable fee-source owned by the payer.
-    if (!h || h.owner !== p.from || h.locked) {
+    // CR-01: the fee source MUST be owned by the AUTHENTICATED caller (the party the gate proved
+    // via its verified token) — NOT the attacker-controlled, unsigned claimed `from`. A missing
+    // authenticated identity, or a Holding owned by anyone other than that caller, is not a
+    // movable fee source. Missing / wrong-owner / locked all collapse to invalid_holding (T-14-06).
+    if (!h || !authenticatedPayer || h.owner !== authenticatedPayer || h.locked) {
       return { valid: false, reason: X402_REASON.invalid_holding }
     }
     if (h.instrumentId !== cashInstrument) {

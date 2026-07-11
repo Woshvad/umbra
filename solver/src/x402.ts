@@ -26,7 +26,7 @@
 // `X-PAYMENT` header, an operator token, `ANTHROPIC_API_KEY`, or a facilitator key into any
 // 402 body or the `X-PAYMENT-RESPONSE` header.
 
-import type { Response, RequestHandler } from 'express'
+import type { Request, Response, RequestHandler } from 'express'
 import { z } from 'zod'
 
 // ── Wire types (x402 v1) ────────────────────────────────────────────────────
@@ -90,6 +90,10 @@ export const X402_REASON = {
   amount_too_low: 'amount_too_low',
   payment_expired: 'payment_expired',
   nonce_replayed: 'nonce_replayed',
+  // CR-01: the caller did not present a verifiable identity that controls the fee source. Used
+  // by the `self` operator-custody backend, which has NO on-ledger payer signature and so MUST
+  // authenticate the caller before moving funds (never trust the attacker-controlled `from`).
+  unauthorized_payer: 'unauthorized_payer',
   invalid_holding: 'invalid_holding',
   // LO-04: a previously-spent holdingCid re-presented within its replay-guard window. DISTINCT
   // from invalid_holding ("never a valid fee source") so a client/operator can tell a replay
@@ -261,15 +265,27 @@ export const constructSelfPayment = (args: {
 
 // ── FacilitatorClient interface (implemented by Plan 02: self | canton-cc) ──
 export interface FacilitatorClient {
+  // CR-01: `authenticatedPayer` (when supplied by the gate) is the party the CALLER proved it
+  // controls (via its verified party token). The `self` backend MUST bind the fee source to this
+  // identity — the claimed `payment.payload.from` is unauthenticated and NEVER authorizes a move.
+  // The `canton-cc` backend ignores it (its payer authz is the facilitator's own signature check).
   verify(
     requirements: PaymentRequirements,
     payment: PaymentPayload,
+    authenticatedPayer?: string,
   ): Promise<{ valid: boolean; reason?: string }>
   settle(
     requirements: PaymentRequirements,
     payment: PaymentPayload,
   ): Promise<{ settled: boolean; txRef: string }>
 }
+
+// ── Payer authentication port (CR-01) ────────────────────────────────────────
+// Given the metered request, return the party the caller has PROVEN it controls (from its
+// verified party token — the same dev HS256 / OIDC token the JSON API uses), or null when no
+// verifiable identity is presented. The gate binds the `self` fee-payer to this value so a
+// forged `from` can never seize a victim's Holding. Sync or async (a token verify may be async).
+export type PayerAuthenticator = (req: Request) => string | null | Promise<string | null>
 
 // ── Gate options + bundle ───────────────────────────────────────────────────
 export interface X402Options {
@@ -291,6 +307,10 @@ export interface X402Options {
   now?: () => number
   // Replay-guard entry lifetime in ms (spent nonce / holdingCid). Default 5 min.
   nonceTtlMs?: number
+  // CR-01: authenticate the caller and resolve the fee-payer party. REQUIRED (enforced) when
+  // backend === 'self'; when absent under `self` every metered request is rejected
+  // unauthorized_payer (fail-closed — never move funds on an unauthenticated `from`).
+  authenticatePayer?: PayerAuthenticator
 }
 
 // Mirrors `Idempotency` (idempotency.ts:49) — the DI-defaulted middleware bundle.
@@ -397,7 +417,24 @@ export const x402Gate = (facilitator: FacilitatorClient, opts: X402Options): Req
     // gate never throws raw and never lets a token/key/raw-error reach the client (Pitfall 4).
     void (async () => {
       try {
-        const verified = await facilitator.verify(chosen, payment)
+        // CR-01: the `self` operator-custody backend has NO on-ledger payer signature — the
+        // claimed `from`/`holdingCid` are attacker-controlled header fields. Authenticate the
+        // CALLER via its party token and bind the fee-payer to that VERIFIED identity; NEVER move
+        // funds on an unauthenticated claimed `from`. Fail-closed: no authenticator or no valid
+        // token ⇒ reject (an attacker cannot mint the victim's token — the secret is server-side).
+        // (canton-cc is not gated here: its payer authorization is the facilitator's own signature.)
+        let authedPayer: string | undefined
+        if (opts.backend === 'self') {
+          const authed = opts.authenticatePayer ? await opts.authenticatePayer(req) : null
+          if (!authed) return void send402(res, requirements, X402_REASON.unauthorized_payer)
+          // A presented `from` MUST equal the authenticated caller (no paying from another's id).
+          if (p.from && p.from !== authed) {
+            return void send402(res, requirements, X402_REASON.unauthorized_payer)
+          }
+          authedPayer = authed
+        }
+
+        const verified = await facilitator.verify(chosen, payment, authedPayer)
         if (!verified.valid) return void send402(res, requirements, safeReason(verified.reason))
 
         const settled = await facilitator.settle(chosen, payment)
@@ -414,7 +451,8 @@ export const x402Gate = (facilitator: FacilitatorClient, opts: X402Options): Req
             success: true,
             transaction: settled.txRef,
             network: opts.network,
-            payer: p.from,
+            // CR-01: report the AUTHENTICATED payer (self); the claimed `from` only for non-self.
+            payer: authedPayer ?? p.from,
           }),
         )
         next()
@@ -456,6 +494,7 @@ export const createX402Gate = (
     maxTimeoutSeconds: rest.maxTimeoutSeconds,
     now: rest.now,
     nonceTtlMs: rest.nonceTtlMs,
+    authenticatePayer: rest.authenticatePayer,
   }
   return { middleware: x402Gate(facilitator ?? NOOP_FACILITATOR, opts) }
 }

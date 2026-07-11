@@ -139,7 +139,7 @@ function ActiveBody({ ctx, deskKey }: { ctx: Ctx; deskKey: DeskKey }) {
       </div>
 
       {/* Holdings divider + HOLD line */}
-      <div className="bg-ink opacity-18" style={{ height: '1px', margin: '20px 0 14px' }} />
+      <div className="bg-ink" style={{ height: '1px', margin: '20px 0 14px', opacity: 0.18 }} />
       <div className="flex justify-between font-mono text-11 tabular-nums opacity-70">
         <span>HOLD {bond} BONDX</span>
         <span>{cash} USDCx</span>
@@ -204,7 +204,7 @@ function RedactedBody({ deskKey }: { deskKey: DeskKey }) {
       </div>
 
       {/* Holdings divider + redacted HOLD line (rival holdings are not visible) */}
-      <div className="bg-ink opacity-18" style={{ height: '1px', margin: '20px 0 14px' }} />
+      <div className="bg-ink" style={{ height: '1px', margin: '20px 0 14px', opacity: 0.18 }} />
       <div className="flex justify-between">
         <RedactionBar width={70} />
         <RedactionBar width={48} />

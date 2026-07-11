@@ -29,7 +29,10 @@ type Props = {
 
 export default function Nav({ screen, onScreen }: Props) {
   return (
-    <nav className="flex border-b" style={{ gap: 0, padding: '0 48px' }}>
+    <nav
+      className="flex border-b"
+      style={{ gap: 0, padding: '0 48px', overflowX: 'auto', whiteSpace: 'nowrap' }}
+    >
       {TABS.map((t) => {
         const isActive = t.enabled && t.screen === screen
         const rule = isActive ? '#E2231A' : 'transparent'
@@ -51,6 +54,7 @@ export default function Nav({ screen, onScreen }: Props) {
               cursor: t.enabled ? 'pointer' : 'default',
             }}
             aria-current={isActive ? 'page' : undefined}
+            aria-label={`${t.num} ${t.label}`}
           >
             <span className="font-mono text-11 font-semibold opacity-60">{t.num}</span>
             <span className="font-body text-13 font-semibold" style={{ letterSpacing: '.04em' }}>

@@ -172,12 +172,14 @@ export default function BreakTheAiPanel({ roundId, offline }: Props) {
                 key={value}
                 type="button"
                 onClick={() => setMode(value)}
+                aria-pressed={mode === value}
                 className="font-mono text-9 uppercase"
                 style={{
                   letterSpacing: '.16em',
                   paddingBottom: '3px',
                   borderBottom: mode === value ? '1px solid #0A0A0A' : '1px solid transparent',
-                  opacity: mode === value ? 1 : 0.5,
+                  // Inactive label raised .5 → .62 for a touch more contrast.
+                  opacity: mode === value ? 1 : 0.62,
                   background: 'transparent',
                 }}
               >

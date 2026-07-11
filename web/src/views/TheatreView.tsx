@@ -54,6 +54,9 @@ export default function TheatreView({
   // AUCT-03: the aggregate indicative scalars (scalars only — never an order). Present
   // only while the window is open with ≥1 sealed order; small-N guarded server-side.
   const [indicative, setIndicative] = useState<IndicativeMeta | undefined>()
+  // x402 metering is DEFAULT OFF; this only ever trips if a 402 is actually returned. It
+  // surfaces a distinct payment-required caption so the COMPUTING beat can never hang.
+  const [paymentRequired, setPaymentRequired] = useState(false)
   const clockRef = useRef<ReturnType<typeof setInterval>>()
 
   // ── Close & Solve (RESEARCH Pattern 5) ──────────────────────────────────────────
@@ -61,6 +64,11 @@ export default function TheatreView({
   // round-trip. A keyless solver still returns clearingPrice 100.00 + a deterministic
   // rationale (CONTEXT). Network reject → OFFLINE caption.
   const closeAndSolve = useCallback(async () => {
+    // Stop the 60s countdown FIRST — a manual "Close & Solve" would otherwise leave the
+    // interval running, and when it hit 0 it would re-fire closeAndSolve and revert the
+    // already-settled reveal. Idempotent with the auto-fire path (which already cleared it).
+    clearInterval(clockRef.current)
+    setPaymentRequired(false)
     setPhase('solving')
     // Track whether closeRound already COMMITTED (round flipped to Closed on-ledger).
     // If the solve step then fails, reverting to 'open' would desync the UI from ledger
@@ -77,6 +85,10 @@ export default function TheatreView({
       setPhase('cleared')
     } catch (e) {
       if (e instanceof SolverError && e.code === 'OFFLINE') setOffline(true)
+      // x402 metering (default OFF): a 402 must NOT hang the COMPUTING beat forever —
+      // surface a distinct payment-required caption instead. Behavior with metering off
+      // is unchanged (no 402 is ever thrown).
+      else if (e instanceof SolverError && e.status === 402) setPaymentRequired(true)
       // Closed on-ledger → keep 'solving' (retry the solve); still Open → back to 'open'.
       setPhase(closed ? 'solving' : 'open')
     }
@@ -108,6 +120,7 @@ export default function TheatreView({
   const startWindow = useCallback(() => {
     setPhase('running')
     setSeconds(WINDOW_SECONDS)
+    setPaymentRequired(false)
     clearInterval(clockRef.current)
     clockRef.current = setInterval(() => {
       setSeconds((s) => {
@@ -172,6 +185,8 @@ export default function TheatreView({
       >
         {offline ? (
           <OfflineCaption />
+        ) : paymentRequired ? (
+          <PaymentRequiredCaption />
         ) : running ? (
           <RunningStage
             phase={phase}
@@ -533,6 +548,20 @@ function OfflineCaption() {
       style={{ letterSpacing: '.12em', opacity: 0.65, lineHeight: 1.6, maxWidth: '560px' }}
     >
       {OFFLINE_CAPTION}
+    </p>
+  )
+}
+
+// ── x402 payment-required caption (metering DEFAULT OFF) ──────────────────────────────
+// Only shown if the solver actually returns a 402 for the clear — a distinct state so the
+// COMPUTING beat never hangs. With metering off this is unreachable.
+function PaymentRequiredCaption() {
+  return (
+    <p
+      className="font-mono text-13 uppercase"
+      style={{ letterSpacing: '.12em', opacity: 0.65, lineHeight: 1.6, maxWidth: '560px' }}
+    >
+      PAYMENT REQUIRED — X402 METERING ENABLED; SETTLE THE MICROPAYMENT TO RUN THE CLEAR
     </p>
   )
 }

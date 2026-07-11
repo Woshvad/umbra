@@ -108,6 +108,10 @@ const inkTag: React.CSSProperties = { letterSpacing: '.12em', padding: '3px 7px'
 
 export default function RfqPanel({ requester, firm }: Props) {
   const [side, setSide] = useState<Side>('Buy')
+  // The side the RFQ was POSTED with — frozen at request time. Ranking/acceptance MUST use
+  // this, never the live `side` toggle: flipping side after quotes arrive would otherwise
+  // re-rank and select the WORST quote. `side` still drives the compose UI/color only.
+  const [postedSide, setPostedSide] = useState<Side>('Buy')
   const [qty, setQty] = useState<string>('')
   const [phase, setPhase] = useState<Phase>('idle')
   const [rfqId, setRfqId] = useState<string>('')
@@ -176,6 +180,7 @@ export default function RfqPanel({ requester, firm }: Props) {
     setReject('')
     setQuotes([])
     setAccepted(null)
+    setPostedSide(side) // freeze the ranking side to what we post
     setPhase('awaiting')
     try {
       const res = await postRfq({ requester, side, quantity: qtyInt })
@@ -195,7 +200,7 @@ export default function RfqPanel({ requester, firm }: Props) {
   // → the SAME atomic DvP settle (one rAF settleProgress clock; DvpLegs + AtomicStamp).
   async function onAcceptBest() {
     if (busy) return
-    const bi = bestQuoteIndex(quotes, side)
+    const bi = bestQuoteIndex(quotes, postedSide)
     if (bi < 0) return
     setReject('')
     setPhase('settling')
@@ -227,7 +232,7 @@ export default function RfqPanel({ requester, firm }: Props) {
     }
   }
 
-  const bi = bestQuoteIndex(quotes, side)
+  const bi = bestQuoteIndex(quotes, postedSide)
   const settling = phase === 'settling'
   const settled = phase === 'settled'
   const legs = accepted ? legsFromAccept(accepted, firm) : []
@@ -350,7 +355,7 @@ export default function RfqPanel({ requester, firm }: Props) {
               value={qty}
               onChange={(e) => setQty(e.target.value.replace(/[^\d]/g, ''))}
               placeholder="0"
-              className="font-mono text-44 tabular-nums w-full bg-transparent outline-none"
+              className="font-mono text-44 tabular-nums w-full bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red"
               style={{ fontWeight: 600, borderBottom: '2px solid #0A0A0A', padding: '2px 0 8px', color: sideColor }}
             />
           </div>

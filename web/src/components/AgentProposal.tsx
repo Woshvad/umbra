@@ -13,10 +13,17 @@
 // Operator-plane DISPLAY only: it reads the lifted SolvePreviewResponse (from :4100 via
 // web/src/solver.ts). No operator token, no @daml/react context here (threat T-06-01).
 import type { SolvePreviewResponse } from '../solver'
-import { codeForParty } from '../desks'
+import { codeForParty, GUEST } from '../desks'
 import { badgeLabel } from '../lib/solverParse'
 
 type Props = { preview: SolvePreviewResponse }
+
+// Guest-aware party → display code (mirrors SettlementView's codeOf): `codeForParty` only
+// knows the three primary desks and would surface a guest as the raw `bankD::<hex>` id, so
+// map the GUEST key → 'GUEST' first. Everything else falls through to codeForParty.
+function codeOf(party: string): string {
+  return party.split('::')[0] === GUEST.key ? GUEST.code : codeForParty(party)
+}
 
 // Signed-quantity color (UI-SPEC line 204): Buy + blue / Sell − pink / 0 faded ink.
 function fillColor(side: 'Buy' | 'Sell', qty: number): string {
@@ -76,7 +83,7 @@ export default function AgentProposal({ preview }: Props) {
             style={{ padding: '14px 0', borderBottom: '1px solid rgba(10,10,10,.16)' }}
           >
             <span className="font-mono text-13" style={{ letterSpacing: '.06em' }}>
-              {codeForParty(a.desk)}
+              {codeOf(a.desk)}
             </span>
             <span
               className="font-mono text-15 font-semibold tabular-nums"
@@ -99,12 +106,12 @@ function ProposalRow({ label, value }: { label: string; value: string }) {
       style={{ padding: '16px 0', borderBottom: '1px solid rgba(10,10,10,.16)' }}
     >
       <span
-        className="font-body text-10 uppercase opacity-50"
-        style={{ letterSpacing: '.14em' }}
+        className="font-body text-11 uppercase opacity-60"
+        style={{ letterSpacing: '.12em' }}
       >
         {label}
       </span>
-      <span className="font-mono text-22 font-bold tabular-nums">{value}</span>
+      <span className="font-mono text-22 font-semibold tabular-nums">{value}</span>
     </div>
   )
 }

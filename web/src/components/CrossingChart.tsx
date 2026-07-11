@@ -78,13 +78,36 @@ export default function CrossingChart({ curve, clearingPrice, matchedVolume, mod
         {caption}
       </div>
 
-      <svg viewBox="0 0 480 360" style={{ width: '100%', maxWidth: '480px' }}>
+      <svg
+        viewBox="0 0 480 360"
+        style={{ width: '100%', maxWidth: '480px' }}
+        role="img"
+        aria-label={
+          assembling
+            ? 'Supply and demand curves assembling as orders seal'
+            : `Supply crosses demand at clearing price ${priceLabel}, matched ${matchedVolume}`
+        }
+      >
         {/* Axes */}
         <line x1={48} y1={20} x2={48} y2={320} stroke="#F4F1EA" strokeOpacity={0.5} strokeWidth={1} />
         <line x1={48} y1={320} x2={460} y2={320} stroke="#F4F1EA" strokeOpacity={0.5} strokeWidth={1} />
 
-        {/* Matched-region rectangle — faint while assembling, solid at lock */}
-        <rect x={48} y={160} width={248} height={160} fill="#D6FB3C" fillOpacity={matchedOpacity} />
+        {/* Matched-region rectangle — faint while assembling, solid at lock. When locked it
+            is DERIVED from the crossing point (like the marker/curves) so it always tracks the
+            live clear; §4 (cross 296,160) reproduces the shipped x48 y160 w248 h160 exactly.
+            Assembling has no crossing yet → keep the shipped faint frame rect. */}
+        {assembling ? (
+          <rect x={48} y={160} width={248} height={160} fill="#D6FB3C" fillOpacity={matchedOpacity} />
+        ) : (
+          <rect
+            x={48}
+            y={cross.y}
+            width={cross.x - 48}
+            height={320 - cross.y}
+            fill="#D6FB3C"
+            fillOpacity={matchedOpacity}
+          />
+        )}
 
         {/* Supply — ascending step, draws on via the Plan-01 animate-umbra-draw alias */}
         <polyline

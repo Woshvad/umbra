@@ -23,7 +23,9 @@ input {
 .break-ai-force {
   border: 1px solid #e2231a;
   background: transparent;
-  color: #e2231a;
+  /* Default (non-hover) text uses a darker red for ≥4.5:1 AA on paper; the hover
+     paper-on-red state (below) stays byte-unchanged. */
+  color: #c4160e;
   transition: background 0.12s ease, color 0.12s ease;
 }
 .break-ai-force:not(:disabled):hover {
@@ -50,4 +52,22 @@ input {
   color: #0a0a0a;
   font-family: 'Inter', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  /* Horizontal-overflow backstop — a stray wide child can never scroll the page sideways. */
+  overflow-x: hidden;
+}
+
+/* Global reduced-motion backstop — kills the named Umbra keyframe animations and clamps
+   every animation/transition to a near-instant tick for users who ask for reduced motion.
+   Per-component matchMedia guards already handle most cases; this is the belt-and-suspenders. */
+@media (prefers-reduced-motion: reduce) {
+  [class*='animate-umbra-'] {
+    animation: none !important;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }

@@ -523,27 +523,31 @@ export default function TimeMachineView({ roundId, offline, setOffline }: Props)
         <>
           <Scrubber index={index} onIndex={setIndex} />
 
-          {/* Per-party grid — internal 1px ink borders, gap 0, last borderless */}
-          <div
-            className="border-t"
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr 1fr 1fr',
-              gap: 0,
-              marginTop: '4px',
-            }}
-          >
-            {BANK_COLUMNS.map((col) => (
-              <BankColumn
-                key={`${col.deskKey}-${stage}`}
-                deskKey={col.deskKey}
-                ctx={col.ctx}
-                stage={stage}
-                offset={offset}
-                isLast={false}
-              />
-            ))}
-            <OperatorColumn stage={stage} offset={offset} />
+          {/* Per-party grid — internal 1px ink borders, gap 0, last borderless. The 4-up
+              grid never re-flows, so on narrow screens it would crush; wrap it in an
+              overflow-x:auto rail with a min-width so it scrolls instead. Desktop identical. */}
+          <div style={{ overflowX: 'auto', marginTop: '4px' }}>
+            <div
+              className="border-t"
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr 1fr 1fr',
+                gap: 0,
+                minWidth: '640px',
+              }}
+            >
+              {BANK_COLUMNS.map((col) => (
+                <BankColumn
+                  key={`${col.deskKey}-${stage}`}
+                  deskKey={col.deskKey}
+                  ctx={col.ctx}
+                  stage={stage}
+                  offset={offset}
+                  isLast={false}
+                />
+              ))}
+              <OperatorColumn stage={stage} offset={offset} />
+            </div>
           </div>
 
           <p

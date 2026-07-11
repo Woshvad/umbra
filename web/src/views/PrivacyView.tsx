@@ -38,14 +38,22 @@ export default function PrivacyView({ activeDesk, sealedCount }: Props) {
         </div>
         <div className="bg-ink" style={{ height: '1px', margin: '12px 0 0' }} />
 
-        {/* Headline — two lines, 2nd indented 120px (verbatim copy) */}
+        {/* Headline — two lines, 2nd indented 120px (verbatim copy). Size is fluid so the
+            hero never clips on mobile; it pins to the binding 78px from ~650px up (desktop
+            look identical). The 120px indent applies only at md+ (dropped below md). */}
         <h1
-          className="font-display text-78 font-bold"
-          style={{ lineHeight: '.94', letterSpacing: '-.025em', margin: '34px 0 0 -3px', maxWidth: '1080px' }}
+          className="font-display font-bold"
+          style={{
+            fontSize: 'clamp(34px,12vw,78px)',
+            lineHeight: '.94',
+            letterSpacing: '-.025em',
+            margin: '34px 0 0 -3px',
+            maxWidth: '1080px',
+          }}
         >
           {"EVERYONE'S BLIND."}
           <br />
-          <span style={{ marginLeft: '120px' }}>{"THAT'S THE POINT."}</span>
+          <span className="md:ml-[120px]">{"THAT'S THE POINT."}</span>
         </h1>
 
         {/* Venue spine — the shared count via a desk context (no operator token) */}

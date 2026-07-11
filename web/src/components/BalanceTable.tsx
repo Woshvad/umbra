@@ -22,7 +22,7 @@ const fmt = (n: number): string => String(Math.round(n))
 
 export default function BalanceTable({ rows, settleProgress }: Props) {
   return (
-    <div style={{ width: '360px' }}>
+    <div style={{ width: '100%', maxWidth: '360px' }}>
       <div
         className="font-body text-10 uppercase opacity-50"
         style={{ letterSpacing: '.14em' }}

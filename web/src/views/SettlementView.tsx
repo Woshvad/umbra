@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { OperatorViewState, ClearingApprovalDecision } from '../operatorState'
 import type { SolvePreviewResponse, SettlementProvenance } from '../solver'
-import { settle, SolverError, OFFLINE_CAPTION } from '../solver'
+import { settle, getRound, SolverError, OFFLINE_CAPTION } from '../solver'
 import { codeForParty, GUEST } from '../desks'
 import { deskBalancesFromAllocations, type DeskBalances, type DeskBalance } from '../lib/balance'
 import { estimateLeakage, type LeakageLeg } from '../lib/leakage'
@@ -167,6 +167,7 @@ function balanceRowsFromPreview(preview: SolvePreviewResponse): BalanceRow[] {
 export default function SettlementView({
   roundId,
   preview,
+  setPreview,
   phase,
   setPhase,
   offline,
@@ -217,6 +218,58 @@ export default function SettlementView({
     [],
   )
 
+  // (a) Reconcile a STRANDED 'settling' phase on mount. Navigating away DURING the ~800ms
+  // settle animation unmounts this view (cancelling its rAF), so remounting leaves phase
+  // frozen at 'settling' with no clock to finish it. Complete it immediately on mount.
+  useEffect(() => {
+    if (phase === 'settling') {
+      setSettleProgress(1)
+      setStampIn(true)
+      setPhase('settled')
+    }
+    // Mount-only reconciliation — intentionally not re-run on phase changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // (b) Reload reconciliation — the lifted `preview` is in-memory only, so a hard reload of
+  // an already Cleared/Settled round lands here with preview=null and the settled record is
+  // lost. Re-fetch the terminal GET body (mirrors TcaReceipts/RoundBrief) and rebuild a
+  // preview-shaped object so the settlement still renders. A Settled round also restores the
+  // completed settle visuals (progress=1, stamp) and phase.
+  useEffect(() => {
+    if (preview || offline || !roundId) return
+    let cancelled = false
+    getRound(roundId)
+      .then((r) => {
+        if (cancelled) return
+        if ((r.status === 'Cleared' || r.status === 'Settled') && r.clearingPrice !== undefined) {
+          setPreview({
+            roundId: r.roundId,
+            clearingPrice: r.clearingPrice,
+            matchedVolume: r.matchedVolume ?? 0,
+            allocations: r.allocations ?? [],
+            curve: r.curve ?? [],
+            rationale: r.rationale ?? '',
+            agent: r.agent ?? { verified: false, source: 'deterministic-fallback' },
+            settlement: r.settlement,
+          })
+          if (r.status === 'Settled') {
+            setSettleProgress(1)
+            setStampIn(true)
+            setPhase('settled')
+          }
+        }
+      })
+      .catch((e) => {
+        if (!cancelled && e instanceof SolverError && e.code === 'OFFLINE') setOffline(true)
+      })
+    return () => {
+      cancelled = true
+    }
+    // Mount-only reconciliation — captures the initial (possibly null) preview.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const settled = phase === 'settled'
   const settling = phase === 'settling'
 
@@ -260,12 +313,8 @@ export default function SettlementView({
         </p>
       ) : preview ? (
         <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'minmax(0,1fr) 360px',
-            gap: '56px',
-            alignItems: 'start',
-          }}
+          className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,360px)]"
+          style={{ gap: '56px', alignItems: 'start' }}
         >
           {/* Left — DvP legs + the atomic stamp + the CTA */}
           <div style={{ position: 'relative' }}>

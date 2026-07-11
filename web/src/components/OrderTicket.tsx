@@ -67,6 +67,11 @@ type CommittedOrder = {
 
 const CASH_SYMBOL = 'USDCx'
 
+// The active round id — read from the SAME source App uses (VITE_ROUND_ID via env, default
+// 'R1') so the desk plane (CommitOrder / timelockEncrypt below) and the operator plane in
+// App/TheatreView always agree on which round this ticket commits into.
+const ACTIVE_ROUND_ID: string = import.meta.env.VITE_ROUND_ID ?? 'R1'
+
 // §4 / comp seed (UI-SPEC line 37, Copywriting "load demo order"): the canonical
 // per-desk demo values — BLUEROCK Buy 10@101 · MERIDIAN Sell 8@99 · HALWARD Sell 5@100.
 const DEMO: Record<DeskKey, { side: Side; qty: number; limit: number }> = {
@@ -418,7 +423,7 @@ export default function OrderTicket({
         if (venueCid && bondAsset && eligCid) {
           await ledger.exercise(Venue.CommitOrder, venueCid, {
             desk: tokens[deskKey].party,
-            roundId: 'R1',
+            roundId: ACTIVE_ROUND_ID,
             commitment: hash,
             bondCid: bondAsset.contractId,
             cashInstrument: bondAsset.payload.instrument,
@@ -457,7 +462,7 @@ export default function OrderTicket({
   // SolverError → the clearly-weaker local fallback (T3). Keys stay server-side.
   async function runTimelock(payload: string) {
     try {
-      const res = await timelockEncrypt('R1', payload)
+      const res = await timelockEncrypt(ACTIVE_ROUND_ID, payload)
       setSeal({ mode: res.mode, ciphertext: res.ciphertext, targetRound: res.targetRound, warning: res.warning })
       setTimeToBeaconMs(res.timeToBeaconMs ?? 0)
       setPhase('timelocked')
@@ -544,6 +549,7 @@ export default function OrderTicket({
         type="button"
         disabled={ticketLocked}
         onClick={() => setSide(s)}
+        aria-pressed={active}
         className="font-mono text-13 font-bold disabled:cursor-not-allowed"
         style={{
           flex: 1,
@@ -556,7 +562,8 @@ export default function OrderTicket({
           justifyContent: mobile ? 'center' : undefined,
           letterSpacing: '.08em',
           background: active ? activeColor : 'transparent',
-          color: active ? '#fff' : 'rgba(10,10,10,.45)',
+          // Inactive label raised to rgba(10,10,10,.62) for AA contrast on paper.
+          color: active ? '#fff' : 'rgba(10,10,10,.62)',
           borderRight: s === Side.Buy ? '1px solid #0A0A0A' : 'none',
         }}
       >
@@ -591,7 +598,7 @@ export default function OrderTicket({
               if (e.key === 'Enter') void onParse()
             }}
             placeholder="e.g. buy up to 10 under 101"
-            className="font-body text-14 flex-1 bg-transparent outline-none disabled:opacity-50"
+            className="font-body text-14 flex-1 bg-transparent outline-none disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red"
             style={{ lineHeight: 1.6, borderBottom: '1px solid #0A0A0A', padding: '4px 0' }}
           />
           <button
@@ -649,6 +656,7 @@ export default function OrderTicket({
                 type="button"
                 disabled={ticketLocked}
                 onClick={() => setOrderType(type)}
+                aria-pressed={active}
                 className="font-mono text-9 uppercase disabled:cursor-not-allowed"
                 style={{
                   flex: 1,
@@ -661,7 +669,8 @@ export default function OrderTicket({
                   justifyContent: mobile ? 'center' : undefined,
                   letterSpacing: '.16em',
                   background: 'transparent',
-                  color: active ? '#0A0A0A' : 'rgba(10,10,10,.45)',
+                  // Inactive label raised to rgba(10,10,10,.62) for AA contrast on paper.
+                  color: active ? '#0A0A0A' : 'rgba(10,10,10,.62)',
                   borderBottom: active ? '1px solid #0A0A0A' : '1px solid transparent',
                 }}
               >
@@ -703,7 +712,7 @@ export default function OrderTicket({
           value={qty}
           onChange={(e) => setQty(e.target.value.replace(/[^\d]/g, ''))}
           placeholder="0"
-          className="font-mono text-44 tabular-nums w-full bg-transparent outline-none disabled:opacity-50"
+          className="font-mono text-44 tabular-nums w-full bg-transparent outline-none disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red"
           style={{ fontWeight: 600, borderBottom: '2px solid #0A0A0A', padding: '2px 0 8px' }}
         />
       </div>
@@ -726,7 +735,7 @@ export default function OrderTicket({
             value={limit}
             onChange={(e) => setLimit(e.target.value.replace(/[^\d.]/g, ''))}
             placeholder="0.00"
-            className="font-mono text-44 tabular-nums w-full bg-transparent outline-none disabled:opacity-50"
+            className="font-mono text-44 tabular-nums w-full bg-transparent outline-none disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red"
             style={{ fontWeight: 600, borderBottom: '2px solid #0A0A0A', padding: '2px 0 8px', color: sideColor }}
           />
         </div>
@@ -760,7 +769,7 @@ export default function OrderTicket({
             value={minQtyInput}
             onChange={(e) => setMinQtyInput(e.target.value.replace(/[^\d]/g, ''))}
             placeholder="0"
-            className="font-mono text-22 tabular-nums w-full bg-transparent outline-none disabled:opacity-50"
+            className="font-mono text-22 tabular-nums w-full bg-transparent outline-none disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red"
             style={{ fontWeight: 600, borderBottom: '1px solid #0A0A0A', padding: '2px 0 6px' }}
           />
           {maqFullFill && (
@@ -802,7 +811,7 @@ export default function OrderTicket({
             value={firmIfInput}
             onChange={(e) => setFirmIfInput(e.target.value.replace(/[^\d.]/g, ''))}
             placeholder="0.00"
-            className="font-mono text-22 tabular-nums w-full bg-transparent outline-none disabled:opacity-50"
+            className="font-mono text-22 tabular-nums w-full bg-transparent outline-none disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red"
             style={{ fontWeight: 600, borderBottom: '1px solid #0A0A0A', padding: '2px 0 6px', color: sideColor }}
           />
           {condBandTooLow && (

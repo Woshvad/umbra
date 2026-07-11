@@ -5,7 +5,7 @@
 export default function SealedRail() {
   return (
     <div
-      className="font-mono text-12 opacity-32"
+      className="font-mono text-12"
       style={{
         position: 'absolute',
         left: '8px',
@@ -14,6 +14,9 @@ export default function SealedRail() {
         transformOrigin: 'left top',
         whiteSpace: 'nowrap',
         letterSpacing: '.5em',
+        // `opacity-32` is not on Tailwind's ×5 scale (it renders fully opaque) — use the
+        // exact .32 inline so the rail actually reads as faint decoration.
+        opacity: 0.32,
       }}
       aria-hidden="true"
     >

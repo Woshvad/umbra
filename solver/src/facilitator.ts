@@ -164,6 +164,10 @@ const cantonCcFacilitator = (url: string, key: string, fetchImpl: typeof fetch):
         paymentPayload: payment,
         paymentRequirements: requirements,
       }),
+      // MD-03: enforce the ADVERTISED maxTimeoutSeconds — a hung/slow facilitator must not hold
+      // the gated client connection open unbounded. A timeout aborts the fetch, which rejects and
+      // is caught by verify/settle → mapped to a secret-free reason (never the key/body).
+      signal: AbortSignal.timeout((requirements.maxTimeoutSeconds ?? 60) * 1000),
     })
     if (!res.ok) {
       // Secret-free: the key is in the request header we just sent, NOT in this error; the

@@ -287,6 +287,26 @@ describe('canton-cc backend — FTP facilitator /verify + /settle', () => {
     await expect(fac.settle(reqs(), payment())).resolves.toEqual({ settled: false, txRef: '' })
   })
 
+  it('MD-03 — passes an AbortSignal (maxTimeoutSeconds) and maps a hung/aborted fetch to a secret-free reason', async () => {
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      // The advertised timeout is enforced via a real AbortSignal on the request.
+      expect(init?.signal).toBeInstanceOf(AbortSignal)
+      // Simulate the facilitator hanging past the timeout: the abort surfaces as a rejection.
+      throw new Error('The operation was aborted')
+    })
+    const fac = createFacilitator({
+      backend: 'canton-cc',
+      facilitatorUrl: FAC_URL,
+      facilitatorKey: SENTINEL_KEY,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    })
+    const out = await fac.verify(reqs({ maxTimeoutSeconds: 5 }), payment())
+    expect(out.valid).toBe(false)
+    // Secret-free: neither the key nor the raw abort text leaks into the reason.
+    expect(JSON.stringify(out)).not.toContain(SENTINEL_KEY)
+    expect(out.reason).not.toContain('aborted')
+  })
+
   it('trims a trailing slash on facilitatorUrl (no double slash on the path)', async () => {
     const fetchImpl = vi.fn(async (url: string) => {
       expect(url).toBe(`${FAC_URL}/verify`)

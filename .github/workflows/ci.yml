@@ -1,10 +1,13 @@
 # TRUST-01 — CI golden-eval gate.
 #
-# Two jobs, both scoped to changes that touch the clearing math or the ledger:
+# Three jobs, scoped by path filter to changes that touch the clearing math, the ledger,
+# or the frontend:
 #   golden  — ALWAYS: runs the solver vitest suite (the §8 fixtures). The canonical
 #             §4 fixture MUST clear at exactly $100.00 (fills A=10 / B=8 / C=2), plus
 #             the ≥5 §8 scenarios + the verify-don't-trust equality gate. This is the
 #             TRUST-01 regression gate — the AI's numbers are never trusted unverified.
+#   web     — ALWAYS: type-checks + production-builds the frontend and runs its vitest
+#             suite (Node-only, no SDK), so `web/**` changes are actually verified.
 #   daml    — push to the default branch only (heavy: installs the Daml 3.4 SDK): builds
 #             the DAR and runs `daml test`, protecting the on-ledger Round.Clear recompute
 #             (incl. test_clear_rejects_bad_allocation).
@@ -15,11 +18,13 @@ on:
     paths:
       - 'solver/**'
       - 'daml/**'
+      - 'web/**'
       - '.github/workflows/ci.yml'
   pull_request:
     paths:
       - 'solver/**'
       - 'daml/**'
+      - 'web/**'
       - '.github/workflows/ci.yml'
 
 jobs:
@@ -37,6 +42,27 @@ jobs:
         run: npm ci
       - name: Golden eval — §8 fixtures ($100.00 / A=10·B=8·C=2)
         working-directory: solver
+        run: npm test
+
+  # ── Frontend build + tests — Node-only, runs on every push and PR ─────────────────
+  web:
+    name: web (typecheck + build + vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install web deps (committed lockfile)
+        working-directory: web
+        # --legacy-peer-deps mirrors the repo's web install convention (root install:all
+        # + Makefile install); npm ci reproduces the committed package-lock.json exactly.
+        run: npm ci --legacy-peer-deps
+      - name: Build the frontend (tsc --noEmit && vite build)
+        working-directory: web
+        run: npm run build
+      - name: Frontend unit tests (vitest run)
+        working-directory: web
         run: npm test
 
   # ── On-ledger recompute — heavy (SDK install), default branch push only ───────────

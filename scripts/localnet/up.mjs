@@ -80,10 +80,15 @@ console.log('  ✓ participants up (:3975/:2975/:4975)')
 const DAR = resolve(repoRoot, 'daml', '.daml', 'dist', 'umbra-0.1.0.dar')
 if (!existsSync(DAR)) {
   console.log('▸ building DAR (daml build)')
+  // `daml` must be on PATH. `bash -lc` sources the login profile, which on a typical box
+  // already exposes `daml` (e.g. a ~/bin shim). Set DAML_BIN to prepend a custom location;
+  // when unset we use the caller's existing login PATH (no hardcoded personal path).
+  const damlBin = process.env.DAML_BIN?.replace(/\\/g, '/')
+  const pathPrefix = damlBin ? `export PATH='${damlBin}':$PATH && ` : ''
   try {
-    sh('bash -lc "export PATH=/c/Users/woshv/bin:$PATH && cd daml && daml build"', { cwd: repoRoot })
+    sh(`bash -lc "${pathPrefix}cd daml && daml build"`, { cwd: repoRoot })
   } catch {
-    console.error('  ✗ daml build failed — build it in Git Bash: `cd daml && daml build`, then re-run')
+    console.error('  ✗ daml build failed — build it in Git Bash: `cd daml && daml build`, then re-run\n    (or set DAML_BIN to the dir containing `daml` and re-run)')
     process.exit(1)
   }
 }

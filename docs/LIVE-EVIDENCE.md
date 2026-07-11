@@ -1,8 +1,19 @@
 # Umbra — Live E2E Acceptance Evidence (DEMO-02 / DEMO-03 / DEMO-04)
 
-**Run:** 2026-06-27, against the real stack — `daml start` (Canton sandbox :6865 + JSON API
-:7575, seeded round **R1**) · solver (:4000) · web (:5173). Every value below was observed
-live this session (not asserted from code).
+> ## ⚠ HISTORICAL — `sandbox-mvp`-tag evidence (superseded stack)
+>
+> **This document records the earlier Daml 2.x sandbox MVP**, captured against `daml start`
+> (Canton sandbox `:6865` + HTTP JSON API v1 `:7575`) with the solver on `:4000`. That stack was
+> **superseded** and is preserved at git tag **`sandbox-mvp`**. It does **not** describe the
+> current shipped stack: **Daml 3.4.11 + Canton LocalNet + JSON Ledger API v2 on
+> `:3975`/`:2975`/`:4975`, solver `:4100`, web `:5173`** (boot with `node scripts/localnet/up.mjs`;
+> see README + `DECISIONS.md`). The numbers below are retained for provenance only — do not read
+> them as evidence of the current real-Canton stack. Live proof of the current stack comes from the
+> scripts noted in the "Privacy at the wire" row below.
+
+**Run:** 2026-06-27, against the (now superseded) sandbox stack — `daml start` (Canton sandbox
+:6865 + JSON API v1 :7575, seeded round **R1**) · solver (:4000) · web (:5173). Every value below
+was observed live that session (not asserted from code).
 
 ---
 
@@ -14,7 +25,7 @@ with the **solver HTTP API** asserted in parallel as the authoritative numeric p
 | Beat | Where | Observed | Verdict |
 |------|-------|----------|---------|
 | Round open + book | `GET :4000/round/R1` | `{status: Open, sealedOrderCount: 3}` | ✅ |
-| Privacy at the wire | `node scripts/verify-privacy.mjs` | each desk's `/v1/query` returns **only its own** Order, **0 rivals** (bankA/B/C) | ✅ PASS (PRIV-05) |
+| Privacy at the wire | *(sandbox: the old `scripts/verify-privacy.mjs`, removed with the 2.x stack)* — on the current real-Canton stack this is proven by `scripts/localnet/verify-settlement.mjs`, `verify-live-flow.mjs`, `xnode-moneyshot.mjs`, and the per-desk privacy proof baked into `scripts/localnet/seed.mjs` | each desk's query returned **only its own** Order, **0 rivals** (bankA/B/C) | ✅ PASS (PRIV-05) |
 | 3-up blindness (UI) | 01 Privacy, BLUEROCK session | BLUEROCK sees its own BUY 10 ≤101.0 (hold 0/5000); MERIDIAN + HALWARD **REDACTED**; venue **03 SEALED** | ✅ |
 | Clearing | `GET :4000/round/R1/solve-preview` | `clearingPrice **100**`, `matchedVolume **10**`, allocations **A +10 / B −8 / C −2**, `rationale` present, `agent {verified:false, source:"deterministic-fallback"}` (keyless) | ✅ |
 | Reveal (UI) | 03 Theatre, Close & Solve | **CLEARS AT 100.00**, chart **MATCHED 10 @ 100.00**, MATCHED VOLUME **10 units** | ✅ |

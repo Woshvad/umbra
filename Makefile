@@ -27,7 +27,7 @@ help: ## List the available targets
 	@echo "  make verify-live  Bulletproof the browser paths: live submit + close->settle"
 	@echo "  make moneyshot    Headless proof of the full §4 flow across three nodes"
 	@echo "  make test         Daml model tests (daml build && daml test, via Git Bash)"
-	@echo "  make solver-test  Solver unit tests (36)"
+	@echo "  make solver-test  Solver unit tests (351 across 27 files)"
 	@echo "  make web-build    Frontend typecheck + production build"
 	@echo ""
 	@echo "  make install      Install web (--legacy-peer-deps) + solver deps"

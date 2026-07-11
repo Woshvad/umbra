@@ -134,10 +134,12 @@ moves any of these, something regressed.
 ## Tests
 
 ```bash
-# Daml model (3.4.11): clears-at-100, settled-balances, atomicity, privacy, reject-bad
-cd daml && daml build && daml test          # via Git Bash (daml is on the Bash PATH)
+# Daml model (3.4.11): clears-at-100, settled-balances, atomicity, privacy, reject-bad.
+# NOTE: `npm test` / `make test` alias this and need `daml` on PATH — run from a shell
+# where `daml` resolves (Git Bash on this box; the daml assistant is on the Bash PATH).
+cd daml && daml build && daml test
 
-# Solver: 36 unit tests (deterministic §8 + v2 client + API + agent verify gate)
+# Solver: 351 tests across 27 files (deterministic §8 + v2 client + API + agent verify gate)
 cd solver && npm test
 
 # Frontend: typecheck + production build

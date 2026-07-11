@@ -25,6 +25,22 @@ Umbra is a private, **sealed-bid uniform-price batch-auction venue** for tokeniz
 
 ## Technology Stack
 
+> ## ⚠ SUPERSEDED — read this first
+>
+> **The project SHIPPED on Daml `3.4.11` + Canton LocalNet + JSON Ledger API v2**, with the
+> participants on `:3975` / `:2975` / `:4975`, the **solver on `:4100`**, and the web app on `:5173`.
+> Boot the whole live stack with **`node scripts/localnet/up.mjs`** (mirrored as `make up` /
+> `npm run up`). See **`DECISIONS.md`** for the version-drift resolution.
+>
+> Everything below in this "Technology Stack" region (the "Recommended Stack" tables, the
+> "What NOT to Use" table that warns *against* Daml 3.x / `cn-quickstart`, and the
+> `daml start` / HTTP JSON API v1 on `:7575` / solver `:4000` material) is **HISTORICAL**. It
+> describes the earlier Daml **2.10.4** `daml start` sandbox MVP, which is **preserved at git tag
+> `sandbox-mvp`** and was **superseded by the 3.x LocalNet build that actually shipped**. Do **not**
+> follow it for the current build — it is retained for provenance only. The operative facts are:
+> **SDK 3.4.11 · Canton LocalNet (JSON Ledger API v2) · ports 3975/2975/4975 · solver 4100 · web 5173
+> · boot `node scripts/localnet/up.mjs`.**
+
 ## The Daml 2.x vs 3.x decision (the spec's #1 risk — resolved)
 
 | | Daml **2.10.x** (RECOMMENDED) | Daml 3.x / Canton 3.x |

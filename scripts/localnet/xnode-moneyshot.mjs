@@ -105,6 +105,25 @@ for (const c of await acsOf(PROVIDER, admin, op)) {
 }
 console.log('✓ cleaned operator ACS\n')
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ⚠ STALE — NEEDS A LIVE-VERIFIED UPDATE (audit 2026-07-11). This §19 cross-node
+// headless demo has drifted behind the current model on TWO axes and cannot run as-is:
+//   1. Seed drift (same as seed.mjs / xnode-up.mjs, now fixed there): it mints the
+//      retired `Umbra.Asset:Asset` instead of `Umbra.Holding:Holding`, never seeds a
+//      `DeskEligibility`, and calls `SubmitOrder` without `orderType/minQty/firmIf/eligCid`.
+//   2. Settle drift (pre-existing, deeper): the `Round.Clear` exercise below uses the
+//      Phase-2-era signature (`buyerUsdcCid` singular + `{_1,_2}` `sellerBondCids`),
+//      which is superseded by the token-agnostic N-buyer settle — and, after the
+//      2026-07-11 privacy fix, settlement runs through `Umbra.Roles:Venue` NONCONSUMING
+//      `SettleRound` (with `buyerCashCids`/`cashInstrument`/`bondInstrument`/
+//      `referencePrice`/`approvalCid` four-eyes + `roundCid`), NOT `Round.Clear`.
+// To restore: mirror the fixed seed in `seed.mjs`/`xnode-up.mjs` (DeskEligibility +
+// `Holding` mint + full `SubmitOrder` args + `biggest`/`bal` reading `Holding` by
+// `instrument.id`/`amount`), then drive settle via `Venue.SettleRound` (build a
+// `ClearingApproval` first, per solver `ledger.ts` requestAndCollectApproval), and
+// VERIFY on a live `make up && make xnode && make moneyshot` run. Left intact rather
+// than blind-rewritten because this cross-node path is not verifiable offline.
+// ─────────────────────────────────────────────────────────────────────────────
 // 3. Operator (app-provider) creates the Venue observing all three cross-node desks + §4 Assets.
 await create(PROVIDER, admin, op, 'Umbra.Roles:Venue', { operator: op, desks: [A.party, B.party, C.party] })
 const mint = (owner, symbol, quantity) => create(PROVIDER, admin, op, 'Umbra.Asset:Asset', { operator: op, owner, symbol, quantity })

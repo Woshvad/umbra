@@ -31,7 +31,8 @@ const api = async (base, token, method, path, body) => {
   return text ? JSON.parse(text) : {}
 }
 const entityOf = (c) => c.templateId.split(':').pop()
-const moduleOf = (e) => (e === 'Venue' ? 'Roles' : e === 'Asset' ? 'Asset' : 'Auction')
+const moduleOf = (e) =>
+  e === 'Venue' ? 'Roles' : e === 'Asset' ? 'Asset' : e === 'Holding' ? 'Holding' : e === 'DeskEligibility' ? 'Compliance' : 'Auction'
 const acsOf = async (base, token, party) => {
   const { offset } = await api(base, token, 'GET', '/v2/state/ledger-end')
   const arr = await api(base, token, 'POST', '/v2/state/active-contracts', {
@@ -122,14 +123,23 @@ for (const c of await acsOf(PROVIDER, admin, op)) {
   await exercise(PROVIDER, admin, op, `Umbra.${moduleOf(e)}:${e}`, c.contractId, e === 'Order' ? 'Retire' : 'Archive', {}).catch(() => {})
 }
 await create(PROVIDER, admin, op, 'Umbra.Roles:Venue', { operator: op, desks: [A.party, B.party, C.party] })
-const mint = (owner, symbol, quantity) => create(PROVIDER, admin, op, 'Umbra.Asset:Asset', { operator: op, owner, symbol, quantity })
-await mint(A.party, 'USDCx', '5000.0')
-await mint(B.party, 'BONDX', '20.0')
-await mint(B.party, 'USDCx', '1000.0')
-await mint(C.party, 'BONDX', '15.0')
-await mint(C.party, 'USDCx', '1000.0')
+// COMP-01: one DeskEligibility per desk (operator == compliance stub). observer = desk,
+// so it replicates to that desk's node and the cross-node SubmitOrder can fetch it on-ledger.
+for (const d of [A.party, B.party, C.party])
+  await create(PROVIDER, admin, op, 'Umbra.Compliance:DeskEligibility', { operator: op, compliance: op, desk: d, accredited: true, jurisdiction: 'US', sanctionsClear: true })
+// §4 holdings as token-agnostic `Umbra.Holding:Holding` (DFIN-01). The retired `Asset`
+// is OFF the live settle path, so the solver's gatherHoldingCids only matches `Holding`s.
+// instrument = {issuer, id} InstrumentId record; a fresh holding is free (lock = null).
+const bondInstrument = { issuer: op, id: 'BONDX' }
+const cashInstrument = { issuer: op, id: 'USDCx' }
+const mint = (owner, instrument, amount) => create(PROVIDER, admin, op, 'Umbra.Holding:Holding', { operator: op, owner, instrument, amount, lock: null })
+await mint(A.party, cashInstrument, '5000.0')
+await mint(B.party, bondInstrument, '20.0')
+await mint(B.party, cashInstrument, '1000.0')
+await mint(C.party, bondInstrument, '15.0')
+await mint(C.party, cashInstrument, '1000.0')
 await create(PROVIDER, admin, op, 'Umbra.Auction:Round', { operator: op, roundId: 'R1', symbol: 'BONDX', desks: [A.party, B.party, C.party], openedAt: new Date().toISOString(), windowSeconds: 60, status: 'Open' })
-console.log('✓ seeded Venue + 5 §4 holdings + OPEN Round R1 (operator on app-provider)')
+console.log('✓ seeded Venue + 3 DeskEligibility + 5 §4 Holdings + OPEN Round R1 (operator on app-provider)')
 
 // 4. Each desk submits its sealed order FROM ITS OWN NODE.
 await new Promise((r) => setTimeout(r, 1800))
@@ -137,9 +147,16 @@ const vA = await venueObservedBy(USER, A.token, A.party)
 const vB = await venueObservedBy(SV, B.token, B.party)
 const vC = await venueObservedBy(PROVIDER, C.token, C.party)
 if (!vA || !vB || !vC) throw new Error(`Venue replication incomplete: A=${!!vA} B=${!!vB} C=${!!vC}`)
-await exercise(USER, A.token, A.party, 'Umbra.Roles:Venue', vA.contractId, 'SubmitOrder', { desk: A.party, roundId: 'R1', side: 'Buy', quantity: 10, limit: '101.0' })
-await exercise(SV, B.token, B.party, 'Umbra.Roles:Venue', vB.contractId, 'SubmitOrder', { desk: B.party, roundId: 'R1', side: 'Sell', quantity: 8, limit: '99.0' })
-await exercise(PROVIDER, C.token, C.party, 'Umbra.Roles:Venue', vC.contractId, 'SubmitOrder', { desk: C.party, roundId: 'R1', side: 'Sell', quantity: 5, limit: '100.0' })
+// Each desk's own eligibility cid (from the operator's ACS; the desk observes its own credential).
+const opAcs = await acsOf(PROVIDER, admin, op)
+const eligOf = (party) => {
+  const e = opAcs.find((c) => entityOf(c) === 'DeskEligibility' && c.createArgument.desk === party)
+  if (!e) throw new Error(`no DeskEligibility credential for ${party}`)
+  return e.contractId
+}
+await exercise(USER, A.token, A.party, 'Umbra.Roles:Venue', vA.contractId, 'SubmitOrder', { desk: A.party, roundId: 'R1', side: 'Buy', quantity: 10, limit: '101.0', orderType: 'Limit', minQty: null, firmIf: null, eligCid: eligOf(A.party) })
+await exercise(SV, B.token, B.party, 'Umbra.Roles:Venue', vB.contractId, 'SubmitOrder', { desk: B.party, roundId: 'R1', side: 'Sell', quantity: 8, limit: '99.0', orderType: 'Limit', minQty: null, firmIf: null, eligCid: eligOf(B.party) })
+await exercise(PROVIDER, C.token, C.party, 'Umbra.Roles:Venue', vC.contractId, 'SubmitOrder', { desk: C.party, roundId: 'R1', side: 'Sell', quantity: 5, limit: '100.0', orderType: 'Limit', minQty: null, firmIf: null, eligCid: eligOf(C.party) })
 await create(PROVIDER, admin, op, 'Umbra.Auction:RoundStats', { operator: op, roundId: 'R1', desks: [A.party, B.party, C.party], sealedOrderCount: 3 })
 console.log('✓ orders submitted FROM THEIR OWN NODES — A@app-user · B@sv · C@app-provider + RoundStats{3}\n')
 

@@ -18,7 +18,7 @@ import { useState } from 'react'
 import type { Ctx, DeskKey } from '../ledgerContexts'
 import { tokens, httpBaseUrlFor, wsBaseUrl, DESKS } from '../desks'
 import { Order } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
-import { Asset } from '@daml.js/umbra-0.1.0/lib/Umbra/Asset/module'
+import { Holding } from '@daml.js/umbra-0.1.0/lib/Umbra/Holding/module'
 import { Venue } from '@daml.js/umbra-0.1.0/lib/Umbra/Roles/module'
 import { Side } from '@daml.js/umbra-0.1.0/lib/Umbra/Clearing/module'
 import { DeskEligibility } from '@daml.js/umbra-0.1.0/lib/Umbra/Compliance/module'
@@ -40,7 +40,7 @@ type Props = {
 function ActiveBody({ ctx, deskKey }: { ctx: Ctx; deskKey: DeskKey }) {
   const meta = DESKS.find((d) => d.key === deskKey)!
   const orders = ctx.useStreamQueries(Order)
-  const assets = ctx.useStreamQueries(Asset)
+  const holdings = ctx.useStreamQueries(Holding)
   const ledger = ctx.useLedger()
 
   const order = orders.contracts[0]?.payload
@@ -48,13 +48,13 @@ function ActiveBody({ ctx, deskKey }: { ctx: Ctx; deskKey: DeskKey }) {
   const sideColor = side === 'Buy' ? '#2B3AF2' : '#FF3D9A'
   const limitOp = side === 'Buy' ? '≤' : '≥'
 
-  // The desk's own holdings (PRIV-04 — Asset owner-scoped). Sum by symbol.
-  const bond = assets.contracts
-    .filter((c) => c.payload.symbol === BOND_SYMBOL)
-    .reduce((acc, c) => acc + Number(c.payload.quantity), 0)
-  const cash = assets.contracts
-    .filter((c) => c.payload.symbol === CASH_SYMBOL)
-    .reduce((acc, c) => acc + Number(c.payload.quantity), 0)
+  // The desk's own holdings (PRIV-04 — Holding owner-scoped). Sum by instrument.
+  const bond = holdings.contracts
+    .filter((c) => c.payload.instrument.id === BOND_SYMBOL)
+    .reduce((acc, c) => acc + Number(c.payload.amount), 0)
+  const cash = holdings.contracts
+    .filter((c) => c.payload.instrument.id === CASH_SYMBOL)
+    .reduce((acc, c) => acc + Number(c.payload.amount), 0)
 
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)

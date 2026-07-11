@@ -1,10 +1,10 @@
 // HoldingsPanel (UI-SPEC "02 — DESK VIEW", Right — Holdings, lines 165-166) — the desk's
-// OWN live BONDX/USDCx, summed from its own Assets. Rendered INSIDE the active desk's
-// ctx.DamlLedger provider, so `useStreamQueries(Asset)` streams only this desk's
-// holdings (PRIV-04 — Asset is owner-scoped; no privileged venue token / context here).
+// OWN live BONDX/USDCx, summed from its own Holdings. Rendered INSIDE the active desk's
+// ctx.DamlLedger provider, so `useStreamQueries(Holding)` streams only this desk's
+// holdings (PRIV-04 — Holding is owner-scoped; no privileged venue token / context here).
 // Daml numbers arrive as STRINGS → Number(...) before summing (RESEARCH Pitfall 2).
 import type { Ctx } from '../ledgerContexts'
-import { Asset } from '@daml.js/umbra-0.1.0/lib/Umbra/Asset/module'
+import { Holding } from '@daml.js/umbra-0.1.0/lib/Umbra/Holding/module'
 
 const BOND_SYMBOL = 'BONDX'
 const CASH_SYMBOL = 'USDCx'
@@ -55,15 +55,15 @@ function HoldingCell({
 }
 
 export default function HoldingsPanel({ ctx, bondAfter, cashAfter, fillColor }: Props) {
-  const assets = ctx.useStreamQueries(Asset)
+  const holdings = ctx.useStreamQueries(Holding)
 
-  // The desk's own holdings — sum by symbol (DeskColumn lines 51-56 pattern).
-  const bond = assets.contracts
-    .filter((c) => c.payload.symbol === BOND_SYMBOL)
-    .reduce((acc, c) => acc + Number(c.payload.quantity), 0)
-  const cash = assets.contracts
-    .filter((c) => c.payload.symbol === CASH_SYMBOL)
-    .reduce((acc, c) => acc + Number(c.payload.quantity), 0)
+  // The desk's own holdings — sum by instrument (DeskColumn lines 51-56 pattern).
+  const bond = holdings.contracts
+    .filter((c) => c.payload.instrument.id === BOND_SYMBOL)
+    .reduce((acc, c) => acc + Number(c.payload.amount), 0)
+  const cash = holdings.contracts
+    .filter((c) => c.payload.instrument.id === CASH_SYMBOL)
+    .reduce((acc, c) => acc + Number(c.payload.amount), 0)
 
   return (
     <div>

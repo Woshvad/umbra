@@ -8,7 +8,7 @@
 import { ctxFor, type Ctx, type DeskKey } from '../ledgerContexts'
 import { tokens, httpBaseUrlFor, wsBaseUrl, DESKS } from '../desks'
 import { Order, TradeConfirmation } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
-import { Asset } from '@daml.js/umbra-0.1.0/lib/Umbra/Asset/module'
+import { Holding } from '@daml.js/umbra-0.1.0/lib/Umbra/Holding/module'
 import OrderTicket from '../components/OrderTicket'
 import HoldingsPanel from '../components/HoldingsPanel'
 import FillCard from '../components/FillCard'
@@ -37,19 +37,19 @@ function DeskBody({ ctx, deskKey }: { ctx: Ctx; deskKey: DeskKey }) {
   // "→ {after} after settle" sub-line (BONDX in the fill-sign color). Daml numbers are
   // STRINGS → Number(...).
   const confirms = ctx.useStreamQueries(TradeConfirmation)
-  const assets = ctx.useStreamQueries(Asset)
+  const holdings = ctx.useStreamQueries(Holding)
   const tc = confirms.contracts[0]?.payload
 
   let bondAfter: number | undefined
   let cashAfter: number | undefined
   let fillColor: string | undefined
   if (tc) {
-    bondAfter = assets.contracts
-      .filter((c) => c.payload.symbol === BOND_SYMBOL)
-      .reduce((a, c) => a + Number(c.payload.quantity), 0)
-    cashAfter = assets.contracts
-      .filter((c) => c.payload.symbol === CASH_SYMBOL)
-      .reduce((a, c) => a + Number(c.payload.quantity), 0)
+    bondAfter = holdings.contracts
+      .filter((c) => c.payload.instrument.id === BOND_SYMBOL)
+      .reduce((a, c) => a + Number(c.payload.amount), 0)
+    cashAfter = holdings.contracts
+      .filter((c) => c.payload.instrument.id === CASH_SYMBOL)
+      .reduce((a, c) => a + Number(c.payload.amount), 0)
     fillColor = Number(tc.filledQty) > 0 ? '#2B3AF2' : '#FF3D9A'
   }
 

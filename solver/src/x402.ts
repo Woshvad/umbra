@@ -151,8 +151,14 @@ const MAX_HEADER_LEN = 8192
 // ── Pure envelope helpers ───────────────────────────────────────────────────
 
 // buildAccepts — the v1 field mapping, ISOLATED here (a v2 flip is this one function).
-// entry[0] = the real Canton Coin scheme (primary); entry[1] = the honestly-labeled
-// operator-custody USDCx self-settle scheme.
+// MD-04: the advertised accepts[] MUST match the configured backend's actual settle capability.
+//  • self       → only operator-custody USDCx Holdings can settle (`verify` rejects any non-USDCx
+//                 Holding as wrong_instrument), so advertise ONLY the USDCx-self entry. Advertising
+//                 an unpayable CantonCoin primary makes a spec-conformant client try accepts[0]
+//                 (CantonCoin) first and always get rejected — metered access looks broken.
+//  • canton-cc  → real $CC via the FTP facilitator, so advertise the CantonCoin scheme.
+//  • undefined  → legacy/no-backend callers (unit tests) keep the both-entries envelope
+//                 (Canton primary + USDCx-self second) for backward compatibility.
 export const buildAccepts = (
   opts: X402Options,
   req: { originalUrl: string },
@@ -193,6 +199,9 @@ export const buildAccepts = (
     extra: { custody: 'operator', instrument: 'USDCx' },
   }
 
+  // MD-04: advertise ONLY the scheme the configured backend can actually settle.
+  if (opts.backend === 'self') return [usdcxSelf]
+  if (opts.backend === 'canton-cc') return [canton]
   return [canton, usdcxSelf]
 }
 
@@ -262,6 +271,12 @@ export interface FacilitatorClient {
 export interface X402Options {
   // Default-OFF invariant: when false the gate is a byte-identical no-op.
   enabled: boolean
+  // MD-04 / CR-01: the settlement backend the gate is fronting. Drives (a) which accepts[]
+  // scheme is advertised (buildAccepts) and (b) whether payer AUTHENTICATION is REQUIRED (the
+  // `self` operator-custody backend has no on-ledger payer signature, so the caller MUST prove
+  // control of the fee source via an authenticated party token — see authenticatePayer). Absent
+  // ⇒ legacy no-backend behavior (both accepts entries; no auth enforced) for unit tests.
+  backend?: 'self' | 'canton-cc'
   network: string
   asset: string
   price: string // decimal fee string (e.g. '1.00'); atomic-encoded via toAtomic
@@ -412,6 +427,7 @@ export const createX402Gate = (
   const { facilitator, ...rest } = args
   const opts: X402Options = {
     enabled: rest.enabled,
+    backend: rest.backend,
     network: rest.network ?? '',
     asset: rest.asset ?? '',
     price: rest.price ?? '0',

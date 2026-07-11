@@ -99,6 +99,25 @@ describe('x402 wire helpers', () => {
     expect(accepts[1].extra).toMatchObject({ custody: 'operator', instrument: 'USDCx' })
   })
 
+  it('MD-04 — buildAccepts is backend-aware (self ⇒ USDCx-only; canton-cc ⇒ CantonCoin-only)', () => {
+    // self: only the operator-custody USDCx entry is payable, so it is the ONLY advertised scheme
+    // (no unpayable CantonCoin primary a conformant client would try first and always get rejected).
+    const self = buildAccepts(baseOpts({ backend: 'self' }), { originalUrl: '/round/R1/solve-preview' })
+    expect(self).toHaveLength(1)
+    expect(self[0].asset).toBe('USDCx')
+
+    // canton-cc: real $CC via the FTP facilitator ⇒ advertise the CantonCoin scheme only.
+    const cc = buildAccepts(baseOpts({ backend: 'canton-cc' }), { originalUrl: '/round/R1/solve-preview' })
+    expect(cc).toHaveLength(1)
+    expect(cc[0].asset).toBe('CantonCoin')
+
+    // no backend (legacy/tests): the both-entries envelope is preserved (Canton primary + USDCx).
+    const both = buildAccepts(baseOpts(), { originalUrl: '/round/R1/solve-preview' })
+    expect(both).toHaveLength(2)
+    expect(both[0].asset).toBe('CantonCoin')
+    expect(both[1].asset).toBe('USDCx')
+  })
+
   it('constructSelfPayment round-trips through decodePayment', () => {
     const header = constructSelfPayment({
       from: 'BankA::1220aaaa',

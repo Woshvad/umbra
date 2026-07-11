@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: Progress
-status: executing
-stopped_at: Completed 14-03-PLAN.md (x402 gate boot wiring + X402_* config + .env.example + 14-UAT.md — PAY-01 closed offline)
-last_updated: "2026-07-11T00:52:00.000Z"
-last_activity: 2026-07-11 -- Completed 14-03 (x402 gate wired into api.ts/index.ts; Phase 14 built 3/3)
+status: built
+stopped_at: Phase 14 built (3/3) + all gates passed — live UAT pending. Milestone v2.1 1/1 phases built. (x402 metered solver access; PAY-01 closed offline; code-review CRIT+HIGH+8 all fixed; security SECURED 16/16)
+last_updated: "2026-07-11T01:30:00.000Z"
+last_activity: 2026-07-11 -- Phase 14 built (3/3): PAY-01 x402 metered solver access. solver 351/351, §4 $100.00, tsc clean; code-review 10 findings (1 CRIT self-backend payer-spoofing + 1 HIGH charge-before-serve + 4 MED + 4 LOW) ALL fixed+re-tested; verify human_needed (4/4 offline + PAY-01; 4 live→14-UAT.md); security SECURED (16/16, 0 high/crit). Live $CC-on-DevNet → 14-UAT.md.
 progress:
   total_phases: 1
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
   completed_plans: 3
   percent: 100
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-25)
 
 **Core value:** The privacy money shot — three desks submit sealed orders blind to each other, an AI solver clears them at one uniform price ($100.00 on the §4 fixture), and the whole batch settles atomically in a single Canton transaction.
-**Current focus:** Phase 14 — agentic-payments-x402
+**Current focus:** Milestone v2.1 (Agentic Payments / x402) — Phase 14 built 3/3 · all gates passed · live UAT pending.
 
 ## Current Position
 
 Phase: 14 (agentic-payments-x402) — BUILT (3/3 plans; live UAT pending)
 Plan: 3 of 3 — COMPLETE
-Status: Phase 14 built 3/3 — PAY-01 closed offline; live gates → 14-UAT.md
+Status: Phase 14 BUILT 3/3 + all gates passed. Code-review 10 findings (1 CRIT self-backend payer-spoofing fund-seizure + 1 HIGH charge-before-serve + 4 MED + 4 LOW) ALL fixed+re-tested (authenticated payer via payer-auth.ts binding fee source to owner===authedParty; verify→serve→settle-only-on-2xx). Verify human_needed (4/4 offline criteria + PAY-01 DELIVERED+green; 4 live→14-UAT.md). Security SECURED (16/16 threats CLOSED, 0 high/crit). solver 351/351, §4 $100.00, tsc clean. Every commit woshvad, zero Claude attribution.
 Prev: 14-03 complete — x402 gate wired into api.ts (AppDeps.x402? optional DI, per-route on EXACTLY /solve-preview + /competing, DISABLED no-op default) + index.ts (X402_* config default-OFF, X402_FACILITATOR_KEY via SecretsProvider, createFacilitator→createX402Gate→buildDeps threading) + .env.example + 14-UAT.md. solver 331/331, §4 $100.00 (test_clears_at_100 ok), tsc clean of new errors (only the pre-existing idempotency.test.ts:193 deferred).
-Next: Phase 14 verification / live UAT (real x402 client end-to-end, self USDCx on DevNet, canton-cc real $CC = SV-sponsorship gate, GET /supported network/asset confirm — all in 14-UAT.md).
+Next: Milestone v2.1 at 1/1 phases BUILT. Remaining = live UAT only (real x402 client end-to-end, self USDCx settle on DevNet, canton-cc real $CC via FTP facilitator = SV-sponsorship gate, GET /supported net/asset id confirm — all in 14-UAT.md). Optional: /gsd-autonomous (no --only) runs the milestone-close ceremony.
 Last activity: 2026-07-11 -- Completed 14-03 (x402 gate boot wiring; Phase 14 built 3/3)
 
 ## Performance Metrics

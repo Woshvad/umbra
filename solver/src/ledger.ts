@@ -886,8 +886,17 @@ export const moveFee = async (
   const srcAmount = Number(src.createArgument.amount)
   if (!(srcAmount >= qty)) throw new Error('x402 fee: presented holding amount insufficient')
 
-  if (srcAmount === qty) {
+  // LO-03: compare amounts on INTEGER atomic units (2-dp minor units), never reconstructed
+  // floats — a raw `Number(decimal) === qty` on decoded v2 Decimals can drift for sub-unit fees
+  // (e.g. 0.29) and make the split-slice `.find` miss, throwing on a legitimate move.
+  const atomic = (x: number | string): number => Math.round(Number(x) * 100)
+
+  // Capture the set of cids present JUST BEFORE the final Reassign so its newly-created venue
+  // Holding is the unique cid that appears afterward (LO-01: the EXACT settlement contract).
+  let preReassignCids: Set<string>
+  if (atomic(srcAmount) === atomic(qty)) {
     // Full-amount move: a single operator-authority Reassign (the ForfeitBond precedent).
+    preReassignCids = beforeCids
     await exerciseChoice('Umbra.Holding:Holding', holdingCid, 'Reassign', { newOwner })
   } else {
     // Partial move: Split off exactly `qty` (Decimal STRING, Option-B), then Reassign the
@@ -900,20 +909,28 @@ export const moveFee = async (
         !beforeCids.has(c.contractId) &&
         c.createArgument.owner === srcOwner &&
         c.createArgument.instrument?.id === CASH_SYMBOL &&
-        Number(c.createArgument.amount) === qty,
+        atomic(c.createArgument.amount) === atomic(qty),
     )
     if (!slice) throw new Error('x402 fee: split slice not found')
+    preReassignCids = new Set(afterSplit.map((c) => c.contractId))
     await exerciseChoice('Umbra.Holding:Holding', slice.contractId, 'Reassign', { newOwner })
   }
 
-  // Confirm receipt: a `newOwner`-owned, unlocked USDCx Holding ≥ qty now exists (the same
-  // predicate shape verify uses). Return its cid as the secret-free settlement ref.
-  const after = await listHoldings()
-  const confirmed = after.find(
-    (h) => h.owner === newOwner && h.instrumentId === CASH_SYMBOL && !h.locked && h.amount >= qty,
+  // LO-01: the settlement ref is the EXACT newly-created venue-owned Holding from THIS Reassign —
+  // the unique USDCx cid owned by newOwner that did NOT exist before the Reassign. The old scan
+  // matched ANY pre-existing owner===newOwner Holding, so with the default payTo===operator (which
+  // already owns many USDCx Holdings) it returned an unrelated cid — a vacuous, non-auditable ref.
+  const after = await queryByEntity('Holding')
+  const moved = after.find(
+    (c) =>
+      !preReassignCids.has(c.contractId) &&
+      c.createArgument.owner === newOwner &&
+      c.createArgument.instrument?.id === CASH_SYMBOL &&
+      c.createArgument.lock == null &&
+      atomic(c.createArgument.amount) >= atomic(qty),
   )
-  if (!confirmed) throw new Error('x402 fee: settlement confirmation failed')
-  return `umbra-x402-${confirmed.contractId}`
+  if (!moved) throw new Error('x402 fee: settlement confirmation failed')
+  return `umbra-x402-${moved.contractId}`
 }
 
 // ════ ADJ-02: RFQ orchestration (post request → firm quote → list → accept→settle) ════

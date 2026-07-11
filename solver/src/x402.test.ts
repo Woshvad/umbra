@@ -354,6 +354,45 @@ describe('x402 gate middleware', () => {
     expect((await body(replay)).error).toBe(X402_REASON.nonce_replayed)
   })
 
+  it('HI-01 — settles ONLY on a 2xx handler response: a handler error never charges the payer', async () => {
+    const settle = vi.fn(async () => ({ settled: true, txRef: 'tx' }))
+    const fac: FacilitatorClient = { verify: async () => ({ valid: true }), settle }
+    const base = await start((app) => {
+      app.get('/solve', x402Gate(fac, baseOpts()), (_req, res) => {
+        // The wrapped handler fails AFTER payment verification (e.g. a bogus / expired round).
+        res.status(500).json({ error: 'boom' })
+      })
+    })
+    const xpay = constructSelfPayment({
+      from: 'BankA::1', to: 'venue::1', value: '100', holdingCid: 'cid-hi01',
+      network: 'canton:devnet', validBefore: futureTs(), nonce: 'n-hi01',
+    })
+    const r = await fetch(`${base}/solve`, { headers: { 'X-PAYMENT': xpay } })
+    expect(r.status).toBe(500)
+    expect(settle).not.toHaveBeenCalled() // NO fund movement on a failed handler (no charge-without-service)
+    expect(r.headers.get('x-payment-response')).toBeNull() // and no settlement header
+  })
+
+  it('HI-01 — a 2xx handler settles exactly once (verify→serve→settle) and burns the nonce', async () => {
+    const settle = vi.fn(async () => ({ settled: true, txRef: 'tx-1' }))
+    const fac: FacilitatorClient = { verify: async () => ({ valid: true }), settle }
+    const base = await start((app) =>
+      app.get('/solve', x402Gate(fac, baseOpts()), (_req, res) => res.json({ ok: true })),
+    )
+    const xpay = constructSelfPayment({
+      from: 'BankA::1', to: 'venue::1', value: '100', holdingCid: 'cid-hi01b',
+      network: 'canton:devnet', validBefore: futureTs(), nonce: 'n-hi01b',
+    })
+    const r = await fetch(`${base}/solve`, { headers: { 'X-PAYMENT': xpay } })
+    expect(r.status).toBe(200)
+    expect(settle).toHaveBeenCalledOnce()
+    expect(r.headers.get('x-payment-response')).toBeTruthy()
+    // The nonce is burned only AFTER a successful settle, so the identical replay is now rejected.
+    const replay = await fetch(`${base}/solve`, { headers: { 'X-PAYMENT': xpay } })
+    expect(replay.status).toBe(402)
+    expect((await body(replay)).error).toBe(X402_REASON.nonce_replayed)
+  })
+
   it('CR-01 — self backend rejects a spoofed `from` with no valid token (unauthorized_payer) and NEVER settles', async () => {
     const verify = vi.fn(async () => ({ valid: true })) // would pass if ever reached
     const settle = vi.fn(async () => ({ settled: true, txRef: 'x' }))

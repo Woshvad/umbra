@@ -413,8 +413,9 @@ export const x402Gate = (facilitator: FacilitatorClient, opts: X402Options): Req
     // Select the accepts entry matching the presented instrument (else the Canton primary).
     const chosen = requirements.find((a) => a.asset === p.instrument) ?? requirements[0]
 
-    // verify → settle, delegated to the injected facilitator. Every failure → send402; the
-    // gate never throws raw and never lets a token/key/raw-error reach the client (Pitfall 4).
+    // authenticate → verify → serve → settle-on-2xx, delegated to the injected facilitator. Every
+    // failure → send402; the gate never throws raw and never lets a token/key/raw-error reach the
+    // client (Pitfall 4). HI-01: settlement is the LAST step and only fires on a 2xx handler.
     void (async () => {
       try {
         // CR-01: the `self` operator-custody backend has NO on-ledger payer signature — the
@@ -434,27 +435,69 @@ export const x402Gate = (facilitator: FacilitatorClient, opts: X402Options): Req
           authedPayer = authed
         }
 
+        // HI-01: VERIFY only (no fund movement), then run the wrapped handler, and SETTLE
+        // (move funds) ONLY IF the handler responds 2xx. Settling before the handler charged the
+        // payer even when the handler then 404s/5xx'd (e.g. a bogus/expired round) — irreversible
+        // fee, no compute, no refund. verify is the cheap no-move pre-check; settle is now the
+        // LAST step, gated on a serviceable 2xx response.
         const verified = await facilitator.verify(chosen, payment, authedPayer)
         if (!verified.valid) return void send402(res, requirements, safeReason(verified.reason))
 
-        const settled = await facilitator.settle(chosen, payment)
-        if (!settled.settled) return void send402(res, requirements, X402_REASON.insufficient_funds)
-
-        // Success: burn the nonce + holdingCid so a resend is rejected, set the settlement
-        // header, then run the wrapped handler. MD-01: keep each spent entry alive until at
-        // least the payment's own validBefore so it can never be forgotten while replayable.
-        spentNonces.add(p.nonce, p.validBefore)
-        spentHoldings.add(p.holdingCid, p.validBefore)
-        res.setHeader(
-          'X-PAYMENT-RESPONSE',
-          encodePaymentResponse({
-            success: true,
-            transaction: settled.txRef,
-            network: opts.network,
-            // CR-01: report the AUTHENTICATED payer (self); the claimed `from` only for non-self.
-            payer: authedPayer ?? p.from,
-          }),
-        )
+        // Intercept the handler's terminal res.json to interpose settlement. A 2xx ⇒ settle, set
+        // the X-PAYMENT-RESPONSE header, burn the nonce/cid, then flush the body. A 4xx/5xx ⇒ do
+        // NOT settle (payer not charged) and flush the handler's error body unchanged. The send is
+        // DEFERRED until settle resolves so the header lands before the body is written.
+        const originalJson = res.json.bind(res)
+        let interposed = false
+        res.json = (bodyOut: unknown): Response => {
+          if (interposed) return originalJson(bodyOut)
+          interposed = true
+          const status = res.statusCode
+          if (!(status >= 200 && status < 300)) {
+            // Handler failed → charge nothing, move nothing. Flush the handler's response as-is.
+            return originalJson(bodyOut)
+          }
+          void (async () => {
+            try {
+              const settled = await facilitator.settle(chosen, payment)
+              if (!settled.settled) {
+                // Could not settle a serviceable response (e.g. the fee source was double-spent
+                // between verify and settle) → re-advertise 402; do NOT serve the metered body.
+                res.status(402)
+                return void originalJson({
+                  x402Version: 1,
+                  error: X402_REASON.insufficient_funds,
+                  accepts: requirements,
+                } satisfies PaymentRequirementsResponse)
+              }
+              // Success: burn the nonce + holdingCid so a resend is rejected. MD-01: keep each
+              // spent entry alive until at least the payment's own validBefore (never forgotten
+              // while replayable).
+              spentNonces.add(p.nonce, p.validBefore)
+              spentHoldings.add(p.holdingCid, p.validBefore)
+              res.setHeader(
+                'X-PAYMENT-RESPONSE',
+                encodePaymentResponse({
+                  success: true,
+                  transaction: settled.txRef,
+                  network: opts.network,
+                  // CR-01: report the AUTHENTICATED payer (self); claimed `from` only for non-self.
+                  payer: authedPayer ?? p.from,
+                }),
+              )
+              originalJson(bodyOut)
+            } catch {
+              // A settle throw AFTER a 2xx: re-advertise secret-free; the metered body is withheld.
+              res.status(402)
+              originalJson({
+                x402Version: 1,
+                error: X402_REASON.invalid_payload,
+                accepts: requirements,
+              } satisfies PaymentRequirementsResponse)
+            }
+          })()
+          return res
+        }
         next()
       } catch {
         // A facilitator throw is collapsed to a secret-free reason — never surfaced raw.

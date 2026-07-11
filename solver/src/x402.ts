@@ -91,6 +91,10 @@ export const X402_REASON = {
   payment_expired: 'payment_expired',
   nonce_replayed: 'nonce_replayed',
   invalid_holding: 'invalid_holding',
+  // LO-04: a previously-spent holdingCid re-presented within its replay-guard window. DISTINCT
+  // from invalid_holding ("never a valid fee source") so a client/operator can tell a replay
+  // apart from a genuinely bad cid (mirrors nonce_replayed vs invalid_payload).
+  holding_replayed: 'holding_replayed',
   insufficient_funds: 'insufficient_funds',
 } as const
 
@@ -301,7 +305,10 @@ const DEFAULT_NONCE_TTL_MS = 5 * 60 * 1000
 // multi-instance path (mirrors idempotency.ts's store note).
 interface TtlSet {
   has(value: string): boolean
-  add(value: string): void
+  // MD-01: `minExpiry` (a unix-ms floor) keeps an entry alive AT LEAST until the payment it
+  // guards can no longer be valid — so a nonce/cid is never TTL-evicted while its own payment
+  // is still within its validity window and thus replayable.
+  add(value: string, minExpiry?: number): void
 }
 
 const createTtlSet = (ttlMs: number, now: () => number): TtlSet => {
@@ -316,11 +323,12 @@ const createTtlSet = (ttlMs: number, now: () => number): TtlSet => {
       }
       return true
     },
-    add(value) {
+    add(value, minExpiry) {
       const t = now()
       // Opportunistic sweep of expired entries to bound memory.
       for (const [k, expiry] of seen) if (t > expiry) seen.delete(k)
-      seen.set(value, t + ttlMs)
+      // MD-01: expire no sooner than the payment's own validity floor (default TTL otherwise).
+      seen.set(value, Math.max(t + ttlMs, minExpiry ?? 0))
     },
   }
 }
@@ -340,6 +348,10 @@ const safeReason = (reason?: string): X402Reason =>
 export const x402Gate = (facilitator: FacilitatorClient, opts: X402Options): RequestHandler => {
   const now = opts.now ?? Date.now
   const ttlMs = opts.nonceTtlMs ?? DEFAULT_NONCE_TTL_MS
+  // MD-01: the acceptance window for a payment's validBefore. A payment may not declare a
+  // validity farther out than this, so a spent nonce/cid (kept alive until validBefore) is
+  // never TTL-evicted while still replayable.
+  const maxTimeoutMs = (opts.maxTimeoutSeconds ?? 60) * 1000
   const spentNonces = createTtlSet(ttlMs, now)
   const spentHoldings = createTtlSet(ttlMs, now)
 
@@ -366,9 +378,16 @@ export const x402Gate = (facilitator: FacilitatorClient, opts: X402Options): Req
 
     // Expiry + replay guards (Pitfall 5) — cheap synchronous checks before any settle.
     if (!(p.validBefore > now())) return void send402(res, requirements, X402_REASON.payment_expired)
+    // MD-01: reject a validBefore beyond the acceptance window. Without this a client could
+    // declare validity arbitrarily far out; once the spent-set TTL evicts the nonce/cid the
+    // IDENTICAL header would replay while the payment is still "valid".
+    if (p.validBefore > now() + maxTimeoutMs) {
+      return void send402(res, requirements, X402_REASON.payment_expired)
+    }
     if (spentNonces.has(p.nonce)) return void send402(res, requirements, X402_REASON.nonce_replayed)
     if (spentHoldings.has(p.holdingCid)) {
-      return void send402(res, requirements, X402_REASON.invalid_holding)
+      // LO-04: a re-presented spent holdingCid is a REPLAY, not an invalid fee source.
+      return void send402(res, requirements, X402_REASON.holding_replayed)
     }
 
     // Select the accepts entry matching the presented instrument (else the Canton primary).
@@ -385,9 +404,10 @@ export const x402Gate = (facilitator: FacilitatorClient, opts: X402Options): Req
         if (!settled.settled) return void send402(res, requirements, X402_REASON.insufficient_funds)
 
         // Success: burn the nonce + holdingCid so a resend is rejected, set the settlement
-        // header, then run the wrapped handler.
-        spentNonces.add(p.nonce)
-        spentHoldings.add(p.holdingCid)
+        // header, then run the wrapped handler. MD-01: keep each spent entry alive until at
+        // least the payment's own validBefore so it can never be forgotten while replayable.
+        spentNonces.add(p.nonce, p.validBefore)
+        spentHoldings.add(p.holdingCid, p.validBefore)
         res.setHeader(
           'X-PAYMENT-RESPONSE',
           encodePaymentResponse({

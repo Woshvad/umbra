@@ -300,6 +300,60 @@ describe('x402 gate middleware', () => {
     expect((await body(replay)).error).toBe(X402_REASON.nonce_replayed)
   })
 
+  it('LO-04 — a re-presented spent holdingCid returns holding_replayed (distinct from invalid_holding)', async () => {
+    const base = await start((app) => {
+      app.get('/solve', x402Gate(okFacilitator(), baseOpts()), (_req, res) => res.json({ ran: true }))
+    })
+    const first = constructSelfPayment({
+      from: 'BankA::1', to: 'venue::1', value: '100', holdingCid: 'cid-shared',
+      network: 'canton:devnet', validBefore: futureTs(), nonce: 'n-1',
+    })
+    expect((await fetch(`${base}/solve`, { headers: { 'X-PAYMENT': first } })).status).toBe(200)
+    // SAME holdingCid, a FRESH nonce → the holding is already spent → holding_replayed (not invalid_holding).
+    const second = constructSelfPayment({
+      from: 'BankA::1', to: 'venue::1', value: '100', holdingCid: 'cid-shared',
+      network: 'canton:devnet', validBefore: futureTs(), nonce: 'n-2',
+    })
+    const r = await fetch(`${base}/solve`, { headers: { 'X-PAYMENT': second } })
+    expect(r.status).toBe(402)
+    expect((await body(r)).error).toBe(X402_REASON.holding_replayed)
+  })
+
+  it('MD-01 — rejects a validBefore beyond the acceptance window (payment_expired)', async () => {
+    const base = await start((app) => {
+      app.get('/solve', x402Gate(okFacilitator(), baseOpts({ maxTimeoutSeconds: 60 })), (_req, res) => res.json({ ran: true }))
+    })
+    const p = constructSelfPayment({
+      from: 'BankA::1', to: 'venue::1', value: '100', holdingCid: 'cid-far',
+      network: 'canton:devnet', validBefore: Date.now() + 3_600_000, nonce: 'n-far',
+    })
+    const r = await fetch(`${base}/solve`, { headers: { 'X-PAYMENT': p } })
+    expect(r.status).toBe(402)
+    expect((await body(r)).error).toBe(X402_REASON.payment_expired)
+  })
+
+  it('MD-01 — a spent nonce is NOT forgotten before its validBefore, even past the base TTL', async () => {
+    let t = 1_000_000
+    const clock = (): number => t
+    // A tiny 100ms base TTL: without the MD-01 floor the nonce would be evicted almost immediately.
+    const gate = x402Gate(okFacilitator(), baseOpts({ now: clock, nonceTtlMs: 100, maxTimeoutSeconds: 60 }))
+    const base = await start((app) => app.get('/solve', gate, (_req, res) => res.json({ ran: true })))
+
+    const validBefore = t + 50_000 // within the 60s acceptance window, far beyond the 100ms TTL
+    const p = constructSelfPayment({
+      from: 'BankA::1', to: 'venue::1', value: '100', holdingCid: 'cid-md01',
+      network: 'canton:devnet', validBefore, nonce: 'n-md01',
+    })
+    expect((await fetch(`${base}/solve`, { headers: { 'X-PAYMENT': p } })).status).toBe(200)
+
+    // Advance the clock well past the base TTL (100ms) but BEFORE validBefore: the nonce must
+    // still be remembered, so the identical replay is caught (not silently re-accepted).
+    t += 10_000
+    const replay = await fetch(`${base}/solve`, { headers: { 'X-PAYMENT': p } })
+    expect(replay.status).toBe(402)
+    expect((await body(replay)).error).toBe(X402_REASON.nonce_replayed)
+  })
+
   it('secret sweep — a facilitator/Authorization sentinel never lands in a 402 body or X-PAYMENT-RESPONSE', async () => {
     const SENTINEL = 'SENTINEL-FACILITATOR-KEY-do-not-leak-9f3c2a'
     // A misbehaving facilitator that tries to leak a secret through its reason string:

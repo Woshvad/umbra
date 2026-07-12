@@ -65,9 +65,10 @@ and upgrade to OIDC later. That means the stack ports with *minimal* change.
 - **Multi-party (HIGH):** one participant hosts many parties; parties are decoupled from users.
   Since we self-host, **we are the participant admin** → allocate operator + 3 desks + compliance
   and mint per-party tokens exactly like LocalNet.
-- **Seaport (LOW / not found):** no authoritative public docs; name collides with OpenSea's
-  Seaport. Likely UI-/proxy-gated with tokens issued inside the IDE. **Must confirm** with the
-  organizers whether it exposes a raw JSON Ledger API + multi-party to external apps.
+- **Seaport (NOW CONFIRMED, 2026-07 — see §2.5):** the FiveNorth "Seaport" sandbox validator
+  DOES expose the raw JSON Ledger API v2 + OIDC client-credentials to external apps. The earlier
+  "not found" was because docs are private (handed out as a PDF). Route B is reachable — but the
+  shared credential is rights-capped (§2.5).
 - **3-party privacy (HIGH):** all 5 parties on one self-hosted validator works; app-level Daml
   disclosure privacy holds ("each desk sees only its own fill"). **Caveat:** co-hosted parties
   share the node's trust boundary — true *cross-node* privacy between desks needs 3 separate
@@ -75,21 +76,47 @@ and upgrade to OIDC later. That means the stack ports with *minimal* change.
 
 ---
 
+## 2.5 Route B CONFIRMED — FiveNorth "Seaport" DevNet sandbox (2026-07, verified live)
+
+The organizers provided direct Ledger-API access to the shared Seaport sandbox validator. All
+of this was **verified live** with read + write probes:
+
+- **Endpoints:** REST `https://ledger-api.validator.devnet.sandbox.fivenorth.io/` (JSON Ledger
+  API v2, `/v2/...`); WS `wss://ledger-api.validator.devnet.sandbox.fivenorth.io`.
+- **Auth (Authentik OIDC client-credentials):** POST `https://auth.sandbox.fivenorth.io/application/o/token/`
+  with `grant_type=client_credentials`, `client_id=validator-devnet-m2m`, the client secret,
+  `audience=validator-devnet-m2m`, `scope=daml_ledger_api`. Returns an 8h RS256 Bearer. The secret
+  lives ONLY in the gitignored `solver/.env.devnet` (env `SEAPORT_SECRET`), never committed.
+- **Verified working:** token exchange → 200; `/v2/state/ledger-end`, `/v2/parties` (10k+),
+  `/v2/users` (300), `/v2/packages` (630, umbra not yet present); **party allocation → 200**;
+  **user-rights grant → 200** (admin capability confirmed). The m2m user is `id 6`
+  (`otc-canton-fund-oauth`), participant namespace `1220a14ca128…`.
+- **BLOCKER (provisioning, not code): the shared m2m user is at Canton's 1000-user-rights cap
+  (999/1000).** Our 5 parties (operator + bankA/B/C + compliance) need 5 more `CanActAs` rights
+  and don't fit. This one credential is shared by every team, saturated with their parties.
+- **Fix:** a **dedicated per-team m2m client** from the organizers (fresh user, rights headroom).
+  Per-desk clients would additionally restore per-desk structural privacy on DevNet (the single
+  shared token acts as one broad identity, so it can't scope a desk's browser to its own data).
+- **Built + waiting:** `scripts/devnet/up.mjs` runs the entire Route-B bring-up (parties → grant
+  → DAR upload by explicit package id → §4 seed → write `solver/.env.devnet`). It runs as-is the
+  moment a credential with rights headroom exists. Remaining code tweak: `solver/src/auth.ts`
+  needs an Authentik token-URL + `audience` param (small; scoped) for the solver to close/settle.
+
+---
+
 ## 3. The two routes to "everything on DevNet"
 
-- **Route A — self-host our own Splice validator (reliable, recommended).** Full control:
-  our JSON API (localhost), our 5 parties, our auth (can keep unsafe or go OIDC). Our solver /
-  web / scripts port with minimal change. Cost: real infra + the **2–7 day allowlist wait** +
-  a sponsor SV + a static egress IP.
-- **Route B — use the shared Encode/Seaport DevNet validator (fast IF it works).** Zero infra,
-  but UNCONFIRMED whether it exposes the JSON Ledger API + multi-party to our backend. If it's
-  UI-only, our custom solver + web can't run against it → Route B can't deliver "everything".
+- **Route B — FiveNorth Seaport sandbox (fast; CONFIRMED reachable, §2.5).** Zero infra, real
+  DevNet, JSON API + OIDC verified. Gated ONLY on a per-team credential (the shared one is
+  rights-capped). This is now the preferred route pending that one organizer ask.
+- **Route A — self-host our own Splice validator (fallback, full control).** Our JSON API
+  (localhost), our 5 parties, our auth. Our solver/web/scripts port with minimal change. Cost:
+  real infra + the **2–7 day allowlist wait** + a sponsor SV + a static egress IP. Use if the
+  organizers can't provision a per-team client.
 
-**Decision needed from the organizers (Discord):**
-1. Does the hackathon **sponsor validator onboarding** — i.e. provide a sponsor SV URL (and help
-   get an egress IP allowlisted)? (unblocks Route A)
-2. Does the **Seaport / shared validator expose the JSON Ledger API v2 + multi-party** to an
-   external app, with obtainable per-party tokens? (unblocks Route B)
+**One ask to the organizers (Discord):** provision a **dedicated per-team m2m client** (ideally
+a few — one per desk) for the FiveNorth sandbox, since the shared `validator-devnet-m2m` user is
+at the 1000-rights cap. That unblocks Route B end to end.
 
 ---
 
@@ -127,9 +154,13 @@ the **Splice version** to pin.
 
 ## 6. Bottom line
 
-"Absolutely everything on DevNet" is achievable via **Route A (self-hosted Splice validator)** —
-and the app ports over with little code change because we stay the participant admin with all 5
-parties on one node. It is **not** something the code alone unblocks: it needs a sponsor SV, a
-static egress IP (2–7 day allowlist), and validator infra. Route B (Seaport) is faster only if it
-exposes the ledger API, which is unconfirmed. Confirm the two organizer questions in §3 to pick
-the route.
+"Absolutely everything on DevNet" is achievable and **Route B (FiveNorth Seaport sandbox) is the
+fast path** — verified live: the JSON Ledger API v2 + OIDC client-credentials are reachable, party
+allocation and admin rights work, our DAR is uploadable, and the full bring-up tooling
+(`scripts/devnet/up.mjs`) is built and waiting. The ONLY blocker is that the **shared**
+`validator-devnet-m2m` user is at Canton's **1000-user-rights cap** (999/1000), so our 5 parties
+can't attach — a **per-team credential** from the organizers unblocks it end to end (and per-desk
+clients restore the browser privacy proof on DevNet). If that credential can't be provided,
+**Route A (self-hosted Splice validator)** is the fallback, at the cost of a sponsor SV + a static
+egress IP (2–7 day allowlist) + validator infra. Meanwhile the local stack remains the complete,
+airtight demo.

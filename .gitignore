@@ -6,6 +6,7 @@
 # (The committed *.example templates document the shape without secrets.)
 .env.devnet
 .env.prod
+scripts/.devnet.json
 
 # --- Daml build artifacts ---
 .daml/

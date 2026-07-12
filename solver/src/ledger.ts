@@ -42,7 +42,11 @@ export type RoundStatus = 'Open' | 'Closed' | 'Cleared' | 'Settled'
 
 const BOND_SYMBOL = 'BONDX'
 const CASH_SYMBOL = 'USDCx'
-const PKG = '#umbra' // package-name reference form for templateIds
+// Package reference for templateIds. Defaults to the package-NAME form `#umbra` (LocalNet,
+// where our umbra pkg is the only one by that name). On a SHARED validator (DevNet) a rival
+// builder could upload a package also named `umbra`, making `#umbra` ambiguous — so DevNet
+// pins the EXPLICIT package id via UMBRA_PACKAGE_ID (written by scripts/devnet/up.mjs).
+const PKG = process.env.UMBRA_PACKAGE_ID ?? '#umbra'
 
 // AUCT-04 — the LABELED benchmark reference price (a config STUB ≈ pre-auction mid).
 // Passed into every Round.Clear as the `referencePrice` choice arg (a choice body

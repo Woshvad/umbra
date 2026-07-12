@@ -67,15 +67,23 @@ const jwks = (): ReturnType<typeof createRemoteJWKSet> => {
 // header we log, never echoed); a non-2xx throws a SECRET-FREE error (status only — the
 // response text could contain internals, so it is NOT interpolated).
 export const acquireToken = async (): Promise<string> => {
-  const res = await fetch(`${oidcIssuer()}/protocol/openid-connect/token`, {
+  // Token endpoint: default to the Keycloak convention `${issuer}/protocol/openid-connect/token`
+  // (byte-unchanged), OR an explicit OIDC_TOKEN_URL for IDPs with a different path — e.g. the
+  // FiveNorth/Seaport DevNet sandbox runs Authentik at `${issuer}/application/o/token/`.
+  const tokenUrl = process.env.OIDC_TOKEN_URL || `${oidcIssuer()}/protocol/openid-connect/token`
+  const form: Record<string, string> = {
+    grant_type: 'client_credentials',
+    client_id: oidcClientId(),
+    client_secret: oidcClientSecret(), // server-side ONLY; never returned/logged
+    scope: 'daml_ledger_api',
+  }
+  // Some IDPs (Authentik) require an explicit `audience` on the token request so the issued
+  // token's `aud` matches what the participant expects. Additive: unset ⇒ unchanged (Keycloak).
+  if (process.env.OIDC_AUDIENCE) form.audience = process.env.OIDC_AUDIENCE
+  const res = await fetch(tokenUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'client_credentials',
-      client_id: oidcClientId(),
-      client_secret: oidcClientSecret(), // server-side ONLY; never returned/logged
-      scope: 'daml_ledger_api',
-    }),
+    body: new URLSearchParams(form),
   })
   if (!res.ok) {
     // Secret-free: the client_secret is in the request body we just sent, NOT in this

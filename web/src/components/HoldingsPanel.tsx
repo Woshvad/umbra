@@ -4,7 +4,7 @@
 // holdings (PRIV-04 — Holding is owner-scoped; no privileged venue token / context here).
 // Daml numbers arrive as STRINGS → Number(...) before summing (RESEARCH Pitfall 2).
 import type { Ctx } from '../ledgerContexts'
-import { Holding } from '@daml.js/umbra-0.1.0/lib/Umbra/Holding/module'
+import { Holding } from '@daml.js/umbra-sealed-auction-0.1.0/lib/Umbra/Holding/module'
 
 const BOND_SYMBOL = 'BONDX'
 const CASH_SYMBOL = 'USDCx'

@@ -3,7 +3,7 @@
 // by the phase map. Phase-3 reachable phases: Open (shows `OPEN · NN SEALED`, NN =
 // sealedOrderCount zero-padded) + a seeded Cleared/Settled read-only. The phase is
 // driven by the seeded Round.status + RoundStats count (UI-01).
-import type { RoundStatus } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
+import type { RoundStatus } from '@daml.js/umbra-sealed-auction-0.1.0/lib/Umbra/Auction/module'
 
 export type Phase = 'open' | 'running' | 'solving' | 'cleared' | 'settling' | 'settled'
 

@@ -25,7 +25,7 @@ const repoRoot = resolve(__dirname, '..', '..')
 const PROVIDER = 'http://localhost:3975'
 const USER = 'http://localhost:2975'
 const SV = 'http://localhost:4975'
-const PKG = '#umbra'
+const PKG = '#umbra-sealed-auction'
 const RID = 'XR1'
 const parties = JSON.parse(readFileSync(resolve(repoRoot, 'daml', 'parties.json'), 'utf8'))
 const op = parties.operator
@@ -52,7 +52,7 @@ const acsOf = async (base, token, party) => {
   })
   return (Array.isArray(arr) ? arr : [])
     .map((e) => e?.contractEntry?.JsActiveContract?.createdEvent)
-    .filter((c) => c && c.packageName === 'umbra')
+    .filter((c) => c && c.packageName === 'umbra-sealed-auction')
 }
 const create = (base, token, actAs, tmpl, args) =>
   api(base, token, 'POST', '/v2/commands/submit-and-wait', {

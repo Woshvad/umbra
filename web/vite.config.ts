@@ -26,10 +26,20 @@ export default defineConfig({
         ws: true,
         rewrite: (p) => p.replace(/^\/cn\/sv/, ''),
       },
+      // DevNet (FiveNorth "Seaport" sandbox): the browser cannot call the validator
+      // directly (it emits no CORS headers for :5173), so route the desks' per-party
+      // reads through Vite. tokens.json `base` = '/cn/devnet' selects this in DevNet mode.
+      '/cn/devnet': {
+        target: 'https://ledger-api.validator.devnet.sandbox.fivenorth.io',
+        changeOrigin: true,
+        secure: true,
+        ws: true,
+        rewrite: (p) => p.replace(/^\/cn\/devnet/, ''),
+      },
       '/v2': { target: 'http://localhost:3975', changeOrigin: true, ws: true },
     },
   },
-  // The generated @daml.js/umbra-0.1.0 bindings are CommonJS (no "type":"module";
+  // The generated @daml.js/umbra-sealed-auction-0.1.0 bindings are CommonJS (no "type":"module";
   // each module assigns `exports.X = ...` dynamically) AND each `module.js` does
   // `require('@daml.js/<hash>')` for transitive daml-prim/stdlib bindings + sibling
   // `require('../../Umbra/*/module')`. In dev, Vite must PRE-BUNDLE the exact DEEP
@@ -44,16 +54,16 @@ export default defineConfig({
   // the generated bindings reference them.
   optimizeDeps: {
     include: [
-      '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module',
-      '@daml.js/umbra-0.1.0/lib/Umbra/Asset/module',
-      '@daml.js/umbra-0.1.0/lib/Umbra/Roles/module',
-      '@daml.js/umbra-0.1.0/lib/Umbra/Clearing/module',
+      '@daml.js/umbra-sealed-auction-0.1.0/lib/Umbra/Auction/module',
+      '@daml.js/umbra-sealed-auction-0.1.0/lib/Umbra/Asset/module',
+      '@daml.js/umbra-sealed-auction-0.1.0/lib/Umbra/Roles/module',
+      '@daml.js/umbra-sealed-auction-0.1.0/lib/Umbra/Clearing/module',
       // Phase-11 (11-05) template surfaces the desk plane now imports: the bond
       // migrated Asset → Holding + the COMP-01 DeskEligibility credential. Deep
       // subpaths MUST be pre-bundled here or their named exports come back undefined
       // in dev (see the note above) → useStreamQueries(undefined) throws → blank root.
-      '@daml.js/umbra-0.1.0/lib/Umbra/Holding/module',
-      '@daml.js/umbra-0.1.0/lib/Umbra/Compliance/module',
+      '@daml.js/umbra-sealed-auction-0.1.0/lib/Umbra/Holding/module',
+      '@daml.js/umbra-sealed-auction-0.1.0/lib/Umbra/Compliance/module',
       '@daml/ledger',
       '@daml/types',
     ],
@@ -61,7 +71,11 @@ export default defineConfig({
   build: {
     commonjsOptions: {
       // Allow the CJS interop transform to reach the linked (file:) bindings package.
-      include: [/daml\.js\/umbra-0\.1\.0/, /node_modules/],
+      // Match ANY daml.js package (not one hard-coded name) so a package RENAME — e.g.
+      // umbra → umbra-sealed-auction, forced by a name collision on the shared DevNet
+      // validator — cannot silently break the build with
+      // "<Template> is not exported by .../module.js".
+      include: [/daml\.js\//, /node_modules/],
     },
   },
 })

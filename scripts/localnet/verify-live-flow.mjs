@@ -17,7 +17,7 @@ const tokens = JSON.parse(readFileSync(resolve(repoRoot, 'web', 'src', 'tokens.j
 const parties = JSON.parse(readFileSync(resolve(repoRoot, 'daml', 'parties.json'), 'utf8'))
 const op = parties.operator
 const admin = mintJwt('ledger-api-user')
-const PKG = '#umbra'
+const PKG = '#umbra-sealed-auction'
 const SOLVER = process.env.SOLVER_URL ?? 'http://localhost:4100'
 const baseToUrl = { '/cn/app-user': 'http://localhost:2975', '/cn/sv': 'http://localhost:4975', '': 'http://localhost:3975' }
 const urlFor = (k) => baseToUrl[tokens[k].base ?? ''] ?? 'http://localhost:3975'
@@ -36,7 +36,7 @@ const entityOf = (c) => c.templateId.split(':').pop()
 const acsOf = async (base, token, party) => {
   const { offset } = await api(base, token, 'GET', '/v2/state/ledger-end')
   const arr = await api(base, token, 'POST', '/v2/state/active-contracts', { filter: { filtersByParty: { [party]: {} } }, verbose: true, activeAtOffset: offset })
-  return (Array.isArray(arr) ? arr : []).map((e) => e?.contractEntry?.JsActiveContract?.createdEvent).filter((c) => c && c.packageName === 'umbra')
+  return (Array.isArray(arr) ? arr : []).map((e) => e?.contractEntry?.JsActiveContract?.createdEvent).filter((c) => c && c.packageName === 'umbra-sealed-auction')
 }
 const sj = (url, token, body) => fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json())
 

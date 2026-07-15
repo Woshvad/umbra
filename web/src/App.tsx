@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react'
 import { ctxA, type DeskKey } from './ledgerContexts'
 import { tokens, httpBaseUrlFor, wsBaseUrl } from './desks'
-import { Round, RoundStats } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
+import { Round, RoundStats } from '@daml.js/umbra-sealed-auction-0.1.0/lib/Umbra/Auction/module'
 import Header from './components/Header'
 import Nav, { type Screen } from './components/Nav'
 import { phaseFromStatus, type Phase } from './components/StatusIndicator'

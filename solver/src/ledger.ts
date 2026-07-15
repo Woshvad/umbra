@@ -46,11 +46,11 @@ const CASH_SYMBOL = 'USDCx'
 // where our umbra pkg is the only one by that name). On a SHARED validator (DevNet) a rival
 // builder could upload a package also named `umbra`, making `#umbra` ambiguous — so DevNet
 // pins the EXPLICIT package id via UMBRA_PACKAGE_ID (written by scripts/devnet/up.mjs).
-const PKG = process.env.UMBRA_PACKAGE_ID ?? '#umbra'
+const PKG = process.env.UMBRA_PACKAGE_ID ?? '#umbra-sealed-auction'
 // The package NAME the ACS reader matches on (createdEvent.packageName). Pairs with PKG:
 // LocalNet publishes as `umbra`; on the shared DevNet validator that name is taken by an
 // unrelated team, so we publish as `umbra-sealed-auction` and set UMBRA_PACKAGE_NAME to match.
-const PKG_NAME = process.env.UMBRA_PACKAGE_NAME ?? 'umbra'
+const PKG_NAME = process.env.UMBRA_PACKAGE_NAME ?? 'umbra-sealed-auction'
 
 // AUCT-04 — the LABELED benchmark reference price (a config STUB ≈ pre-auction mid).
 // Passed into every Round.Clear as the `referencePrice` choice arg (a choice body

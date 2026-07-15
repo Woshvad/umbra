@@ -26,6 +26,7 @@
 // token against that desk's OWN node base. Privacy stays enforced at the wire.
 import { useEffect, useState, type CSSProperties } from 'react'
 import { ctxA, ctxB, ctxC, type Ctx, type DeskKey } from '../ledgerContexts'
+import { UMBRA_PACKAGE_NAME } from '../ledger/v2react'
 import { tokens, httpBaseUrlFor, wsBaseUrl, DESKS } from '../desks'
 import {
   getStageOffsets,
@@ -94,7 +95,7 @@ export const ordersFromAcs = (rows: unknown[]): OrderRead[] =>
     .map((e: any) => e?.contractEntry?.JsActiveContract?.createdEvent)
     .filter(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (c: any) => !!c && c.packageName === 'umbra' && entityOf(String(c.templateId)) === 'Order',
+      (c: any) => !!c && c.packageName === UMBRA_PACKAGE_NAME && entityOf(String(c.templateId)) === 'Order',
     )
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .map((c: any): OrderRead | undefined => {

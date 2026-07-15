@@ -6,7 +6,7 @@
 // 108px tabular-nums numeral, zero-padded to 2 digits.
 import { ctxA } from '../ledgerContexts'
 import { tokens, httpBaseUrlFor, wsBaseUrl } from '../desks'
-import { RoundStats } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
+import { RoundStats } from '@daml.js/umbra-sealed-auction-0.1.0/lib/Umbra/Auction/module'
 
 function SpineBody({ fallback }: { fallback: number }) {
   const stats = ctxA.useStreamQueries(RoundStats)

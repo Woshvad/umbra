@@ -72,6 +72,13 @@ const v2 = async (baseUrl: string, token: string, path: string, body?: unknown):
   return res.status === 204 ? undefined : res.json()
 }
 
+// The Daml package NAME our contracts carry (createdEvent.packageName). Configurable so a
+// package rename cannot silently render an EMPTY book: the shared DevNet validator already
+// had an unrelated team's `umbra`, forcing ours to `umbra-sealed-auction`. A hard-coded name
+// here fails silently (every contract filtered out) rather than loudly — hence the env knob.
+export const UMBRA_PACKAGE_NAME: string =
+  (import.meta.env.VITE_UMBRA_PACKAGE_NAME as string | undefined) ?? 'umbra-sealed-auction'
+
 const fetchAcs = async (baseUrl: string, token: string, party: string): Promise<RawCreated[]> => {
   const end = (await v2(baseUrl, token, '/v2/state/ledger-end')) as { offset: number }
   const arr = (await v2(baseUrl, token, '/v2/state/active-contracts', {
@@ -81,7 +88,7 @@ const fetchAcs = async (baseUrl: string, token: string, party: string): Promise<
   })) as unknown[]
   return (Array.isArray(arr) ? arr : [])
     .map((e: any) => e?.contractEntry?.JsActiveContract?.createdEvent)
-    .filter((c: any): c is RawCreated => !!c && c.packageName === 'umbra')
+    .filter((c: any): c is RawCreated => !!c && c.packageName === UMBRA_PACKAGE_NAME)
 }
 
 // v2 returns Daml Numeric zero-padded to its scale ("101.0" → "101.0000000000").

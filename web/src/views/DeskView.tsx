@@ -7,8 +7,8 @@
 // holds only the desk's own credential — no privileged venue token / context anywhere.
 import { ctxFor, type Ctx, type DeskKey } from '../ledgerContexts'
 import { tokens, httpBaseUrlFor, wsBaseUrl, DESKS } from '../desks'
-import { Order, TradeConfirmation } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
-import { Holding } from '@daml.js/umbra-0.1.0/lib/Umbra/Holding/module'
+import { Order, TradeConfirmation } from '@daml.js/umbra-sealed-auction-0.1.0/lib/Umbra/Auction/module'
+import { Holding } from '@daml.js/umbra-sealed-auction-0.1.0/lib/Umbra/Holding/module'
 import OrderTicket from '../components/OrderTicket'
 import HoldingsPanel from '../components/HoldingsPanel'
 import FillCard from '../components/FillCard'

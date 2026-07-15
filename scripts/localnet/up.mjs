@@ -77,7 +77,7 @@ if ((await status(`${PROVIDER}/readyz`)) !== 200) {
 console.log('  ✓ participants up (:3975/:2975/:4975)')
 
 // ── 2. DAR ──────────────────────────────────────────────────────────────────────
-const DAR = resolve(repoRoot, 'daml', '.daml', 'dist', 'umbra-0.1.0.dar')
+const DAR = resolve(repoRoot, 'daml', '.daml', 'dist', 'umbra-sealed-auction-0.1.0.dar')
 if (!existsSync(DAR)) {
   console.log('▸ building DAR (daml build)')
   // `daml` must be on PATH. `bash -lc` sources the login profile, which on a typical box

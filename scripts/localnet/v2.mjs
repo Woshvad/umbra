@@ -15,7 +15,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(__dirname, '..', '..')
 
 export const PARTICIPANT = process.env.LOCALNET_JSON_API ?? 'http://localhost:3975'
-export const PKG = '#umbra' // package-name reference form
+export const PKG = '#umbra-sealed-auction' // package-name reference form
 export const parties = JSON.parse(readFileSync(resolve(repoRoot, 'daml', 'parties.json'), 'utf8'))
 export const adminToken = mintJwt(process.env.LOCALNET_ADMIN_USER ?? 'ledger-api-user')
 
@@ -73,7 +73,7 @@ export const queryAcs = async (party, token = adminToken) => {
   const arr = await r.json()
   return (Array.isArray(arr) ? arr : [])
     .map((e) => e?.contractEntry?.JsActiveContract?.createdEvent)
-    .filter((c) => c && c.packageName === 'umbra')
+    .filter((c) => c && c.packageName === 'umbra-sealed-auction')
 }
 
 // Short entity name from a templateId ("…:Umbra.Auction:Round" → "Round").

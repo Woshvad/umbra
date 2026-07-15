@@ -5,7 +5,7 @@
 // Number(...) (RESEARCH Pitfall 2). Empty state renders the verbatim comp paragraph.
 import type { ReactNode } from 'react'
 import type { Ctx, DeskKey } from '../ledgerContexts'
-import { Order, TradeConfirmation } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
+import { Order, TradeConfirmation } from '@daml.js/umbra-sealed-auction-0.1.0/lib/Umbra/Auction/module'
 
 type Props = {
   ctx: Ctx

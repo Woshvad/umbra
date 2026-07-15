@@ -175,5 +175,28 @@ const envDevnet = [
 ].join('\n')
 writeFileSync(resolve(repoRoot, 'solver', '.env.devnet'), envDevnet)
 writeFileSync(resolve(repoRoot, 'daml', 'parties.json'), JSON.stringify({ operator: op, bankA: P.bankA, bankB: P.bankB, bankC: P.bankC }, null, 2) + '\n')
-console.log('\n✓ wrote solver/.env.devnet + daml/parties.json (operator plane ready)')
+
+// Browser config: each desk reads its OWN party through the Vite '/cn/devnet' proxy
+// (the validator emits no CORS headers for :5173).
+//
+// HONEST LIMITATION: all three desks carry the SAME shared m2m bearer, because the
+// hackathon issues ONE client (`validator-devnet-m2m`). Each desk's VIEW is still correct
+// (its ACS query filters by its own party), but the token is not SCOPED to that desk — so
+// the adversarial "Try to Peek" proof (a rival read must 403) CANNOT hold on DevNet until
+// the organizers issue PER-DESK clients. The LocalNet path keeps the real scoped-token
+// privacy proof. Do not present DevNet mode as the structural-privacy proof.
+writeFileSync(
+  resolve(repoRoot, 'web', 'src', 'tokens.json'),
+  JSON.stringify(
+    {
+      bankA: { party: P.bankA, token: TOKEN, base: '/cn/devnet' },
+      bankB: { party: P.bankB, token: TOKEN, base: '/cn/devnet' },
+      bankC: { party: P.bankC, token: TOKEN, base: '/cn/devnet' },
+    },
+    null,
+    2,
+  ) + '\n',
+)
+console.log('\n✓ wrote solver/.env.devnet + daml/parties.json + web/src/tokens.json (DevNet)')
+console.log('  ⚠ desks share ONE m2m token — per-desk views are correct, but the peek proof needs per-desk clients')
 console.log('  next: run the solver with .env.devnet, then POST /round/R1/close + /round/R1/settle')

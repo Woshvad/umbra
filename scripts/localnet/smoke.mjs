@@ -28,7 +28,7 @@ const create = await post('/v2/commands/submit-and-wait', {
   commands: [
     {
       CreateCommand: {
-        templateId: '#umbra:Umbra.Roles:Venue',
+        templateId: '#umbra-sealed-auction:Umbra.Roles:Venue',
         createArguments: {
           operator: parties.operator,
           desks: [parties.bankA, parties.bankB, parties.bankC],
@@ -49,7 +49,7 @@ const acs = await post('/v2/state/active-contracts', {
 })
 const umbra = (Array.isArray(acs.body) ? acs.body : [])
   .map((e) => e?.contractEntry?.JsActiveContract?.createdEvent)
-  .filter((c) => c && c.packageName === 'umbra')
+  .filter((c) => c && c.packageName === 'umbra-sealed-auction')
 console.log(`\nACS Umbra contracts: ${umbra.length}`)
 for (const c of umbra) {
   console.log(`  • ${c.templateId.split(':').slice(1).join(':')}  cid=${c.contractId.slice(0, 16)}…`)

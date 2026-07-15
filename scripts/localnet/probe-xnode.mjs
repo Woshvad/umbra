@@ -13,7 +13,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(__dirname, '..', '..')
 const PROVIDER = 'http://localhost:3975' // operator's node
 const USER = 'http://localhost:2975' // a desk's node
-const PKG = '#umbra'
+const PKG = '#umbra-sealed-auction'
 const parties = JSON.parse(readFileSync(resolve(repoRoot, 'daml', 'parties.json'), 'utf8'))
 const op = parties.operator
 
@@ -37,7 +37,7 @@ const acsOf = async (base, token, party) => {
   })
   return (Array.isArray(arr) ? arr : [])
     .map((e) => e?.contractEntry?.JsActiveContract?.createdEvent)
-    .filter((c) => c && c.packageName === 'umbra')
+    .filter((c) => c && c.packageName === 'umbra-sealed-auction')
 }
 const entityOf = (t) => t.templateId.split(':').pop()
 

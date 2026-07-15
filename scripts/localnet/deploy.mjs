@@ -33,7 +33,7 @@ const repoRoot = resolve(__dirname, '..', '..')
 
 const PARTICIPANT = process.env.LOCALNET_JSON_API ?? 'http://localhost:3975'
 const ADMIN_USER = process.env.LOCALNET_ADMIN_USER ?? 'ledger-api-user'
-const DAR_PATH = resolve(repoRoot, 'daml', '.daml', 'dist', 'umbra-0.1.0.dar')
+const DAR_PATH = resolve(repoRoot, 'daml', '.daml', 'dist', 'umbra-sealed-auction-0.1.0.dar')
 
 // The Umbra party hints and the per-desk user ids that read them.
 const PARTY_HINTS = ['operator', 'bankA', 'bankB', 'bankC']

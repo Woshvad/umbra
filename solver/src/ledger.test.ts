@@ -45,7 +45,7 @@ const umbra = (templateId: string, createArgument: Record<string, any>, contract
   contractId,
   templateId,
   createArgument,
-  packageName: 'umbra',
+  packageName: 'umbra-sealed-auction',
   signatories: [],
   observers: [],
 })
@@ -80,7 +80,7 @@ const mockFetch = vi.fn(async (url: unknown, opts?: any) => {
           // {operator, compliance, roundId, clearingPrice} onto the new ClearingApproval.
           const req = acs.find((c) => c.contractId === contractId)
           if (req) {
-            acs.push(umbra('#umbra:Umbra.Approval:ClearingApproval', { ...req.createArgument }))
+            acs.push(umbra('#umbra-sealed-auction:Umbra.Approval:ClearingApproval', { ...req.createArgument }))
           }
         } else if (choice === 'SettleRound') {
           // FIX 1: settlement moved to the NONCONSUMING Venue.SettleRound. Emulate the same
@@ -175,7 +175,7 @@ const ledgerMod = await import('./ledger.js')
 const seedOrder = (roundId: string, desk: string, side: string, qty: number, i: number): void => {
   acs.push(
     umbra(
-      '#umbra:Umbra.Auction:Order',
+      '#umbra-sealed-auction:Umbra.Auction:Order',
       { operator: 'operator::test', desk, roundId, side, quantity: String(qty), limit: '100.0', status: 'Sealed' },
       `order-${i}`,
     ),
@@ -184,7 +184,7 @@ const seedOrder = (roundId: string, desk: string, side: string, qty: number, i: 
 const seedStats = (roundId: string, count: number): void => {
   acs.push(
     umbra(
-      '#umbra:Umbra.Auction:RoundStats',
+      '#umbra-sealed-auction:Umbra.Auction:RoundStats',
       { operator: 'operator::test', roundId, desks: [], sealedOrderCount: String(count) },
       'stats-0',
     ),
@@ -201,15 +201,15 @@ const seedSection4World = (roundId: string): void => {
   const usdc = { issuer: 'operator::test', id: 'USDCx' }
   const bond = { issuer: 'operator::test', id: 'BONDX' }
   acs.push(
-    umbra('#umbra:Umbra.Auction:Order', { operator: 'operator::test', desk: 'bankA::test', roundId, side: 'Buy', quantity: '10', limit: '101.0', status: 'Sealed' }, 'order-A'),
-    umbra('#umbra:Umbra.Auction:Order', { operator: 'operator::test', desk: 'bankB::test', roundId, side: 'Sell', quantity: '8', limit: '99.0', status: 'Sealed' }, 'order-B'),
-    umbra('#umbra:Umbra.Auction:Order', { operator: 'operator::test', desk: 'bankC::test', roundId, side: 'Sell', quantity: '5', limit: '100.0', status: 'Sealed' }, 'order-C'),
-    umbra('#umbra:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'bankA::test', instrument: usdc, amount: '5000.0', lock: null }, 'holding-A-usdc'),
-    umbra('#umbra:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'bankB::test', instrument: bond, amount: '20.0', lock: null }, 'holding-B-bond'),
-    umbra('#umbra:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'bankC::test', instrument: bond, amount: '15.0', lock: null }, 'holding-C-bond'),
-    umbra('#umbra:Umbra.Auction:Round', { operator: 'operator::test', roundId, symbol: 'BONDX', desks: ['bankA::test', 'bankB::test', 'bankC::test'], openedAt: '2026-07-09T00:00:00Z', windowSeconds: '60', status: 'Closed' }, 'round-0'),
+    umbra('#umbra-sealed-auction:Umbra.Auction:Order', { operator: 'operator::test', desk: 'bankA::test', roundId, side: 'Buy', quantity: '10', limit: '101.0', status: 'Sealed' }, 'order-A'),
+    umbra('#umbra-sealed-auction:Umbra.Auction:Order', { operator: 'operator::test', desk: 'bankB::test', roundId, side: 'Sell', quantity: '8', limit: '99.0', status: 'Sealed' }, 'order-B'),
+    umbra('#umbra-sealed-auction:Umbra.Auction:Order', { operator: 'operator::test', desk: 'bankC::test', roundId, side: 'Sell', quantity: '5', limit: '100.0', status: 'Sealed' }, 'order-C'),
+    umbra('#umbra-sealed-auction:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'bankA::test', instrument: usdc, amount: '5000.0', lock: null }, 'holding-A-usdc'),
+    umbra('#umbra-sealed-auction:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'bankB::test', instrument: bond, amount: '20.0', lock: null }, 'holding-B-bond'),
+    umbra('#umbra-sealed-auction:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'bankC::test', instrument: bond, amount: '15.0', lock: null }, 'holding-C-bond'),
+    umbra('#umbra-sealed-auction:Umbra.Auction:Round', { operator: 'operator::test', roundId, symbol: 'BONDX', desks: ['bankA::test', 'bankB::test', 'bankC::test'], openedAt: '2026-07-09T00:00:00Z', windowSeconds: '60', status: 'Closed' }, 'round-0'),
     // FIX 1: settlement now targets Venue.SettleRound, so settle()/tamperClear() query the Venue cid.
-    umbra('#umbra:Umbra.Roles:Venue', { operator: 'operator::test', desks: ['bankA::test', 'bankB::test', 'bankC::test'] }, 'venue-0'),
+    umbra('#umbra-sealed-auction:Umbra.Roles:Venue', { operator: 'operator::test', desks: ['bankA::test', 'bankB::test', 'bankC::test'] }, 'venue-0'),
   )
 }
 
@@ -402,17 +402,17 @@ describe('ledger RFQ wrappers (ADJ-02 — post/quote/list/accept over JSON Ledge
     // A Buy-side RFQ from bankA for 10 units; bankB quotes 100.0; the holdings needed for
     // the 1×1 DvP (dealer delivers bond, requester pays cash) are seeded operator-custody.
     acs.push(
-      umbra('#umbra:Umbra.Rfq:RfqRequest', {
+      umbra('#umbra-sealed-auction:Umbra.Rfq:RfqRequest', {
         operator: 'operator::test', requester: 'bankA::test', dealers: ['bankB::test'],
         instrument: bond, side: 'Buy', quantity: '10',
       }, 'rfq-1'),
-      umbra('#umbra:Umbra.Rfq:Quote', {
+      umbra('#umbra-sealed-auction:Umbra.Rfq:Quote', {
         operator: 'operator::test', dealer: 'bankB::test', requester: 'bankA::test',
         instrument: bond, price: '100.0', quantity: '10',
       }, 'quote-1'),
       // bankB (dealer) delivers the bond; bankA (requester) pays the cash.
-      umbra('#umbra:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'bankB::test', instrument: bond, amount: '20.0', lock: null }, 'h-bond-B'),
-      umbra('#umbra:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'bankA::test', instrument: usdc, amount: '5000.0', lock: null }, 'h-cash-A'),
+      umbra('#umbra-sealed-auction:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'bankB::test', instrument: bond, amount: '20.0', lock: null }, 'h-bond-B'),
+      umbra('#umbra-sealed-auction:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'bankA::test', instrument: usdc, amount: '5000.0', lock: null }, 'h-cash-A'),
     )
     return { rfqCid: 'rfq-1', quoteCid: 'quote-1' }
   }
@@ -457,11 +457,11 @@ describe('ledger RFQ wrappers (ADJ-02 — post/quote/list/accept over JSON Ledge
     // with its own quote. Quote carries no rfq back-ref, so a requester+instrument-only
     // filter would wrongly surface quote-2 for rfq-1.
     acs.push(
-      umbra('#umbra:Umbra.Rfq:RfqRequest', {
+      umbra('#umbra-sealed-auction:Umbra.Rfq:RfqRequest', {
         operator: 'operator::test', requester: 'bankA::test', dealers: ['bankB::test'],
         instrument: bond, side: 'Buy', quantity: '8',
       }, 'rfq-2'),
-      umbra('#umbra:Umbra.Rfq:Quote', {
+      umbra('#umbra-sealed-auction:Umbra.Rfq:Quote', {
         operator: 'operator::test', dealer: 'bankB::test', requester: 'bankA::test',
         instrument: bond, price: '99.0', quantity: '8',
       }, 'quote-2'),
@@ -524,13 +524,13 @@ describe('ledger issuance wrappers (ADJ-03 — clear/mint, coupon, redeem over J
   // (never the §4 "BONDX").
   const seedClearedIssuance = (cid = 'iss-cleared'): string => {
     acs.push(
-      umbra('#umbra:Umbra.Issuance:IssuanceRound', {
+      umbra('#umbra-sealed-auction:Umbra.Issuance:IssuanceRound', {
         operator: 'operator::test', issuer: 'issuer::test', bondInstrument: bond2, cashInstrument: usdc,
         trancheSize: '100', reservePrice: '99.0', bids: [], cleared: true, couponsPaid: [],
       }, cid),
-      umbra('#umbra:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'bankA::test', instrument: bond2, amount: '10.0', lock: null }, 'h-bond2-A'),
-      umbra('#umbra:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'bankB::test', instrument: bond2, amount: '5.0', lock: null }, 'h-bond2-B'),
-      umbra('#umbra:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'issuer::test', instrument: usdc, amount: '100000.0', lock: null }, 'h-cash-issuer'),
+      umbra('#umbra-sealed-auction:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'bankA::test', instrument: bond2, amount: '10.0', lock: null }, 'h-bond2-A'),
+      umbra('#umbra-sealed-auction:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'bankB::test', instrument: bond2, amount: '5.0', lock: null }, 'h-bond2-B'),
+      umbra('#umbra-sealed-auction:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'issuer::test', instrument: usdc, amount: '100000.0', lock: null }, 'h-cash-issuer'),
     )
     return cid
   }
@@ -555,7 +555,7 @@ describe('ledger issuance wrappers (ADJ-03 — clear/mint, coupon, redeem over J
   it('clearIssuance re-derives §8, gathers winner cash cids, and exercises ClearIssuance', async () => {
     // Book: issuer Sell 100 @99, bankA Buy 60 @101, bankB Buy 50 @100 → uniform clear.
     acs.push(
-      umbra('#umbra:Umbra.Issuance:IssuanceRound', {
+      umbra('#umbra-sealed-auction:Umbra.Issuance:IssuanceRound', {
         operator: 'operator::test', issuer: 'issuer::test', bondInstrument: bond2, cashInstrument: usdc,
         trancheSize: '100', reservePrice: '99.0',
         bids: [
@@ -564,8 +564,8 @@ describe('ledger issuance wrappers (ADJ-03 — clear/mint, coupon, redeem over J
         ],
         cleared: false, couponsPaid: [],
       }, 'iss-open'),
-      umbra('#umbra:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'bankA::test', instrument: usdc, amount: '1000000.0', lock: null }, 'h-cash-A'),
-      umbra('#umbra:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'bankB::test', instrument: usdc, amount: '1000000.0', lock: null }, 'h-cash-B'),
+      umbra('#umbra-sealed-auction:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'bankA::test', instrument: usdc, amount: '1000000.0', lock: null }, 'h-cash-A'),
+      umbra('#umbra-sealed-auction:Umbra.Holding:Holding', { operator: 'operator::test', owner: 'bankB::test', instrument: usdc, amount: '1000000.0', lock: null }, 'h-cash-B'),
     )
 
     const cleared = await ledgerMod.clearIssuance('iss-open')

@@ -23,11 +23,11 @@ import type { ReactNode } from 'react'
 import type { Ctx, DeskKey } from '../ledgerContexts'
 import { tokens } from '../desks'
 import { parseOrder, SolverError, timelockEncrypt, type SealMode } from '../solver'
-import { Order, OrderCommitment } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
-import { Holding } from '@daml.js/umbra-0.1.0/lib/Umbra/Holding/module'
-import { DeskEligibility } from '@daml.js/umbra-0.1.0/lib/Umbra/Compliance/module'
-import { Venue } from '@daml.js/umbra-0.1.0/lib/Umbra/Roles/module'
-import { Side, type OrderType } from '@daml.js/umbra-0.1.0/lib/Umbra/Clearing/module'
+import { Order, OrderCommitment } from '@daml.js/umbra-sealed-auction-0.1.0/lib/Umbra/Auction/module'
+import { Holding } from '@daml.js/umbra-sealed-auction-0.1.0/lib/Umbra/Holding/module'
+import { DeskEligibility } from '@daml.js/umbra-sealed-auction-0.1.0/lib/Umbra/Compliance/module'
+import { Venue } from '@daml.js/umbra-sealed-auction-0.1.0/lib/Umbra/Roles/module'
+import { Side, type OrderType } from '@daml.js/umbra-sealed-auction-0.1.0/lib/Umbra/Clearing/module'
 
 type OrderPayload = Order
 

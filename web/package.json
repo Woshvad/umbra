@@ -11,7 +11,7 @@
     "tokens": "node ../scripts/localnet/deploy.mjs"
   },
   "dependencies": {
-    "@daml.js/umbra-0.1.0": "file:./daml.js/umbra-0.1.0",
+    "@daml.js/umbra-sealed-auction-0.1.0": "file:./daml.js/umbra-sealed-auction-0.1.0",
     "@daml/ledger": "2.10.4",
     "@daml/types": "2.10.4",
     "oidc-client-ts": "3.5.0",

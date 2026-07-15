@@ -22,7 +22,7 @@
 import { useState } from 'react'
 import { ctxD, type Ctx } from '../ledgerContexts'
 import { tokens, httpBaseUrlFor, wsBaseUrl } from '../desks'
-import { Order, Round } from '@daml.js/umbra-0.1.0/lib/Umbra/Auction/module'
+import { Order, Round } from '@daml.js/umbra-sealed-auction-0.1.0/lib/Umbra/Auction/module'
 import OrderTicket from '../components/OrderTicket'
 import FillCard from '../components/FillCard'
 

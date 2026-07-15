@@ -1,35 +1,58 @@
 // PeekConsole (WOW-01 — Try-to-Peek Adversarial Privacy Console, 08-UI-SPEC lines
-// 164-190) — mounted onto the 01 Privacy money-shot view. Authenticated as the
-// CURRENTLY-SELECTED desk's OWN token (never an operator token — none exists in this
-// bundle; threat T-08-02-OPTOK), it fires a RAW JSON Ledger API v2
-// `POST /v2/state/active-contracts` filtered to a RIVAL desk party for
-// `Umbra.Auction:Order` (and, as a second target, `TradeConfirmation`) and renders the
-// verbatim REQUEST + RESPONSE on the ink evidence surface (same treatment as
-// AgentRationale L68-92) + a red-square verdict. The credibility is the raw wire, not a
-// styled badge (UI-SPEC note 3).
+// 164-190) — mounted onto the 01 Privacy money-shot view. It renders the verbatim
+// REQUEST + RESPONSE on the ink evidence surface (same treatment as AgentRationale
+// L68-92) + a red-square verdict. The credibility is the raw wire, not a styled badge
+// (UI-SPEC note 3).
 //
-// The wire flow mirrors web/src/ledger/v2react.tsx fetchAcs (L75-85):
-//   GET  {base}v2/state/ledger-end          → { offset }
-//   POST {base}v2/state/active-contracts     buildPeekRequest(...).body
-// with `base = httpBaseUrlFor(activeDesk)` so the query hits the desk's OWN node
-// (Pitfall 4 / T-08-02-NODE) — a network/CORS failure must NOT masquerade as the
-// empty-privacy result, so it is rendered as a distinct node-unreachable note.
+// ── THE PROOF (mechanism deviates from UI-SPEC L176-177; see peek.ts + 08-UI-SPEC) ──
+// Canton disclosure is stakeholder/informee-based, not token-based. So we ask the ledger,
+// AS THE ACTIVE DESK'S OWN PARTY with the ACTIVE DESK'S OWN TOKEN, to hand over a RIVAL's
+// contract by contract id:
+//
+//   step 1 (discovery, out of band)  POST {rivalBase}v2/state/active-contracts
+//                                    as the RIVAL, with the RIVAL's OWN token → rival cid
+//   step 2 (the peek)                POST {base}v2/events/events-by-contract-id
+//                                    as OUR party, with OUR token, for that cid → 404
+//
+// Step 1 is a deliberate GIFT TO THE ATTACKER and is surfaced honestly in the REQUEST pane.
+// bankA could never discover bankB's cid legitimately — that is the point. The demo bundle
+// already carries all three desk tokens (tokens.json, by design, for the party switcher), so
+// we hand the attacker the rival's exact contract id — and, on DevNet, a bearer with read
+// rights on all three desks. The ledger still answers "not visible". The proof is stronger
+// for being generous.
+//
+// The previous mechanism (active-contracts filtered TO the rival party, using our token) is
+// NOT used: it tests credential scoping, which a shared-token network defeats — on DevNet all
+// three desks share one m2m bearer with readAs on every party, so that read SUCCEEDS and the
+// money-shot panel renders a FALSE LEAK banner. Asking as our own party removes the auth
+// variable entirely: LocalNet and DevNet both return the same 404. One proof, both nets.
+//
+// Node/CORS failure is kept a DISTINCT path (Pitfall 4 / T-08-02-NODE) — an unreachable node
+// must never masquerade as "privacy enforced" — as is the no-target case (absence of a rival
+// contract is not a privacy proof).
 import { useMemo, useState } from 'react'
 import { DESKS, httpBaseUrlFor, tokens } from '../desks'
 import type { DeskKey } from '../ledgerContexts'
 import {
+  buildInformeePeekRequest,
   buildPeekRequest,
   classifyPeekResult,
+  errorCodeOf,
+  extractAcsRows,
+  extractInformeeRows,
   filterRowsByTemplate,
   PEEK_TEMPLATES,
+  type InformeePeekRequest,
   type PeekOutcome,
-  type PeekRequest,
   type PeekRow,
   type PeekTemplate,
 } from '../lib/peek'
 
 type Props = { activeDesk: DeskKey }
 type Phase = 'idle' | 'running' | 'returned'
+
+// What the out-of-band discovery read handed us — rendered honestly in the REQUEST pane.
+type Discovery = { url: string; rivalCode: string; contractId: string }
 
 // True when the user has asked for reduced motion (shipped guard — AgentRationale L19-25).
 function prefersReducedMotion(): boolean {
@@ -49,16 +72,17 @@ const prettify = (raw: string): string => {
   }
 }
 
-// Extract v2 createdEvent rows (contractEntry.JsActiveContract.createdEvent — fetchAcs L83).
-const extractRows = (parsed: unknown): PeekRow[] =>
-  (Array.isArray(parsed) ? parsed : [])
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .map((e: any) => e?.contractEntry?.JsActiveContract?.createdEvent)
-    .filter((c: unknown): c is PeekRow => !!c && typeof (c as PeekRow).templateId === 'string')
-
-// Verbatim REQUEST-pane text: method + URL, the elided bearer, and the wire body.
-const requestText = (req: PeekRequest): string =>
+// Verbatim REQUEST-pane text: the honest discovery preamble, then method + URL, the elided
+// bearer, and the wire body (which carries OUR OWN party as the requesting party — the whole
+// point is legible on the wire).
+const requestText = (req: InformeePeekRequest, d: Discovery, meCode: string): string =>
   [
+    `// HANDED TO THE ATTACKER (out of band, using ${d.rivalCode}'s OWN token):`,
+    `//   POST ${d.url}  ← as ${d.rivalCode}, a legitimate self-read`,
+    `//   → ${d.contractId}`,
+    `// ${meCode} could never learn that contract id legitimately. We give it away anyway.`,
+    `// Now ${meCode} asks the ledger for it, as ${meCode}, with ${meCode}'s own token:`,
+    ``,
     `${req.method} ${req.url}`,
     `Authorization: ${req.authHeaderDisplay}`,
     `Content-Type: application/json`,
@@ -86,7 +110,7 @@ export default function PeekConsole({ activeDesk }: Props) {
   const [template, setTemplate] = useState<PeekTemplate>(PEEK_TEMPLATES.Order)
 
   const [phase, setPhase] = useState<Phase>('idle')
-  const [request, setRequest] = useState<PeekRequest | null>(null)
+  const [requestBlock, setRequestBlock] = useState('')
   const [responseText, setResponseText] = useState('')
   const [outcome, setOutcome] = useState<PeekOutcome | null>(null)
   const [errored, setErrored] = useState(false)
@@ -96,29 +120,71 @@ export default function PeekConsole({ activeDesk }: Props) {
     ? rivalKey
     : rivals[0]?.key ?? 'bankB'
 
+  const codeOf = (k: DeskKey): string => DESKS.find((d) => d.key === k)?.code ?? k
+
   const attempt = async (): Promise<void> => {
     setPhase('running')
     setErrored(false)
     setOutcome(null)
     setResponseText('')
-    setRequest(null)
+    setRequestBlock('')
 
+    const meCode = codeOf(activeDesk)
+    const rivalCode = codeOf(effectiveRival)
+
+    // The peeking desk: its OWN node, its OWN bearer, its OWN party (never an operator
+    // token — none exists in this bundle; threat T-08-02-OPTOK).
     const base = httpBaseUrlFor(activeDesk)
-    const token = tokens[activeDesk].token // this desk's OWN bearer (never operator)
-    const rivalParty = tokens[effectiveRival].party
+    const token = tokens[activeDesk].token
+    const ownParty = tokens[activeDesk].party
     const authHeader = `Bearer ${token}`
 
+    // The rival's own node + bearer — used ONLY for the out-of-band cid discovery below.
+    const rivalBase = httpBaseUrlFor(effectiveRival)
+    const rivalToken = tokens[effectiveRival].token
+    const rivalParty = tokens[effectiveRival].party
+    const rivalAuth = `Bearer ${rivalToken}`
+
     try {
-      // 1) desk's OWN ledger-end (its own node) → offset
-      const endRes = await fetch(`${base}v2/state/ledger-end`, {
-        headers: { Authorization: authHeader },
+      // ── Step 1: DISCOVERY (the gift to the attacker) ────────────────────────────────
+      // Read the rival's own ACS with the RIVAL's OWN token — a legitimate self-read that
+      // any desk can make of its own book. This is how the attacker gets a cid it could
+      // never obtain legitimately. It is NOT part of the proof; it is a handicap we accept.
+      const endRes = await fetch(`${rivalBase}v2/state/ledger-end`, {
+        headers: { Authorization: rivalAuth },
       })
       if (!endRes.ok) throw new Error(`ledger-end HTTP ${endRes.status}`)
       const end = (await endRes.json()) as { offset: number }
 
-      // 2) the RAW rival-party active-contracts POST (built by the pure helper)
-      const req = buildPeekRequest(base, token, rivalParty, template, end.offset)
-      setRequest(req)
+      const discReq = buildPeekRequest(rivalBase, rivalToken, rivalParty, template, end.offset)
+      const discRes = await fetch(discReq.url, {
+        method: 'POST',
+        headers: { Authorization: rivalAuth, 'Content-Type': 'application/json' },
+        body: JSON.stringify(discReq.body),
+      })
+      if (!discRes.ok) throw new Error(`discovery HTTP ${discRes.status}`)
+      const discRows = filterRowsByTemplate(extractAcsRows(await discRes.json()), template)
+      const rivalCid = discRows.find((r) => typeof r.contractId === 'string')?.contractId
+
+      // No target → a plain note, NOT a verdict. Absence of a rival contract is not a
+      // privacy proof, and must never be dressed up as one.
+      if (!rivalCid) {
+        setErrored(true)
+        setResponseText(
+          `// ${rivalCode} has no live ${template} to peek at yet — nothing to prove.\n` +
+            `// (seal a ${rivalCode} order, or settle the round for a TradeConfirmation, then retry)`,
+        )
+        setPhase('returned')
+        return
+      }
+
+      // ── Step 2: THE PEEK — ask AS OURSELVES for the rival's contract ────────────────
+      // Our token always permits our own party, so the ONLY thing that can refuse us here is
+      // Canton's stakeholder projection. Identical on LocalNet and DevNet.
+      const req = buildInformeePeekRequest(base, token, ownParty, rivalCid, template)
+      setRequestBlock(
+        requestText(req, { url: discReq.url, rivalCode, contractId: rivalCid }, meCode),
+      )
 
       const res = await fetch(req.url, {
         method: 'POST',
@@ -128,26 +194,27 @@ export default function PeekConsole({ activeDesk }: Props) {
       const raw = await res.text()
       setResponseText(prettify(raw))
 
-      let rows: PeekRow[] | null = null
-      if (res.ok) {
-        rows = filterRowsByTemplate(extractRows(safeParse(raw)), template)
-      }
-      setOutcome(classifyPeekResult(res.status, rows))
+      const parsed = safeParse(raw)
+      const rows: PeekRow[] | null = res.ok ? extractInformeeRows(parsed) : null
+      setOutcome(classifyPeekResult(res.status, rows, errorCodeOf(parsed)))
       setPhase('returned')
     } catch (e) {
       // Node/CORS failure — NOT a privacy result (T-08-02-NODE). Render it plainly and
       // withhold the red-square verdict so an unreachable node can't fake "enforced".
       setErrored(true)
       setResponseText(
-        `// could not reach ${activeDesk}'s node at ${base} — ${
-          e instanceof Error ? e.name : 'network error'
-        }\n// (start LocalNet + seed, then retry)`,
+        `// could not reach the ledger at ${base} — ${
+          e instanceof Error ? e.message || e.name : 'network error'
+        }\n// (start the ledger + seed, then retry)`,
       )
       setPhase('returned')
     }
   }
 
   const running = phase === 'running'
+  // Only a real, conclusive privacy result earns the red-square verdict row.
+  const showVerdict =
+    phase === 'returned' && !!outcome && !errored && !outcome.inconclusive && !!outcome.verdict
 
   return (
     <section style={{ margin: '42px 0 0', maxWidth: '760px' }}>
@@ -259,7 +326,7 @@ export default function PeekConsole({ activeDesk }: Props) {
             Request
           </div>
           <div className="font-mono text-13 tabular-nums" style={INK_SURFACE}>
-            {phase === 'idle' || !request ? IDLE_HINT : requestText(request)}
+            {phase === 'idle' || !requestBlock ? IDLE_HINT : requestBlock}
           </div>
         </div>
         <div>
@@ -276,7 +343,7 @@ export default function PeekConsole({ activeDesk }: Props) {
       </div>
 
       {/* Red-square verdict row (comp line 131 grammar) — only for a real privacy result */}
-      {phase === 'returned' && outcome && !errored && (
+      {showVerdict && outcome && (
         <div className="flex items-center" style={{ gap: '6px', margin: '16px 0 0' }}>
           <span style={{ display: 'inline-block', width: '6px', height: '6px', background: '#E2231A' }} />
           <span
@@ -299,7 +366,7 @@ export default function PeekConsole({ activeDesk }: Props) {
   )
 }
 
-// Local safe JSON parse (returns null on failure) so extractRows never throws on a 403 body.
+// Local safe JSON parse (returns null on failure) so the extractors never throw on an error body.
 const safeParse = (raw: string): unknown => {
   try {
     return JSON.parse(raw)

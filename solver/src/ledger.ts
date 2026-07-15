@@ -47,6 +47,10 @@ const CASH_SYMBOL = 'USDCx'
 // builder could upload a package also named `umbra`, making `#umbra` ambiguous — so DevNet
 // pins the EXPLICIT package id via UMBRA_PACKAGE_ID (written by scripts/devnet/up.mjs).
 const PKG = process.env.UMBRA_PACKAGE_ID ?? '#umbra'
+// The package NAME the ACS reader matches on (createdEvent.packageName). Pairs with PKG:
+// LocalNet publishes as `umbra`; on the shared DevNet validator that name is taken by an
+// unrelated team, so we publish as `umbra-sealed-auction` and set UMBRA_PACKAGE_NAME to match.
+const PKG_NAME = process.env.UMBRA_PACKAGE_NAME ?? 'umbra'
 
 // AUCT-04 — the LABELED benchmark reference price (a config STUB ≈ pre-auction mid).
 // Passed into every Round.Clear as the `referencePrice` choice arg (a choice body
@@ -174,12 +178,28 @@ const bearerToken = async (): Promise<string> => (OIDC_MODE ? oidcBearer() : _de
 const ALLOW_OPERATOR_COMPLIANCE = process.env.UMBRA_ALLOW_OPERATOR_COMPLIANCE === '1'
 
 const resolveCompliance = (): { token: string; party: string; distinct: boolean } => {
-  // 1. A dedicated compliance credential file → the REAL distinct authority.
+  // 1. EXPLICIT env (OIDC/DevNet path): COMPLIANCE_PARTY + COMPLIANCE_TOKEN.
+  //    Checked FIRST so a deployment's explicit config always beats a stale local file:
+  //    `scripts/.compliance-token` is a LocalNet convenience and names a party in the
+  //    LocalNet namespace. Letting it win on DevNet submits an informee that synchronizer
+  //    has never heard of → UNKNOWN_INFORMEES. Explicit config outranks ambient files.
+  const envParty = process.env.COMPLIANCE_PARTY
+  const envToken = process.env.COMPLIANCE_TOKEN
+  if (envParty && envToken) {
+    if (envParty === _operatorParty) {
+      throw new Error(
+        'COMPLIANCE_PARTY equals the operator party — four-eyes requires a DISTINCT ' +
+          'compliance authority (the on-ledger gate aborts on operator self-approval).',
+      )
+    }
+    return { token: envToken, party: envParty, distinct: true }
+  }
+  // 2. A dedicated compliance credential file → the REAL distinct authority (LocalNet).
   let fileRaw: string | null = null
   try {
     fileRaw = readFileSync(new URL('../../scripts/.compliance-token', import.meta.url), 'utf8')
   } catch {
-    // no dedicated compliance credential on disk — try env, then fall back below.
+    // no dedicated compliance credential on disk — fall back below.
   }
   if (fileRaw) {
     const { token, party } = JSON.parse(fileRaw) as { token: string; party: string }
@@ -193,18 +213,6 @@ const resolveCompliance = (): { token: string; party: string; distinct: boolean 
       }
       return { token, party, distinct: true }
     }
-  }
-  // 2. OIDC/DevNet path: an explicit COMPLIANCE_PARTY + COMPLIANCE_TOKEN pair.
-  const envParty = process.env.COMPLIANCE_PARTY
-  const envToken = process.env.COMPLIANCE_TOKEN
-  if (envParty && envToken) {
-    if (envParty === _operatorParty) {
-      throw new Error(
-        'COMPLIANCE_PARTY equals the operator party — four-eyes requires a DISTINCT ' +
-          'compliance authority (the on-ledger gate aborts on operator self-approval).',
-      )
-    }
-    return { token: envToken, party: envParty, distinct: true }
   }
   // 3. No distinct compliance identity configured → operator-held (dev fast-loop only).
   //    Flagged `distinct: false`; gatherApprovalCid refuses to proceed unless the
@@ -260,6 +268,20 @@ const ledgerEnd = async (): Promise<number> => {
 // `bearer` overrides the Authorization header for actions submitted as a DISTINCT party
 // (IDEN-03: the compliance-authorized ApproveClearing). When omitted, the operator bearer
 // (dual-mode: dev HMAC or OIDC) is used. The token lives only in the header, never echoed.
+// Daml JSON encodes Int64/Numeric as EITHER a string or a number. LocalNet accepts both, but
+// the DevNet validator REJECTS a bare JSON number for those fields ("Expected ujson.Str").
+// Strings are universally valid (the browser sends strings too — RESEARCH Pitfall 8), so
+// normalize every number in the command payload to its string form. Structural fields
+// (templateId/contractId/choice/party) are already strings, so this only touches arguments.
+const stringifyNumbers = (v: unknown): unknown =>
+  typeof v === 'number'
+    ? String(v)
+    : Array.isArray(v)
+      ? v.map(stringifyNumbers)
+      : v && typeof v === 'object'
+        ? Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, stringifyNumbers(x)]))
+        : v
+
 const submitAndWait = async (commands: unknown[], actAs: string[], bearer?: string): Promise<void> => {
   const headers = bearer
     ? { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json' }
@@ -267,7 +289,7 @@ const submitAndWait = async (commands: unknown[], actAs: string[], bearer?: stri
   const res = await fetch(`${PARTICIPANT}/v2/commands/submit-and-wait`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ commandId: `umbra-solver-${Date.now()}-${_cmdSeq++}`, actAs, commands }),
+    body: JSON.stringify({ commandId: `umbra-solver-${Date.now()}-${_cmdSeq++}`, actAs, commands: stringifyNumbers(commands) }),
   })
   if (!res.ok) {
     const body = await res.text()
@@ -310,7 +332,7 @@ const queryByEntity = async (entity: string): Promise<CreatedEvent[]> => {
   const arr = (await res.json()) as any[]
   return (Array.isArray(arr) ? arr : [])
     .map((e) => e?.contractEntry?.JsActiveContract?.createdEvent)
-    .filter((c: any): c is CreatedEvent => c && c.packageName === 'umbra' && entityOf(c.templateId) === entity)
+    .filter((c: any): c is CreatedEvent => c && c.packageName === PKG_NAME && entityOf(c.templateId) === entity)
 }
 
 // ── Round lifecycle: open ────────────────────────────────────────────────────────

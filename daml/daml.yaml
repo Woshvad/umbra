@@ -13,7 +13,11 @@
 # Tests.daml. Verified against cn-quickstart's own 3.4.11 sources
 # (Splice.Testing.Utils: `allocatePartyExact = allocatePartyByHint . PartyIdHint`).
 sdk-version: 3.4.11
-name: umbra
+# Package NAME is a namespace on a SHARED network: the FiveNorth DevNet sandbox already
+# carries an unrelated team's `umbra` package family (v0.0.3/v0.0.4, choice ExecuteDvP)
+# whose versions are mutually upgrade-inconsistent — so Canton rejects ANY new `umbra`
+# upload as collateral. A distinctive name gives us our own upgrade lineage.
+name: umbra-sealed-auction
 version: 0.1.0
 # `source: .` points at the folder CONTAINING `Umbra/` (this daml.yaml lives in
 # `daml/`, modules are headered `module Umbra.Asset where` etc.).

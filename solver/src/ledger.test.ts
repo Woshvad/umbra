@@ -98,12 +98,17 @@ const mockFetch = vi.fn(async (url: unknown, opts?: any) => {
             allocations: arg.allocations,
             approvalCid: arg.approvalCid,
           })
-          const buyTotal = arg.allocations.filter((a) => a.side === 'Buy').reduce((s, a) => s + a.filledQty, 0)
-          const sellTotal = arg.allocations.filter((a) => a.side === 'Sell').reduce((s, a) => s + a.filledQty, 0)
+          // Coerce: filledQty may arrive as a string (Daml Int64 accepts string|number), and
+          // `0 + "10"` would CONCATENATE rather than sum.
+          const buyTotal = arg.allocations.filter((a) => a.side === 'Buy').reduce((s, a) => s + Number(a.filledQty), 0)
+          const sellTotal = arg.allocations.filter((a) => a.side === 'Sell').reduce((s, a) => s + Number(a.filledQty), 0)
           const expected: Record<string, number> = { 'bankA::test|Buy': 10, 'bankB::test|Sell': 8, 'bankC::test|Sell': 2 }
+          // Encoding-agnostic like the real Daml engine: Int/Numeric arrive as string OR number
+          // (the solver now normalizes to strings for DevNet compat), so coerce before compare —
+          // mirroring the `Number(arg.clearingPrice)` check just below.
           const allocMatches =
             arg.allocations.length === 3 &&
-            arg.allocations.every((a) => expected[`${a.desk}|${a.side}`] === a.filledQty)
+            arg.allocations.every((a) => expected[`${a.desk}|${a.side}`] === Number(a.filledQty))
           if (Number(arg.clearingPrice) !== 100) {
             return {
               ok: false,
@@ -235,7 +240,7 @@ describe('ledger.refreshStats (stubbed v2 participant — no live LocalNet)', ()
     expect(archiveCalls.some((c) => c.template.endsWith(':RoundStats'))).toBe(true)
     const statsCreates = createCalls.filter((c) => c.template.endsWith(':RoundStats'))
     expect(statsCreates.length).toBeGreaterThan(0)
-    expect(statsCreates[statsCreates.length - 1].args.sealedOrderCount).toBe(3)
+    expect(Number(statsCreates[statsCreates.length - 1].args.sealedOrderCount)).toBe(3)
     // Live ACS reflects the advanced count.
     const liveStats = acs.find((c) => c.templateId.endsWith(':RoundStats'))
     expect(Number(liveStats!.createArgument.sealedOrderCount)).toBe(3)
@@ -286,10 +291,10 @@ describe('ledger.tamperClear (WOW-02 — the on-ledger recompute-and-assert back
     expect(result.error).toContain('clearingPrice does not match recomputed §8 p*')
     // It actually SUBMITTED the tampered price (99 = correct 100 - 1) — still a valid Decimal.
     expect(clearCalls).toHaveLength(1)
-    expect(clearCalls[0].clearingPrice).toBe(99)
+    expect(Number(clearCalls[0].clearingPrice)).toBe(99)
     // The buyer over-fill was NOT applied on this mode — allocations stay the correct §8 set.
     const buyLeg = clearCalls[0].allocations.find((a) => a.side === 'Buy')
-    expect(buyLeg?.filledQty).toBe(10)
+    expect(Number(buyLeg?.filledQty)).toBe(10)
   })
 
   it('overfill: submits an over-filled Buy leg → verbatim allocation/conservation rejection', async () => {
@@ -303,9 +308,9 @@ describe('ledger.tamperClear (WOW-02 — the on-ledger recompute-and-assert back
     expect(result.error).toMatch(/allocations do not match recomputed §8|fills not conserved \(Σbuy \/= Σsell\)/)
     // It SUBMITTED the over-filled Buy leg (10 + 2 = 12) at the still-correct price.
     expect(clearCalls).toHaveLength(1)
-    expect(clearCalls[0].clearingPrice).toBe(100)
+    expect(Number(clearCalls[0].clearingPrice)).toBe(100)
     const buyLeg = clearCalls[0].allocations.find((a) => a.side === 'Buy')
-    expect(buyLeg?.filledQty).toBe(12)
+    expect(Number(buyLeg?.filledQty)).toBe(12)
   })
 
   it('never throws and never leaks the Operator token in the surfaced rejection', async () => {
@@ -347,7 +352,7 @@ describe('ledger.settle (IDEN-03 four-eyes — requests + collects a ClearingApp
 
     // Exactly one Clear, at the correct price, carrying a NON-EMPTY four-eyes approvalCid.
     expect(clearCalls).toHaveLength(1)
-    expect(clearCalls[0].clearingPrice).toBe(100)
+    expect(Number(clearCalls[0].clearingPrice)).toBe(100)
     expect(typeof clearCalls[0].approvalCid).toBe('string')
     expect((clearCalls[0].approvalCid ?? '').length).toBeGreaterThan(0)
 

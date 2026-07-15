@@ -30,8 +30,12 @@ const LEDGER = process.env.DEVNET_LEDGER ?? 'https://ledger-api.validator.devnet
 const CLIENT_ID = 'validator-devnet-m2m'
 const AUDIENCE = 'validator-devnet-m2m'
 const USER_ID = '6'
-const PKG = '3644728f3b26bc3bdb506587cf8da38dbd16a5c5a82fb4c43555a018e49757d4' // umbra 0.1.0 (explicit)
-const DAR_PATH = resolve(repoRoot, 'daml', '.daml', 'dist', 'umbra-0.1.0.dar')
+// EXPLICIT package id of umbra-sealed-auction 0.1.0. The package NAME is a shared-network
+// namespace: an unrelated team already published `umbra` (v0.0.3/v0.0.4) on this validator,
+// and their family is mutually upgrade-inconsistent, so ANY new `umbra` upload is rejected.
+// We publish under our own name/lineage and pin the id (never `#name`) so nothing ambiguous.
+const PKG = process.env.UMBRA_PACKAGE_ID ?? '6800e677629153916aac2f994e4198f95761e03cfdf29cabcd23cafcb1c83f06'
+const DAR_PATH = process.env.UMBRA_DAR ?? resolve(repoRoot, 'daml', '.daml', 'dist', 'umbra-sealed-auction-0.1.0.dar')
 const STATE_PATH = resolve(repoRoot, 'scripts', '.devnet.json')
 
 // ── token (client-credentials) ────────────────────────────────────────────────────
@@ -96,7 +100,7 @@ if (have) {
 } else {
   const bytes = readFileSync(DAR_PATH)
   await api('POST', '/v2/packages', bytes, true)
-  console.log(`✓ uploaded umbra-0.1.0.dar (${(bytes.length / 1024).toFixed(0)} KiB) → vetted`)
+  console.log(`✓ uploaded ${DAR_PATH.split(/[\/]/).pop()} (${(bytes.length / 1024).toFixed(0)} KiB) → vetted`)
 }
 
 // ── helpers: create / exercise against the EXPLICIT package id ───────────────────────
@@ -137,15 +141,18 @@ const cash = { issuer: op, id: 'USDCx' }
 const mint = (owner, instrument, amount) => create(op, 'Umbra.Holding:Holding', { operator: op, owner, instrument, amount, lock: null })
 await mint(P.bankA, cash, '5000.0'); await mint(P.bankB, bond, '20.0'); await mint(P.bankB, cash, '1000.0'); await mint(P.bankC, bond, '15.0'); await mint(P.bankC, cash, '1000.0')
 console.log('✓ 5 §4 Holdings')
-await create(op, 'Umbra.Auction:Round', { operator: op, roundId: 'R1', symbol: 'BONDX', desks, openedAt: new Date().toISOString(), windowSeconds: 60, status: 'Open' })
+// Int/Decimal MUST go on the wire as STRINGS here: this validator rejects a JSON number for
+// an Int field ("Expected ujson.Str"), unlike the LocalNet which also accepts numbers. Strings
+// are the encoding the browser uses too, so they work on both.
+await create(op, 'Umbra.Auction:Round', { operator: op, roundId: 'R1', symbol: 'BONDX', desks, openedAt: new Date().toISOString(), windowSeconds: '60', status: 'Open' })
 
 const opAcs = await acs(op)
 const venueCid = opAcs.find((c) => entityOf(c) === 'Venue').contractId
 const eligOf = (d) => opAcs.find((c) => entityOf(c) === 'DeskEligibility' && c.createArgument.desk === d).contractId
 const submit = (desk, side, quantity, limit) =>
-  exercise(desk, 'Umbra.Roles:Venue', venueCid, 'SubmitOrder', { desk, roundId: 'R1', side, quantity, limit, orderType: 'Limit', minQty: null, firmIf: null, eligCid: eligOf(desk) })
+  exercise(desk, 'Umbra.Roles:Venue', venueCid, 'SubmitOrder', { desk, roundId: 'R1', side, quantity: String(quantity), limit, orderType: 'Limit', minQty: null, firmIf: null, eligCid: eligOf(desk) })
 await submit(P.bankA, 'Buy', 10, '101.0'); await submit(P.bankB, 'Sell', 8, '99.0'); await submit(P.bankC, 'Sell', 5, '100.0')
-await create(op, 'Umbra.Auction:RoundStats', { operator: op, roundId: 'R1', desks, sealedOrderCount: 3 })
+await create(op, 'Umbra.Auction:RoundStats', { operator: op, roundId: 'R1', desks, sealedOrderCount: '3' })
 console.log('✓ OPEN Round R1 + 3 sealed orders (A Buy 10@101 · B Sell 8@99 · C Sell 5@100) + RoundStats')
 
 // ── 6. write solver DevNet env + parties map ────────────────────────────────────────
@@ -163,6 +170,7 @@ const envDevnet = [
   `COMPLIANCE_PARTY=${P.compliance}`,
   `COMPLIANCE_TOKEN=${TOKEN}`,
   `UMBRA_PACKAGE_ID=${PKG}`,
+  `UMBRA_PACKAGE_NAME=${process.env.UMBRA_PACKAGE_NAME ?? 'umbra-sealed-auction'}`,
   ``,
 ].join('\n')
 writeFileSync(resolve(repoRoot, 'solver', '.env.devnet'), envDevnet)

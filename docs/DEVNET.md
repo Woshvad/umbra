@@ -91,16 +91,26 @@ of this was **verified live** with read + write probes:
   `/v2/users` (300), `/v2/packages` (630, umbra not yet present); **party allocation → 200**;
   **user-rights grant → 200** (admin capability confirmed). The m2m user is `id 6`
   (`otc-canton-fund-oauth`), participant namespace `1220a14ca128…`.
-- **BLOCKER (provisioning, not code): the shared m2m user is at Canton's 1000-user-rights cap
-  (999/1000).** Our 5 parties (operator + bankA/B/C + compliance) need 5 more `CanActAs` rights
-  and don't fit. This one credential is shared by every team, saturated with their parties.
-- **Fix:** a **dedicated per-team m2m client** from the organizers (fresh user, rights headroom).
-  Per-desk clients would additionally restore per-desk structural privacy on DevNet (the single
-  shared token acts as one broad identity, so it can't scope a desk's browser to its own data).
-- **Built + waiting:** `scripts/devnet/up.mjs` runs the entire Route-B bring-up (parties → grant
-  → DAR upload by explicit package id → §4 seed → write `solver/.env.devnet`). It runs as-is the
-  moment a credential with rights headroom exists. Remaining code tweak: `solver/src/auth.ts`
-  needs an Authentik token-URL + `audience` param (small; scoped) for the solver to close/settle.
+- **RESOLVED (was: rights cap).** The shared m2m user briefly sat at Canton's 1000-user-rights
+  cap (999/1000) so our 5 parties could not attach. The organizers pruned it (→ ~106/1000) when
+  granting Encode-org access; the grant then succeeded and the cutover ran end to end.
+- **✅ SHIPPED — §4 settles on real DevNet.** `scripts/devnet/up.mjs` (parties → grant → DAR
+  upload by explicit package id → §4 seed → writes `solver/.env.devnet` + `web/src/tokens.json`)
+  then solver `/close` + `/settle` → **clearingPrice 100.0, A=10 / B=8 / C=2, txConfirmations 1**.
+  `scripts/devnet/verify.mjs` is green: A 10 BONDX/4000 USDCx · B 12/1800 · C 13/1200 · conserved
+  35/7000 · each desk party is a stakeholder on ONLY its own TradeConfirmation. The browser
+  renders it live through the vite `/cn/devnet` proxy.
+- **Interop defects this surfaced (all fixed):** (1) package-NAME collision — an unrelated team
+  owns `umbra` (v0.0.3/0.0.4) and their versions are mutually upgrade-inconsistent, so any new
+  `umbra` upload was rejected → we publish as **`umbra-sealed-auction`** and pin the explicit
+  package id; (2) this validator rejects JSON numbers for Int64/Numeric ("Expected ujson.Str") →
+  the solver normalizes numbers to strings on the wire; (3) ACS readers (solver + web) matched
+  `packageName === 'umbra'` literally → now env-configurable (`UMBRA_PACKAGE_NAME` /
+  `VITE_UMBRA_PACKAGE_NAME`); (4) `resolveCompliance` preferred the LocalNet
+  `scripts/.compliance-token` over env → `UNKNOWN_INFORMEES` on DevNet; explicit env now wins.
+- **REMAINING (organizer ask): per-desk clients.** All three desks share the ONE m2m bearer, so
+  per-desk VIEWS are correct but the adversarial peek proof (a rival read must 403) cannot hold
+  on DevNet. LocalNet keeps the real scoped-token privacy proof.
 
 ---
 
@@ -154,13 +164,17 @@ the **Splice version** to pin.
 
 ## 6. Bottom line
 
-"Absolutely everything on DevNet" is achievable and **Route B (FiveNorth Seaport sandbox) is the
-fast path** — verified live: the JSON Ledger API v2 + OIDC client-credentials are reachable, party
-allocation and admin rights work, our DAR is uploadable, and the full bring-up tooling
-(`scripts/devnet/up.mjs`) is built and waiting. The ONLY blocker is that the **shared**
-`validator-devnet-m2m` user is at Canton's **1000-user-rights cap** (999/1000), so our 5 parties
-can't attach — a **per-team credential** from the organizers unblocks it end to end (and per-desk
-clients restore the browser privacy proof on DevNet). If that credential can't be provided,
-**Route A (self-hosted Splice validator)** is the fallback, at the cost of a sponsor SV + a static
-egress IP (2–7 day allowlist) + validator infra. Meanwhile the local stack remains the complete,
-airtight demo.
+**DONE — Umbra runs on real Canton DevNet via Route B (FiveNorth Seaport sandbox).** The DAR is
+vetted, our 5 parties are allocated, the §4 fixture seeds, and the round **settles at $100.00**
+(A=10 / B=8 / C=2, atomic, four-eyes) through the audit-fixed `Venue.SettleRound` — verified
+on-ledger and rendered live in the browser.
+
+Reproduce: `SEAPORT_SECRET=… node scripts/devnet/up.mjs` → run the solver with
+`solver/.env.devnet` → `POST /round/R1/close` + `/settle` → `node scripts/devnet/verify.mjs`.
+
+One gap remains, and it is an **organizer ask, not code**: the hackathon issues a single shared
+m2m client, so all three desks carry the same bearer. Per-desk VIEWS are correct, but the
+adversarial peek proof needs **per-desk clients**. Until then, present the structural-privacy
+proof from the LocalNet stack (scoped tokens, rival read → 403) and DevNet for the
+"runs on real Canton" claim. **Route A (self-hosted Splice validator)** remains the fallback if
+the sandbox ever goes away (sponsor SV + static egress IP + a 2–7 day allowlist).

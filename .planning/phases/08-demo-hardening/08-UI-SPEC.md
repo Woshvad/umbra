@@ -173,18 +173,73 @@ verdict row.
 - **Target selector:** two ghost-mono toggles — rival **`Order`** and rival **`TradeConfirmation`**
   (mono 9px `.16em`, active = ink underline) — proving privacy is structural, not Order-specific
   (CONTEXT). Plus which rival desk to peek at (the two non-active desks; mono 11px chips).
-- **Runs as the selected desk's own token:** a raw `POST /v2/state/active-contracts` to the per-party
-  JSON Ledger API v2 endpoint the app already uses, filtered to the RIVAL party for `Umbra.Auction:Order`.
+- **Runs as the selected desk's own token, asking AS THE SELECTED DESK'S OWN PARTY:** a raw
+  `POST /v2/events/events-by-contract-id` to the per-party JSON Ledger API v2 endpoint the app already
+  uses, demanding a **rival's contract id** with `eventFormat.filtersByParty = { <OWN party>: { cumulative: [] } }`
+  (`eventFormat` is mandatory — omitting it → 400 `MISSING_FIELD`). The ledger answers **404
+  `CONTRACT_EVENTS_NOT_FOUND`** — "Contract events not found, or not visible." — because the asking party
+  is not an informee. **⚠ MECHANISM DEVIATION — see the note below; this supersedes the original
+  `POST /v2/state/active-contracts` filtered-to-the-RIVAL-party mechanism.**
+  - **Out-of-band cid discovery (must be surfaced honestly):** the rival's cid is obtained by a separate
+    `POST /v2/state/active-contracts` read issued with the **RIVAL's OWN token** for the rival's own party
+    (a legitimate self-read; the demo bundle already carries all three desk tokens for the party switcher).
+    This is a deliberate **gift to the attacker** and must be labeled as such in the REQUEST pane — never
+    fabricate a cid. It strengthens the proof: we hand the attacker more than it could ever obtain and the
+    ledger still refuses.
 - **CTA:** `ATTEMPT PEEK` (ink bg / paper, mono 13px/700 `.16em`, padding 14px 26px). Non-destructive.
 - **Two-pane wire evidence** (stacked or side-by-side; ink evidence surface `#0A0A0A`/`#F4F1EA`, IBM Plex
   Mono 13px/1.6 `pre-wrap` tabular, inner padding `22px 24px`, matching AgentRationale):
-  - **REQUEST** pane caption (mono 11px `.16em` opacity .6) → verbatim `POST {liveJsonApiUrl}/v2/state/active-contracts`,
-    the party-filter body (rival party + template `Umbra.Auction:Order`), and
+  - **REQUEST** pane caption (mono 11px `.16em` opacity .6) → the discovery preamble (what was handed to
+    the attacker + the resulting cid), then verbatim `POST {liveJsonApiUrl}/v2/events/events-by-contract-id`,
+    the `eventFormat` body (rival cid + the asking desk's OWN party), and
     `Authorization: Bearer {thisDesk}…` with the token **truncated/elided** (never render a full token).
-  - **RESPONSE** pane caption → the verbatim raw response: an empty `[]` (or the raw 403 JSON body).
-    No styled badge — the empty array / 403 *is* the evidence.
-- **Verdict row:** red-square grammar (6px `#E2231A` square + mono 9px `.16em` `#E2231A`):
-  `0 RIVAL ORDERS RETURNED — PRIVACY ENFORCED AT THE WIRE`.
+  - **RESPONSE** pane caption → the verbatim raw response: the raw 404 `CONTRACT_EVENTS_NOT_FOUND` JSON
+    body (or an empty `[]` / raw 403 body). No styled badge — the raw refusal *is* the evidence.
+- **Verdict row:** red-square grammar (6px `#E2231A` square + mono 9px `.16em` `#E2231A`), e.g.
+  `404 — LEDGER REFUSED THE READ · NOT AN INFORMEE`. **Only a conclusive privacy result earns the verdict
+  row:** an unreachable node/CORS failure (T-08-02-NODE), an inconclusive wire error (400/500, or a 404 that
+  is *not* the informee refusal), and "the rival has no live target contract yet" all render a plain note
+  with **no** verdict — absence of a target is not a privacy proof, and an error must never masquerade as
+  "privacy enforced".
+
+> **⚠ MECHANISM DEVIATION (recorded 2026-07-15) — the visual contract above is UNCHANGED and remains
+> binding; only the wire mechanism and the verdict SET changed.**
+>
+> **Originally specified:** a raw `POST /v2/state/active-contracts` filtered to the **RIVAL** party using
+> the active desk's token — i.e. asking the ledger *as the rival* — expecting an empty `[]` or a 403.
+>
+> **Why it was replaced:** that mechanism tests **credential scoping** (can bankA's *token* reach bankB?),
+> which is an **ops** property, not the Canton privacy guarantee. It is empirically broken on a
+> shared-token network. On **LocalNet** each desk token is scoped to its own party → 403 → looks right. On
+> **DevNet** all three desks share ONE m2m bearer (`validator-devnet-m2m`, user id 6) holding `readAs` on
+> **every** party → the read **SUCCEEDS**, returning the rival's contracts → the console classifies a
+> non-empty rival array as `LEAK — RIVAL CONTRACTS RETURNED · PRIVACY REGRESSION` and the money-shot panel
+> renders a **FALSE red privacy-regression banner**.
+>
+> **What replaced it:** the **informee refusal**. Canton disclosure is **stakeholder/informee-based, not
+> token-based** — a party is shown a contract only if it is a signatory/observer. Asking *as a
+> non-stakeholder party* is refused **even when the token has full read rights on all parties**. This
+> tests **ledger-enforced projection**, the actual guarantee, and it holds on both nets.
+>
+> Verified live against the FiveNorth DevNet sandbox, **same shared bearer for both calls**:
+>
+> | requestingParty | Result |
+> |---|---|
+> | bankA (rival, NOT a stakeholder) | **HTTP 404 `CONTRACT_EVENTS_NOT_FOUND`** — "Contract events not found, or not visible." |
+> | bankB (the owner, control) | **HTTP 200** with the full `createdEvent` |
+>
+> **The nets converge.** Asking AS the peeking desk's OWN party means the token always permits the
+> requesting party, so there is no 403 divergence: **LocalNet and DevNet return the same 404**. One proof,
+> one verdict, both nets.
+>
+> **Honest limitation (must stay documented, do not overstate):** this proves the ledger will not disclose
+> to a **non-stakeholder PARTY**. It does **NOT** prove one desk's **CREDENTIAL** cannot impersonate
+> another — on DevNet a holder of the shared bearer could simply ask as bankB. Per-desk m2m clients remain
+> the only fix for credential isolation. See `docs/DEVNET.md`.
+>
+> `VERDICT_FORBIDDEN` (403) is **retained byte-identical** and still classified as privacy-enforced, so a
+> genuinely scoped-token deployment keeps its stronger verdict. LEAK detection is **unchanged and
+> undiminished** — a 200 disclosure of the rival's `createdEvent` is still a loud regression banner.
 - **States:** idle (panes empty w/ hint) · running (`ATTEMPTING…` mono, disabled CTA) · returned
   (panes + verdict) · self-check note ("your own order is still fully visible to you" — Inter 13px opacity .7).
 
@@ -273,8 +328,11 @@ for prose). Verbatim numbers stay on the §4 invariant.
 | WOW-01 sub-label | Adversarial · Try to Peek |
 | WOW-01 primary CTA | ATTEMPT PEEK |
 | WOW-01 request caption / response caption | REQUEST · RESPONSE |
+| WOW-01 verdict (404 — the shipped proof, both nets) | 404 — LEDGER REFUSED THE READ · NOT AN INFORMEE |
 | WOW-01 verdict (empty) | 0 RIVAL ORDERS RETURNED — PRIVACY ENFORCED AT THE WIRE |
-| WOW-01 verdict (403) | 403 — LEDGER REFUSED THE READ · PRIVACY IS STRUCTURAL |
+| WOW-01 verdict (403 — retained, scoped-token deployments) | 403 — LEDGER REFUSED THE READ · PRIVACY IS STRUCTURAL |
+| WOW-01 verdict (leak — regression guard, must stay LOUD) | LEAK — RIVAL CONTRACTS RETURNED · PRIVACY REGRESSION |
+| WOW-01 no-verdict cases (plain note, red-square row withheld) | node unreachable · inconclusive wire error (400/500, non-informee 404) · rival has no live target contract yet |
 | WOW-01 self-check note | Your own order is still fully visible to you — privacy blinds rivals, not yourself. |
 | WOW-01 empty/idle state | Pick a rival and a target, then attempt the peek. The raw JSON Ledger API v2 request and its response appear here — unedited. |
 | WOW-02 sub-label / tag | Break the AI · `DEMO · ADVERSARIAL` |

@@ -108,9 +108,62 @@ of this was **verified live** with read + write probes:
   `packageName === 'umbra'` literally → now env-configurable (`UMBRA_PACKAGE_NAME` /
   `VITE_UMBRA_PACKAGE_NAME`); (4) `resolveCompliance` preferred the LocalNet
   `scripts/.compliance-token` over env → `UNKNOWN_INFORMEES` on DevNet; explicit env now wins.
-- **REMAINING (organizer ask): per-desk clients.** All three desks share the ONE m2m bearer, so
-  per-desk VIEWS are correct but the adversarial peek proof (a rival read must 403) cannot hold
-  on DevNet. LocalNet keeps the real scoped-token privacy proof.
+- **Shared bearer (organizer-issued).** All three desks carry the ONE m2m bearer. Per-desk VIEWS are
+  correct; the adversarial peek proof was re-based onto **informee refusal** so it holds here too
+  (§2.6). The remaining ask — **per-desk m2m clients** — is now about *credential* isolation only.
+
+---
+
+## 2.6 The adversarial privacy proof on DevNet — informee refusal (2026-07-15, verified live)
+
+**Problem.** The original "Try to Peek" console asked the ledger **as the rival**:
+`POST /v2/state/active-contracts` filtered to the RIVAL party, using the active desk's token. That
+tests **credential scoping**, an *ops* property — and a shared bearer defeats it. On LocalNet each
+desk token is scoped to its own party → 403 → looks right. On DevNet the shared
+`validator-devnet-m2m` bearer (user id 6) holds `readAs` on **every** party → the read **SUCCEEDS**
+→ the console rendered a **FALSE `LEAK — PRIVACY REGRESSION`** banner on the money-shot panel.
+
+**Fix.** Canton disclosure is **stakeholder/informee-based, not token-based**: a party is shown a
+contract only if it is a signatory/observer. So the console now asks **as the peeking desk's OWN
+party, with its OWN token**, for a rival's contract by id:
+
+```
+POST /v2/events/events-by-contract-id
+{ "contractId": "<rival's Order cid>",
+  "eventFormat": { "filtersByParty": { "<requesting PARTY>": { "cumulative": [] } },
+                   "verbose": true } }
+```
+
+Verified live on the Seaport sandbox, **the same shared bearer for both calls**:
+
+| requestingParty | Result |
+|---|---|
+| bankA (rival, NOT a stakeholder) | **HTTP 404 `CONTRACT_EVENTS_NOT_FOUND`** — "Contract events not found, or not visible." |
+| bankB (the owner, control) | **HTTP 200** with the full `createdEvent` |
+
+(`eventFormat` is mandatory — omitting it returns HTTP 400 `MISSING_FIELD` "event_format".)
+
+**The nets converge.** Asking AS our own party means the token always permits the requesting party,
+so there is no 403 divergence — **LocalNet and DevNet both return the same 404**. One proof, one
+verdict (`404 — LEDGER REFUSED THE READ · NOT AN INFORMEE`), both nets. The 403 verdict is retained
+for genuinely scoped-token deployments, and LEAK detection is undiminished.
+
+**The cid is a deliberate gift to the attacker.** bankA cannot legitimately discover bankB's cid —
+that is the point. The demo bundle already carries all three desk tokens (for the party switcher),
+so the console performs an **out-of-band discovery read with the RIVAL's OWN token** to learn the
+cid, and says so verbatim in the REQUEST pane. We hand the attacker the rival's exact contract id
+**and** a bearer with read rights on all three desks. The ledger still answers *not visible*.
+
+> ### ⚠ Honest limitation — do not overstate this proof
+>
+> This proves the ledger will **not disclose to a non-stakeholder PARTY** (ledger-enforced
+> projection). It does **NOT** prove one desk's **CREDENTIAL** cannot impersonate another: on DevNet
+> a holder of the shared bearer could simply ask *as* bankB and get the 200. **Per-desk m2m clients
+> from the organizers remain the only fix for credential isolation.** Present the DevNet panel as
+> "the ledger refuses non-informees", not as "bankA's login cannot read bankB".
+
+Code: `web/src/lib/peek.ts` (pure builder + classifier), `web/src/components/PeekConsole.tsx` (owns
+the fetch). Spec deviation recorded in `.planning/phases/08-demo-hardening/08-UI-SPEC.md` (WOW-01).
 
 ---
 
@@ -172,9 +225,15 @@ on-ledger and rendered live in the browser.
 Reproduce: `SEAPORT_SECRET=… node scripts/devnet/up.mjs` → run the solver with
 `solver/.env.devnet` → `POST /round/R1/close` + `/settle` → `node scripts/devnet/verify.mjs`.
 
+**The adversarial privacy proof now runs on DevNet too** (§2.6): the peek asks
+`events-by-contract-id` **as the peeking desk's own party** and the ledger refuses with
+`404 CONTRACT_EVENTS_NOT_FOUND` — the same verdict on LocalNet and DevNet, even though the sandbox
+hands every desk the same bearer. This is the real Canton guarantee (informee-based projection), so
+the money shot can be demoed on real DevNet.
+
 One gap remains, and it is an **organizer ask, not code**: the hackathon issues a single shared
-m2m client, so all three desks carry the same bearer. Per-desk VIEWS are correct, but the
-adversarial peek proof needs **per-desk clients**. Until then, present the structural-privacy
-proof from the LocalNet stack (scoped tokens, rival read → 403) and DevNet for the
-"runs on real Canton" claim. **Route A (self-hosted Splice validator)** remains the fallback if
+m2m client, so all three desks carry the same bearer. That is a **credential-isolation** gap, not a
+ledger-privacy one — a bearer holder could ask *as* bankB and be served. **Per-desk m2m clients**
+would close it; LocalNet's scoped tokens already demonstrate it (rival read → 403). Do not claim
+credential isolation on DevNet. **Route A (self-hosted Splice validator)** remains the fallback if
 the sandbox ever goes away (sponsor SV + static egress IP + a 2–7 day allowlist).

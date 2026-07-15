@@ -17,7 +17,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { OperatorViewState, ClearingApprovalDecision } from '../operatorState'
 import type { SolvePreviewResponse, SettlementProvenance } from '../solver'
 import { settle, getRound, SolverError, OFFLINE_CAPTION } from '../solver'
-import { codeForParty, GUEST } from '../desks'
+import { codeForParty, deskKeyForParty, GUEST } from '../desks'
 import { deskBalancesFromAllocations, type DeskBalances, type DeskBalance } from '../lib/balance'
 import { estimateLeakage, type LeakageLeg } from '../lib/leakage'
 import DvpLegs, { type DvpLeg } from '../components/DvpLegs'
@@ -55,7 +55,7 @@ function prefersReducedMotion(): boolean {
 // `codeForParty` (desks.ts) only knows the three primary desks; the guest is a separate
 // export, so map it here so a guest allocation surfaces as a `GUEST` leg/row when present.
 function codeOf(party: string): string {
-  return party.split('::')[0] === GUEST.key ? GUEST.code : codeForParty(party)
+  return deskKeyForParty(party) === GUEST.key ? GUEST.code : codeForParty(party)
 }
 
 // Map an allocation list onto display-code desks (BLUEROCK/MERIDIAN/HALWARD, + GUEST when a

@@ -17,7 +17,7 @@
 // credential-free `TopologyMeta` hosting map (solver.ts getTopology, from 11-08/11-03) onto
 // node descriptors + connector edges WITHOUT ever carrying an order's contents. TopologyView
 // re-exports it (the documented home of the core); Topology.test.tsx exercises it directly.
-import { DESKS, GUEST, type DeskMeta } from '../desks'
+import { DESKS, GUEST, deskKeyForParty, type DeskMeta } from '../desks'
 import type { DeskKey } from '../ledgerContexts'
 import type { TopologyMeta } from '../solver'
 
@@ -34,12 +34,14 @@ export const OPERATOR_ID = 'operator'
 // GUEST (bankD) node appears ONLY once a guest party is actually hosted (UI-SPEC line 175).
 const PRIMARY: DeskMeta[] = DESKS
 
-// The live party id ("bankA::<fp>") whose DeskKey prefix matches `deskKey` — the perParty map
-// is keyed by full party ids, so we resolve a desk's party by its prefix (never throws).
+// The live party id that belongs to `deskKey` — the perParty map is keyed by FULL party ids
+// (never throws). Resolution goes through desks.ts `deskKeyForParty`, which matches on exact
+// party identity: the "::" prefix is only the DeskKey on LocalNet, whereas the shared DevNet
+// validator's namespaced hint yields `umbra-bankA-<ts>::<fp>` and prefix parsing found nothing.
 export const partyForDesk = (
   perParty: Record<string, string[]>,
   deskKey: DeskKey,
-): string | undefined => Object.keys(perParty).find((p) => p.split('::')[0] === deskKey)
+): string | undefined => Object.keys(perParty).find((p) => deskKeyForParty(p) === deskKey)
 
 // A participant node descriptor — CODE/role/hosting participant + honest caption. It deliberately
 // carries NO order contents (no side/quantity/limit): cross-node privacy is structural, so a node

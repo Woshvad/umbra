@@ -31,13 +31,36 @@ export const DESKS: DeskMeta[] = [
 // (the /join route, TopologyView) reference this directly.
 export const GUEST: DeskMeta = { key: 'bankD', code: 'GUEST', role: 'Guest' }
 
-// Resolve a live desk PARTY id ("bankA::<fingerprint>") to its comp display CODE
-// (BLUEROCK/MERIDIAN/HALWARD). The solver returns allocations keyed by the full party
-// id; the comp + the BEFORE balances are keyed by code, and the party-id prefix before
-// "::" is exactly the DeskKey. Falls back to the raw value if unmatched (never throws).
+// Every desk this app can resolve — the three primary desks plus the WOW-07 guest.
+const ALL_DESKS: DeskMeta[] = [...DESKS, GUEST]
+
+// Resolve a live desk PARTY id to its DeskKey.
+//
+// PARTY-ID SHAPE IS NOT CONTRACTUAL. This used to parse the prefix before "::" and assume it
+// WAS the DeskKey — true only because the LocalNet boot allocates bare `bankA` hints, giving
+// `bankA::<fingerprint>`. The shared FiveNorth DevNet validator also hosts other teams'
+// parties, so scripts/devnet/up.mjs namespaces the hint to avoid collisions and a desk's real
+// party is `umbra-bankA-<ts>::<fingerprint>` — whose prefix is NOT "bankA". Prefix parsing
+// silently resolved to undefined there: the Time Machine replayed no orders, and Settlement /
+// Agent surfaced a raw `umbra-bankA-…::1220a14c…` where the comp demands BLUEROCK.
+//
+// So resolve by EXACT IDENTITY against tokens.json — the source of truth for which party each
+// desk actually IS — which is independent of however the id happens to be shaped. The prefix
+// match survives only as a FALLBACK (a LocalNet-shaped id still resolves if tokens.json is
+// stale or absent); exact identity always wins.
+export const deskKeyForParty = (party: string): DeskKey | undefined => {
+  const exact = ALL_DESKS.find((d) => tokens[d.key]?.party === party)
+  if (exact) return exact.key
+  const prefix = party.split('::')[0]
+  return ALL_DESKS.find((d) => d.key === prefix)?.key
+}
+
+// Resolve a live desk PARTY id to its comp display CODE (BLUEROCK/MERIDIAN/HALWARD, or GUEST).
+// The solver returns allocations keyed by the full party id; the comp + the BEFORE balances are
+// keyed by code. Falls back to the raw value if unmatched (never throws).
 export const codeForParty = (party: string): string => {
-  const key = party.split('::')[0]
-  return DESKS.find((d) => d.key === key)?.code ?? party
+  const key = deskKeyForParty(party)
+  return ALL_DESKS.find((d) => d.key === key)?.code ?? party
 }
 
 // Same-origin base for the v2 shim (web/src/ledger/v2react.tsx), which appends

@@ -13,7 +13,7 @@
 // Operator-plane DISPLAY only: it reads the lifted SolvePreviewResponse (from :4100 via
 // web/src/solver.ts). No operator token, no @daml/react context here (threat T-06-01).
 import type { SolvePreviewResponse } from '../solver'
-import { codeForParty, GUEST } from '../desks'
+import { codeForParty, deskKeyForParty, GUEST } from '../desks'
 import { badgeLabel } from '../lib/solverParse'
 
 type Props = { preview: SolvePreviewResponse }
@@ -22,7 +22,7 @@ type Props = { preview: SolvePreviewResponse }
 // knows the three primary desks and would surface a guest as the raw `bankD::<hex>` id, so
 // map the GUEST key → 'GUEST' first. Everything else falls through to codeForParty.
 function codeOf(party: string): string {
-  return party.split('::')[0] === GUEST.key ? GUEST.code : codeForParty(party)
+  return deskKeyForParty(party) === GUEST.key ? GUEST.code : codeForParty(party)
 }
 
 // Signed-quantity color (UI-SPEC line 204): Buy + blue / Sell − pink / 0 faded ink.

@@ -27,7 +27,7 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { ctxA, ctxB, ctxC, type Ctx, type DeskKey } from '../ledgerContexts'
 import { UMBRA_PACKAGE_NAME } from '../ledger/v2react'
-import { tokens, httpBaseUrlFor, wsBaseUrl, DESKS } from '../desks'
+import { tokens, httpBaseUrlFor, wsBaseUrl, DESKS, deskKeyForParty } from '../desks'
 import {
   getStageOffsets,
   OFFLINE_CAPTION,
@@ -58,15 +58,17 @@ export const ledgerEventCaption = (offset: number): string => `LEDGER EVENT @ ${
 // party (owner, rival, OR the operator) can see order contents — everyone is redacted.
 export const isVenueBlindStage = (stage: Stage): boolean => stage === 'committed'
 
-// "bankA::<fp>" → 'bankA' (or undefined if it is not one of the three primary desks).
-// The Time Machine replays the three primary desks only; the guest (bankD) joins via
-// the mobile /join route and is not part of this 3-up replay (cast the list to DeskKey[]
-// so the widened union still narrows against the primary-desk allow-list).
+// A live party id → its DeskKey, but ONLY for the three primary desks. The Time Machine
+// replays those three; the guest (bankD) joins via the mobile /join route and is not part of
+// this 3-up replay, so a guest party must still resolve to undefined here.
+//
+// Delegates to desks.ts `deskKeyForParty`, which matches on EXACT party identity rather than
+// parsing the "::" prefix — the prefix is only the DeskKey on LocalNet. On the shared DevNet
+// validator the hint is namespaced against collisions (`umbra-bankA-<ts>::<fp>`), so prefix
+// parsing resolved to undefined and this view replayed an empty book.
 export const deskKeyOfParty = (party: string): DeskKey | undefined => {
-  const key = party.split('::')[0]
-  return (['bankA', 'bankB', 'bankC'] as DeskKey[]).includes(key as DeskKey)
-    ? (key as DeskKey)
-    : undefined
+  const key = deskKeyForParty(party)
+  return key && (['bankA', 'bankB', 'bankC'] as DeskKey[]).includes(key) ? key : undefined
 }
 
 // The compact order shape a VISIBLE cell renders (mono, tabular).

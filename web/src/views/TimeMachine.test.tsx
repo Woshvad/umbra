@@ -22,16 +22,23 @@ import {
   type CellOrder,
 } from './TimeMachineView'
 import { tokens } from '../desks'
+import { UMBRA_PACKAGE_NAME } from '../ledger/v2react'
 
 // A single v2 createdEvent row, byte-shaped like v2react.fetchAcs consumes
-// (contractEntry.JsActiveContract.createdEvent, packageName 'umbra').
+// (contractEntry.JsActiveContract.createdEvent + the package NAME our contracts carry).
+//
+// The name is IMPORTED, never hard-coded: `ordersFromAcs` filters on UMBRA_PACKAGE_NAME, so a
+// literal here silently rots the moment the package is renamed — as it did when the shared
+// DevNet validator's existing `umbra` forced ours to `umbra-sealed-auction`, and these rows
+// began filtering out to [] while the app itself was fine. Importing keeps fixture and filter
+// in lockstep by construction.
 const acsOrderRow = (deskParty: string, o: CellOrder) => ({
   contractEntry: {
     JsActiveContract: {
       createdEvent: {
         contractId: `c-${deskParty}`,
         templateId: 'abc123:Umbra.Auction:Order',
-        packageName: 'umbra',
+        packageName: UMBRA_PACKAGE_NAME,
         createArgument: { desk: deskParty, side: o.side, quantity: o.quantity, limit: o.limit },
       },
     },
@@ -63,7 +70,8 @@ describe('VIZ-02 Time Machine — mocked v2 ACS parse (privacy at the wire)', ()
 
   it('ignores non-umbra / non-Order rows and malformed entries', () => {
     const noise = [
-      { contractEntry: { JsActiveContract: { createdEvent: { templateId: 'x:Umbra.Asset:Asset', packageName: 'umbra', createArgument: {} } } } },
+      // Right package, WRONG template — must be ignored on the template, not the package name.
+      { contractEntry: { JsActiveContract: { createdEvent: { templateId: 'x:Umbra.Asset:Asset', packageName: UMBRA_PACKAGE_NAME, createArgument: {} } } } },
       { contractEntry: { JsActiveContract: { createdEvent: { templateId: 'x:Umbra.Auction:Order', packageName: 'other', createArgument: { desk: A } } } } },
       null,
       {},

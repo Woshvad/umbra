@@ -1,0 +1,25 @@
+# Keep the Railway upload small and deterministic — only the solver is deployed.
+# Without this, `railway up` indexes the whole tree (node_modules, Daml build output,
+# the web bundle, git history) and the upload stalls.
+node_modules
+**/node_modules
+.git
+.claude
+.planning
+daml/.daml
+daml.js
+**/daml.js
+web/dist
+web/node_modules
+solver/node_modules
+solver/dist
+Umbra design
+*.dar
+*.log
+.env
+.env.*
+!.env.example
+!.env.railway.example
+scripts/.devnet.json
+scripts/.operator-token
+scripts/.compliance-token

@@ -76,6 +76,16 @@ export default defineConfig({
       // validator — cannot silently break the build with
       // "<Template> is not exported by .../module.js".
       include: [/daml\.js\//, /node_modules/],
+      // REQUIRED for the PRODUCTION bundle to actually RUN (not merely to build).
+      // The @daml/* decoder chain ships modules that MIX ESM syntax with a bare
+      // `require("lodash.isequal")`. Rollup's commonjs plugin skips any file it
+      // judges to be ESM, so that `require` survived verbatim into the browser
+      // bundle and threw `ReferenceError: require is not defined` at module-eval
+      // time — React never mounted and #root stayed empty. `npm run build` was
+      // CLEAN throughout: a successful build does NOT prove the bundle runs, and
+      // the dev server hid this because optimizeDeps pre-bundles those CJS deps.
+      // Only serving the built output surfaces it.
+      transformMixedEsModules: true,
     },
   },
 })

@@ -1,0 +1,14 @@
+{
+  "bankA": {
+    "party": "umbra-bankA-17838808475237::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8",
+    "base": "/cn/devnet"
+  },
+  "bankB": {
+    "party": "umbra-bankB-1783880848468::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8",
+    "base": "/cn/devnet"
+  },
+  "bankC": {
+    "party": "umbra-bankC-17838808506617::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8",
+    "base": "/cn/devnet"
+  }
+}

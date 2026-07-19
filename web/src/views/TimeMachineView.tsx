@@ -156,13 +156,20 @@ export const operatorCell = (params: { stage: Stage; offset: number | undefined 
 }
 
 // ── Offset-scoped per-party read (mirrors v2react.fetchAcs, but at a CHOSEN offset) ────────
-// Authenticated as `deskKey`'s OWN token against `deskKey`'s OWN node base. No operator token.
+// Scoped to `deskKey`'s OWN party against `deskKey`'s OWN node base. No operator token — and,
+// on the shipped/DevNet path, no bearer in the browser at all: the base resolves to the
+// solver's ledger proxy, which injects the credential server-side and forwards this party
+// filter verbatim (the filter, not the token, is what scopes the replay). A legacy per-desk
+// token bundle still sends its own header — hence the conditional spread.
 async function readAcsAtOffset(deskKey: DeskKey, activeAtOffset: number): Promise<unknown[]> {
   const base = httpBaseUrlFor(deskKey).replace(/\/+$/, '')
   const { party, token } = tokens[deskKey]
   const res = await fetch(`${base}/v2/state/active-contracts`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({
       filter: { filtersByParty: { [party]: {} } },
       verbose: true,

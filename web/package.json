@@ -5,8 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "predev": "node scripts/ensure-tokens.mjs",
     "build": "tsc --noEmit && vite build",
+    "prebuild": "node scripts/ensure-tokens.mjs",
     "test": "vitest run",
+    "pretest": "node scripts/ensure-tokens.mjs",
     "preview": "vite preview",
     "tokens": "node ../scripts/localnet/deploy.mjs"
   },

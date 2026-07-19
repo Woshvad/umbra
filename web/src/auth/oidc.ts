@@ -21,7 +21,10 @@ import type { UserManagerSettings, User, UserManager } from 'oidc-client-ts'
 import type { DeskKey } from '../ledgerContexts'
 import tokensJson from '../tokens.json'
 
-type DeskToken = { party: string; token: string; base?: string }
+// `token` is OPTIONAL and, in the shipped build, ABSENT: the deploy moved the ledger bearer
+// server-side (solver/src/ledgerproxy.ts) so nothing credential-shaped is bundled into the
+// client JS. It survives in the type only for a legacy per-desk-token LocalNet tokens.json.
+type DeskToken = { party: string; token?: string; base?: string }
 const tokens = tokensJson as Record<DeskKey, DeskToken>
 
 // The public OIDC client id (guide's `wallet-web-ui` analogue). PUBLIC — never a secret.

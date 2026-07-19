@@ -41,12 +41,17 @@ describe('oidc — dual-mode dev-token fallback (VITE_OIDC_AUTHORITY unset)', ()
     expect(oidcEnabled()).toBe(false)
   })
 
-  it('getAccessToken returns the pre-minted dev token from tokens.json (dev path unchanged)', async () => {
-    const tokens = tokensJson as Record<string, { token: string }>
+  it('getAccessToken returns exactly what tokens.json holds — which is now NOTHING', async () => {
+    const tokens = tokensJson as Record<string, { token?: string }>
     const bankA = await getAccessToken('bankA')
-    expect(bankA).toBe(tokens.bankA.token)
-    // A dev desk token is a non-empty JWT string (three dot-separated segments).
-    expect(bankA.split('.')).toHaveLength(3)
+    expect(bankA).toBe(tokens.bankA.token ?? '')
+    // DEPLOY INVARIANT (this assertion is the point): tokens.json is token-free, so the dev
+    // fallback yields ''. The ledger bearer now lives in the solver and is injected
+    // server-side by its ledger proxy, never bundled into the client JS. If someone
+    // reintroduces a token into tokens.json — the exact regression that would leak a
+    // credential into a public deploy — this line fails loudly.
+    expect(bankA).toBe('')
+    expect(bankA.split('.')).not.toHaveLength(3) // not a JWT: there is no JWT here
   })
 })
 

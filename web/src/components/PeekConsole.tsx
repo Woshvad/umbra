@@ -15,11 +15,12 @@
 //                                    as OUR party, with OUR token, for that cid → 404
 //
 // Step 1 is a deliberate GIFT TO THE ATTACKER and is surfaced honestly in the REQUEST pane.
-// bankA could never discover bankB's cid legitimately — that is the point. The demo bundle
-// already carries all three desk tokens (tokens.json, by design, for the party switcher), so
-// we hand the attacker the rival's exact contract id — and, on DevNet, a bearer with read
-// rights on all three desks. The ledger still answers "not visible". The proof is stronger
-// for being generous.
+// bankA could never discover bankB's cid legitimately — that is the point. We hand the
+// attacker the rival's exact contract id anyway, and on DevNet the read behind it is backed by
+// a bearer with read rights on all three desks (one shared m2m client — see docs/DEPLOY.md;
+// in the shipped build that bearer lives in the solver, not the browser, but it is the same
+// shared credential and we do not pretend otherwise). The ledger still answers "not visible".
+// The proof is stronger for being generous.
 //
 // The previous mechanism (active-contracts filtered TO the rival party, using our token) is
 // NOT used: it tests credential scoping, which a shared-token network defeats — on DevNet all
@@ -132,18 +133,24 @@ export default function PeekConsole({ activeDesk }: Props) {
     const meCode = codeOf(activeDesk)
     const rivalCode = codeOf(effectiveRival)
 
-    // The peeking desk: its OWN node, its OWN bearer, its OWN party (never an operator
-    // token — none exists in this bundle; threat T-08-02-OPTOK).
+    // The peeking desk: its OWN node, its OWN party (never an operator token — none exists in
+    // this bundle; threat T-08-02-OPTOK). On the shipped/DevNet path there is no bearer in the
+    // browser AT ALL: the request goes through the solver's ledger proxy, which attaches the
+    // credential server-side. The proof is untouched by that — it asks as our OWN party, so
+    // the token was never the variable (see peek.ts). A legacy per-desk-token bundle still
+    // sends its own header, hence the conditional.
     const base = httpBaseUrlFor(activeDesk)
     const token = tokens[activeDesk].token
     const ownParty = tokens[activeDesk].party
-    const authHeader = `Bearer ${token}`
+    // Omit the header entirely when we hold no token — never send a malformed `Bearer `,
+    // whose 401 would be indistinguishable from a real refusal at the verdict row.
+    const authHeaders = (t: string): Record<string, string> =>
+      t ? { Authorization: `Bearer ${t}` } : {}
 
-    // The rival's own node + bearer — used ONLY for the out-of-band cid discovery below.
+    // The rival's own node — used ONLY for the out-of-band cid discovery below.
     const rivalBase = httpBaseUrlFor(effectiveRival)
     const rivalToken = tokens[effectiveRival].token
     const rivalParty = tokens[effectiveRival].party
-    const rivalAuth = `Bearer ${rivalToken}`
 
     try {
       // ── Step 1: DISCOVERY (the gift to the attacker) ────────────────────────────────
@@ -151,7 +158,7 @@ export default function PeekConsole({ activeDesk }: Props) {
       // any desk can make of its own book. This is how the attacker gets a cid it could
       // never obtain legitimately. It is NOT part of the proof; it is a handicap we accept.
       const endRes = await fetch(`${rivalBase}v2/state/ledger-end`, {
-        headers: { Authorization: rivalAuth },
+        headers: authHeaders(rivalToken),
       })
       if (!endRes.ok) throw new Error(`ledger-end HTTP ${endRes.status}`)
       const end = (await endRes.json()) as { offset: number }
@@ -159,7 +166,7 @@ export default function PeekConsole({ activeDesk }: Props) {
       const discReq = buildPeekRequest(rivalBase, rivalToken, rivalParty, template, end.offset)
       const discRes = await fetch(discReq.url, {
         method: 'POST',
-        headers: { Authorization: rivalAuth, 'Content-Type': 'application/json' },
+        headers: { ...authHeaders(rivalToken), 'Content-Type': 'application/json' },
         body: JSON.stringify(discReq.body),
       })
       if (!discRes.ok) throw new Error(`discovery HTTP ${discRes.status}`)
@@ -188,7 +195,7 @@ export default function PeekConsole({ activeDesk }: Props) {
 
       const res = await fetch(req.url, {
         method: 'POST',
-        headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
         body: JSON.stringify(req.body),
       })
       const raw = await res.text()

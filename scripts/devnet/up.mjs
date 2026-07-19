@@ -176,27 +176,34 @@ const envDevnet = [
 writeFileSync(resolve(repoRoot, 'solver', '.env.devnet'), envDevnet)
 writeFileSync(resolve(repoRoot, 'daml', 'parties.json'), JSON.stringify({ operator: op, bankA: P.bankA, bankB: P.bankB, bankC: P.bankC }, null, 2) + '\n')
 
-// Browser config: each desk reads its OWN party through the Vite '/cn/devnet' proxy
-// (the validator emits no CORS headers for :5173).
+// Browser config: PUBLIC party ids + the '/cn/devnet' path prefix. NO BEARER.
 //
-// HONEST LIMITATION: all three desks carry the SAME shared m2m bearer, because the
-// hackathon issues ONE client (`validator-devnet-m2m`). Each desk's VIEW is still correct
-// (its ACS query filters by its own party), but the token is not SCOPED to that desk — so
-// the adversarial "Try to Peek" proof (a rival read must 403) CANNOT hold on DevNet until
-// the organizers issue PER-DESK clients. The LocalNet path keeps the real scoped-token
-// privacy proof. Do not present DevNet mode as the structural-privacy proof.
+// This file is `import`ed by web/src/desks.ts, so anything written here is BUNDLED into the
+// shipped client JS. It therefore carries no credential: the browser's ledger reads go to the
+// solver's ledger proxy (solver/src/ledgerproxy.ts), which injects the bearer server-side and
+// forwards the party filter verbatim. `base` selects that proxy mount; desks.ts resolves it
+// against the solver URL when (as here) no client token is present.
+//
+// HONEST LIMITATION (unchanged by the above — moving a credential is not isolating it): all
+// desks are served by the SAME shared m2m bearer, because the hackathon issues ONE client
+// (`validator-devnet-m2m`). Each desk's VIEW is correct (its ACS query filters by its own
+// party, and Canton's stakeholder projection enforces that), but the credential is not SCOPED
+// per desk. So the peek proof on DevNet is the INFORMEE refusal (404 CONTRACT_EVENTS_NOT_FOUND
+// asking as our own party — which holds under a shared bearer), NOT a credential-scoping 403.
+// Per-desk m2m clients from the organizers remain the only fix for credential isolation.
 writeFileSync(
   resolve(repoRoot, 'web', 'src', 'tokens.json'),
   JSON.stringify(
     {
-      bankA: { party: P.bankA, token: TOKEN, base: '/cn/devnet' },
-      bankB: { party: P.bankB, token: TOKEN, base: '/cn/devnet' },
-      bankC: { party: P.bankC, token: TOKEN, base: '/cn/devnet' },
+      bankA: { party: P.bankA, base: '/cn/devnet' },
+      bankB: { party: P.bankB, base: '/cn/devnet' },
+      bankC: { party: P.bankC, base: '/cn/devnet' },
     },
     null,
     2,
   ) + '\n',
 )
 console.log('\n✓ wrote solver/.env.devnet + daml/parties.json + web/src/tokens.json (DevNet)')
-console.log('  ⚠ desks share ONE m2m token — per-desk views are correct, but the peek proof needs per-desk clients')
+console.log('  ✓ tokens.json is TOKEN-FREE — the browser holds no bearer; the solver ledger proxy injects it')
+console.log('  ⚠ desks share ONE m2m token server-side — per-desk views are correct, but credential isolation needs per-desk clients')
 console.log('  next: run the solver with .env.devnet, then POST /round/R1/close + /round/R1/settle')

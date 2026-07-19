@@ -65,8 +65,23 @@ import type { StageOffsets } from './timemachine.js'
 // is dependency-injected via AppDeps, exactly like the ledger/crypto clients).
 import type { TopologyResult } from './topology.js'
 
-// The Vite dev origin — the ONLY allowed CORS origin (never '*').
+// The Vite dev origin — the DEFAULT allowed CORS origin (never '*' unless explicitly configured).
 export const ALLOWED_ORIGIN = 'http://localhost:5173'
+
+// ── DEPLOY: the CORS origin allow-list (env-configurable) ─────────────────────────
+// On a public link the browser is served from a Vercel domain, not the Vite dev origin, so
+// the single hard-coded origin has to become configurable. `CORS_ORIGIN` is a COMMA-SEPARATED
+// allow-list of exact origins; the literal `*` opts into reflect-any-origin (permissive demo
+// mode — acceptable here because every ledger-plane route is a stakeholder-projected read and
+// the solver holds no per-user session/cookie to be ridden, but it is still opt-in, never the
+// default). UNSET ⇒ byte-unchanged behaviour: the Vite dev origin ONLY.
+export const resolveCorsOrigin = (raw: string | undefined = process.env.CORS_ORIGIN): string | string[] | boolean => {
+  const trimmed = (raw ?? '').trim()
+  if (!trimmed) return ALLOWED_ORIGIN
+  const list = trimmed.split(',').map((s) => s.trim()).filter(Boolean)
+  if (list.includes('*')) return true // cors({origin:true}) reflects the request origin
+  return list.length === 1 ? list[0] : list
+}
 
 // ── Injected dependency surface ─────────────────────────────────────────────────
 // Mirrors the ledger.ts exports + the pure auction.ts helpers. Everything the route
@@ -245,6 +260,17 @@ export interface AppDeps {
   statusSource?: () =>
     | Promise<{ health: Health; roundStatus: RoundStatus | null; build: string }>
     | { health: Health; roundStatus: RoundStatus | null; build: string }
+
+  // ── DEPLOY: the server-side-authenticated ledger proxy (ledgerproxy.ts) ───────────
+  // OPTIONAL. When present it is mounted at `/cn/devnet` AND at the root, so the browser's
+  // ledger reads reach the validator through THIS service with the bearer injected
+  // server-side — the client bundle then carries no ledger credential at all. Absent
+  // (every existing test + the LocalNet dev loop) ⇒ nothing is mounted and the HTTP
+  // surface is byte-identical to before. See ledgerproxy.ts for the privacy contract:
+  // filtersByParty / requestingParties / actAs are forwarded VERBATIM and the validator's
+  // status+body (notably the 404 CONTRACT_EVENTS_NOT_FOUND informee refusal) pass through
+  // unchanged.
+  ledgerProxy?: express.Router
 
   // ── OPS-03 idempotency unit (opt-in dedupe of mutating POSTs) ─────────────────────
   // OPTIONAL: an injected idempotency store + middleware. When absent, createApp builds a
@@ -601,7 +627,15 @@ export const createApp = (deps: AppDeps): Express => {
   app.use(express.json())
   // CORS scoped to the Vite dev origin ONLY — never '*' (T-04-09 / V4). Registered BEFORE the
   // idempotency guard so a replayed response still carries the CORS headers.
-  app.use(cors({ origin: ALLOWED_ORIGIN }))
+  app.use(cors({ origin: resolveCorsOrigin() }))
+  // DEPLOY: the ledger proxy mounts right after CORS + body parsing and BEFORE the app
+  // routes, at both the `/cn/devnet` prefix (what web/src/tokens.json `base` selects) and
+  // the bare root (a base-less client). Its own closed allow-list means the extra root
+  // mount adds exactly four /v2/* paths — it can never shadow a §11 endpoint.
+  if (deps.ledgerProxy) {
+    app.use('/cn/devnet', deps.ledgerProxy)
+    app.use(deps.ledgerProxy)
+  }
   // OPS-03: the idempotency middleware registers AFTER express.json() so req.body is parsed
   // when we hash it. OPT-IN — a no-op unless a POST carries an Idempotency-Key header, so the
   // existing endpoints/tests are byte-unaffected. Deduped replays return the ORIGINAL response;

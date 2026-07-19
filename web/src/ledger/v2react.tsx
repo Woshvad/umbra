@@ -5,11 +5,16 @@
 // exact code (and pixels) unchanged; only `ledgerContexts.ts` swaps its import here.
 //
 // STRUCTURAL PRIVACY (the money shot, unchanged): each named context mounts its own
-// DamlLedger with that desk's OWN token. The provider polls
-// POST /v2/state/active-contracts with that token + a party filter, so the
+// DamlLedger for that desk's OWN party. The provider polls
+// POST /v2/state/active-contracts with a filter naming that party, so the
 // participant returns ONLY contracts that desk is a stakeholder of — a rival
-// column's query genuinely yields nothing (honest redaction, ledger-enforced). The
-// operator token never enters the browser.
+// column's query genuinely yields nothing (honest redaction, ledger-enforced).
+//
+// The separation rides the PARTY FILTER, not the credential — Canton discloses by
+// signatory/observer, so the filter is what the participant answers as. That is why the
+// deploy build can (and does) hold NO bearer at all: the ledger calls go to the solver's
+// ledger proxy, which injects one server-side and forwards the filter verbatim. The
+// operator token never enters the browser, and now neither does any other credential.
 //
 // "Streaming" is implemented as a short poll (the v1 path used a WS; the v2 AsyncAPI
 // stream is a stretch). Each provider runs ONE ACS poll for its party and every
@@ -58,12 +63,20 @@ interface RawCreated {
   observers?: string[]
 }
 
-// ── v2 wire (same-origin via the Vite proxy; baseUrl like http://host:5173/) ──────
+// ── v2 wire ────────────────────────────────────────────────────────────────────────
+// `baseUrl` is either the solver's ledger proxy (shipped/DevNet — the browser holds NO
+// bearer and the credential is injected server-side) or, for a legacy per-desk-token
+// LocalNet tokens.json, the same-origin Vite dev proxy. desks.ts httpBaseUrlFor picks.
+//
+// The Authorization header is sent ONLY when this client actually holds a token. Sending
+// `Bearer ` (empty) instead would be worse than sending nothing: some participants reject a
+// malformed bearer with a 401 that would be indistinguishable, at the peek console, from a
+// real refusal — an infra error must never be able to masquerade as a privacy verdict.
 const v2 = async (baseUrl: string, token: string, path: string, body?: unknown): Promise<unknown> => {
   const res = await fetch(`${baseUrl.replace(/\/+$/, '')}${path}`, {
     method: body === undefined ? 'GET' : 'POST',
     headers: {
-      Authorization: `Bearer ${token}`,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
     },
     body: body === undefined ? undefined : JSON.stringify(body),

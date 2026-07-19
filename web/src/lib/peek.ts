@@ -32,10 +32,17 @@
 // bearer could simply ask as bankB. Per-desk m2m clients remain the only fix for credential
 // isolation. See docs/DEVNET.md.
 //
+// ── WHERE THE BEARER LIVES NOW (deploy change; the proof is UNAFFECTED) ──────────────
+// The shipped build holds NO bearer in the browser: ledger calls go through the solver's
+// ledger proxy, which injects the credential server-side (solver/src/ledgerproxy.ts). This
+// changes nothing about the proof — it never rested on the credential in the first place (see
+// above: we ask as our OWN party precisely so the token is not the variable). It only removes
+// a token from the shipped JS. A legacy per-desk-token LocalNet bundle still works unchanged.
+//
 // This module is DELIBERATELY pure: it builds requests and classifies responses but performs
 // NO fetch, so it is unit-testable without a live ledger. The component (PeekConsole) owns the
-// actual fetch and adds the real Authorization header at wire time — the full bearer NEVER
-// enters a request body, and only an elided form is ever rendered (UI-SPEC: render
+// actual fetch — the full bearer NEVER enters a request body, and only an elided (or, with no
+// client token, an honestly-labeled server-side) form is ever rendered (UI-SPEC: render
 // truncated/elided; threat T-08-02-BEARER).
 
 // ── Verdict copy (VERBATIM from 08-UI-SPEC.md Copywriting — do not edit the glyphs) ──
@@ -121,9 +128,18 @@ export interface PeekOutcome {
   verdict: string
 }
 
+// What the REQUEST pane shows when the browser holds NO bearer at all — the shipped/DevNet
+// deploy path, where the ledger call goes through the solver's proxy and the credential is
+// attached server-side. This is the HONEST rendering: the pane must not imply the browser
+// sent a bearer it does not have, and must not print a bare "Bearer …" that reads like an
+// elided real token. The proof itself is untouched — it never depended on the credential.
+export const BEARER_SERVER_SIDE = 'Bearer <injected server-side — no token in this browser>'
+
 // Truncate a bearer to its first 8 chars + a single ellipsis. NEVER returns the full
-// token — the console renders only this form in the REQUEST pane (UI-SPEC).
-export const elideBearer = (token: string): string => `Bearer ${token.slice(0, 8)}…`
+// token — the console renders only this form in the REQUEST pane (UI-SPEC). An empty
+// token means "this browser holds none" → the honest server-side label above.
+export const elideBearer = (token: string): string =>
+  token ? `Bearer ${token.slice(0, 8)}…` : BEARER_SERVER_SIDE
 
 // Build the raw v2 active-contracts request for `party`, as `thisDeskToken`'s desk. `base` is
 // the node base the query should hit (desks.ts httpBaseUrlFor) so it reaches the right

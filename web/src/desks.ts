@@ -3,16 +3,35 @@
 // holds ONLY the desk tokens (web/src/tokens.json); the operator's privileged
 // token never enters this bundle (D6 / threat T-03-06).
 //
-// HONEST DELIVERY MODEL (D6 dev-token): tokens.json is gitignored (never committed to
-// source), but this `import` makes Vite BUNDLE the desk tokens into the shipped client JS —
-// they are browser-readable DEV-scoped tokens (each actAs/readAs its own desk only), not a
-// server-side-held secret. Real per-party auth is OIDC (Phase 12).
+// DELIVERY MODEL (was D6 dev-token; now server-side for the public deploy):
+// tokens.json is gitignored and carries PUBLIC party ids + a node `base` only. It NO LONGER
+// carries a bearer, because `import` makes Vite BUNDLE whatever is in it into the shipped
+// client JS — which is survivable for a laptop demo and fatal for a public link (the DevNet
+// bearer would be readable by anyone who opens the bundle). The credential now lives in the
+// solver and is injected server-side by its ledger proxy (solver/src/ledgerproxy.ts).
+//
+// `token` therefore stays in the TYPE but is OPTIONAL and normally ABSENT. It is retained
+// only so a legacy/LocalNet tokens.json carrying per-desk scoped tokens still works
+// byte-unchanged (see httpBaseUrlFor below, which routes such a desk through the Vite dev
+// proxy exactly as before). Every consumer reads a normalized `''` when it is absent, and
+// every wire call omits the Authorization header entirely for an empty token.
 import tokensJson from './tokens.json'
 import { JSON_API_URL } from './config'
+import { SOLVER_BASE_URL } from './solver'
 import type { DeskKey } from './ledgerContexts'
 
 export type DeskToken = { party: string; token: string; base?: string }
-export const tokens = tokensJson as Record<DeskKey, DeskToken>
+
+// Normalize the raw JSON so an absent `token` reads as '' rather than undefined — this keeps
+// every existing consumer (`const { party, token } = tokens[k]`) type-correct and unchanged.
+type RawDeskEntry = { party: string; token?: string; base?: string }
+const rawTokens = tokensJson as Record<string, RawDeskEntry>
+export const tokens = Object.fromEntries(
+  Object.entries(rawTokens).map(([key, entry]) => [
+    key,
+    { party: entry.party, token: entry.token ?? '', base: entry.base ?? '' },
+  ]),
+) as Record<DeskKey, DeskToken>
 
 // Column code + role + book side, transcribed from the binding comp (BLUEROCK Buyer /
 // MERIDIAN Seller / HALWARD Seller — UI-SPEC line 222 + 283).
@@ -76,8 +95,33 @@ const ORIGIN =
     ? `${window.location.protocol}//${window.location.host}`
     : 'http://localhost:5173'
 
-// Per-desk participant base (the v2 shim appends /v2/...). Defaults to app-provider.
-export const httpBaseUrlFor = (key: DeskKey): string => `${ORIGIN}${tokens[key]?.base ?? ''}/`
+// ── The ledger base for a TOKEN-FREE desk (the public-deploy path) ─────────────────
+// With no bearer in the bundle the browser cannot talk to the validator at all: it must go
+// through the solver's ledger proxy, which injects the credential server-side. That proxy is
+// mounted on the SAME service the operator plane already uses, so it rides the SAME single
+// base URL (no second host to configure, no second thing to get wrong at deploy time):
+//
+//   {SOLVER}/cn/devnet/v2/state/active-contracts   ← tokens.json `base` = '/cn/devnet'
+//
+// VITE_LEDGER_BASE_URL overrides it for the (unusual) split deployment where the ledger proxy
+// is not co-hosted with the solver API. Locally both resolve to http://localhost:4100.
+const LEDGER_PROXY_ORIGIN = (
+  (import.meta.env.VITE_LEDGER_BASE_URL as string | undefined) ?? SOLVER_BASE_URL
+).replace(/\/+$/, '')
+
+// Per-desk participant base (the v2 shim appends /v2/...).
+//
+// Two routes, selected by whether the desk still HAS a client-held token:
+//   • token ABSENT (shipped/DevNet): route to the solver's ledger proxy, which attaches the
+//     bearer server-side. This is the only route that works for a public static build.
+//   • token PRESENT (legacy per-desk LocalNet tokens.json): keep the historical same-origin
+//     Vite-dev-proxy route byte-unchanged, so the scoped-token LocalNet loop is unaffected by
+//     this deploy work.
+export const httpBaseUrlFor = (key: DeskKey): string => {
+  const base = tokens[key]?.base ?? ''
+  const origin = tokens[key]?.token ? ORIGIN : LEDGER_PROXY_ORIGIN
+  return `${origin}${base}/`
+}
 
 // Back-compat single base (app-provider) for non-desk-specific callers.
 export const httpBaseUrl = `${ORIGIN}/`

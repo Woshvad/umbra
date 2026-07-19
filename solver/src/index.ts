@@ -329,7 +329,12 @@ const main = async (): Promise<void> => {
   })
 
   const roundSeconds = Number(process.env.ROUND_SECONDS ?? DEFAULT_ROUND_SECONDS) || DEFAULT_ROUND_SECONDS
-  const solverPort = Number(process.env.SOLVER_PORT ?? DEFAULT_SOLVER_PORT) || DEFAULT_SOLVER_PORT
+  // DEPLOY: PaaS platforms (Railway/Render/Fly) inject the bind port as `PORT` and route
+  // public traffic to it. Precedence: PORT (the platform's word is final) → SOLVER_PORT (the
+  // local dev override that put this service on :4100) → the 4100 default. Local dev sets
+  // SOLVER_PORT and never PORT, so the dev bind is unchanged.
+  const solverPort =
+    Number(process.env.PORT ?? process.env.SOLVER_PORT ?? DEFAULT_SOLVER_PORT) || DEFAULT_SOLVER_PORT
 
   // Import the ledger client AFTER dotenv + initTelemetry so it reads JSON_API_URL from .env
   // and its request-path spans bind to the live provider (instrumented module — Pitfall 1).
@@ -825,7 +830,52 @@ const main = async (): Promise<void> => {
     x402,
   })
 
-  const app = createApp(deps)
+  // ── DEPLOY: the browser-facing ledger proxy (ledgerproxy.ts) ──────────────────────
+  // Enabled unless LEDGER_PROXY=off. It lets the shipped web bundle carry NO ledger
+  // credential: the browser calls this service, and the bearer is attached here, server-side.
+  //
+  // Bearer precedence (all module-private — the token is only ever put in an OUTBOUND header,
+  // never logged and never echoed into a response):
+  //   1. LEDGER_PROXY_TOKEN — an explicit static bearer (a pre-minted DevNet m2m token).
+  //   2. OIDC_ISSUER set    — client-credentials via auth.ts, cached until near expiry. This
+  //                           is the DevNet/prod path and yields the SAME shared m2m bearer the
+  //                           solver's own ledger client uses (see the honest limitation in
+  //                           docs/DEPLOY.md: shared bearer ⇒ party-level projection is proven,
+  //                           credential-level isolation is not).
+  //   3. scripts/.operator-token — the dev LocalNet HS256 credential.
+  // Resolved here (the composition root) rather than by exporting ledger.ts's credential, so
+  // that module's "the token is never exported" invariant is preserved.
+  const ledgerProxyEnabled = (process.env.LEDGER_PROXY ?? 'on').toLowerCase() !== 'off'
+  let ledgerProxy: AppDeps['ledgerProxy']
+  if (ledgerProxyEnabled) {
+    const { createLedgerProxy, createCachedTokenSource, DEFAULT_LEDGER_TARGET } = await import(
+      './ledgerproxy.js'
+    )
+    const oidcSource = process.env.OIDC_ISSUER
+      ? createCachedTokenSource(async () => (await import('./auth.js')).acquireToken())
+      : null
+    const devToken = (): string => {
+      try {
+        const raw = readFileSync(new URL('../../scripts/.operator-token', import.meta.url), 'utf8')
+        return (JSON.parse(raw) as { token?: string }).token ?? ''
+      } catch {
+        return ''
+      }
+    }
+    const getToken = async (): Promise<string> => {
+      if (process.env.LEDGER_PROXY_TOKEN) return process.env.LEDGER_PROXY_TOKEN
+      if (oidcSource) return oidcSource()
+      return devToken()
+    }
+    ledgerProxy = createLedgerProxy({
+      // The forwarding target: the SAME validator the solver's own ledger client talks to
+      // (JSON_API_URL), so the browser and the solver can never diverge onto two ledgers.
+      target: process.env.LEDGER_PROXY_TARGET ?? process.env.JSON_API_URL ?? DEFAULT_LEDGER_TARGET,
+      getToken,
+    })
+  }
+
+  const app = createApp({ ...deps, ledgerProxy })
   app.listen(solverPort, () => {
     // SECRET-FREE boot log via the redacting JSON logger: only the bound port + the PUBLIC
     // operator party id. NEVER the token, ANTHROPIC_API_KEY, or process.env (SOLV-04 / T-04-04).
